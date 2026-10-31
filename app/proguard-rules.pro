@@ -162,3 +162,7 @@
 -dontwarn com.google.net.cronet.**
 -dontwarn com.jayway.jsonpath.**
 -dontwarn net.minidev.**
+-dontwarn sun.net.spi.nameservice.NameService
+-dontwarn sun.net.spi.nameservice.NameServiceDescriptor
+# dnsjava (used by the YouTube engine) mentions desktop-Java classes that Android doesn't have and never calls.
+-dontwarn org.xbill.DNS.spi.**
