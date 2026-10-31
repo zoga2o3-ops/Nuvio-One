@@ -10,6 +10,9 @@ object YouTubeSettings {
     private const val KEY_QUALITY = "preferred_height"
     private const val KEY_HIDDEN_TABS = "hidden_tabs"
     private const val KEY_AUTOPLAY = "autoplay_next"
+    private const val KEY_HIDE_SHORTS = "hide_shorts"
+    private const val KEY_HIDE_WATCHED = "hide_watched"
+    private const val KEY_HIDE_UPCOMING = "hide_upcoming"
     private const val KEY_CODEC = "codec_preference"
 
     /** SponsorBlock's segment types, in the order they're listed. */
@@ -60,6 +63,15 @@ object YouTubeSettings {
         val hidden = hiddenTabs(context)
         return YtTab.entries.filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
     }
+
+    /** Feed filters. Upcoming premieres can't be played yet, so they're hidden unless you say otherwise. */
+    fun hideShorts(context: Context) = prefs(context).getBoolean(KEY_HIDE_SHORTS, false)
+    fun hideWatched(context: Context) = prefs(context).getBoolean(KEY_HIDE_WATCHED, false)
+    fun hideUpcoming(context: Context) = prefs(context).getBoolean(KEY_HIDE_UPCOMING, true)
+
+    fun setHideShorts(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_HIDE_SHORTS, on).apply()
+    fun setHideWatched(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_HIDE_WATCHED, on).apply()
+    fun setHideUpcoming(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_HIDE_UPCOMING, on).apply()
 
     /** Play the next video when one ends. */
     fun autoplayNext(context: Context) = prefs(context).getBoolean(KEY_AUTOPLAY, true)

@@ -45,6 +45,9 @@ internal fun YouTubeSettingsContent(
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
     var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
     var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
+    var hideShorts by remember { mutableStateOf(YouTubeSettings.hideShorts(context)) }
+    var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
+    var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
     var codec by remember { mutableStateOf(YouTubeSettings.codecPreference(context)) }
 
     Column(
@@ -134,6 +137,39 @@ internal fun YouTubeSettingsContent(
                     val choices = YouTubeSettings.qualityChoices
                     quality = choices[(choices.indexOf(quality).coerceAtLeast(0) + 1) % choices.size]
                     YouTubeSettings.setPreferredHeight(context, quality)
+                }
+            )
+        }
+
+        SettingsGroupCard(
+            title = "Feeds",
+            subtitle = "Leave things out of the YouTube page. History always shows everything you've watched."
+        ) {
+            SettingsToggleRow(
+                title = "Hide Shorts",
+                subtitle = "Short vertical videos",
+                checked = hideShorts,
+                onToggle = {
+                    hideShorts = !hideShorts
+                    YouTubeSettings.setHideShorts(context, hideShorts)
+                }
+            )
+            SettingsToggleRow(
+                title = "Hide watched videos",
+                subtitle = "Videos you've mostly watched, on this device or on your account",
+                checked = hideWatched,
+                onToggle = {
+                    hideWatched = !hideWatched
+                    YouTubeSettings.setHideWatched(context, hideWatched)
+                }
+            )
+            SettingsToggleRow(
+                title = "Hide upcoming videos",
+                subtitle = "Premieres and streams that haven't started, which can't be played yet",
+                checked = hideUpcoming,
+                onToggle = {
+                    hideUpcoming = !hideUpcoming
+                    YouTubeSettings.setHideUpcoming(context, hideUpcoming)
                 }
             )
         }

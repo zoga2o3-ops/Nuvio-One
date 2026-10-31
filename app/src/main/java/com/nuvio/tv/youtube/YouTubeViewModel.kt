@@ -96,6 +96,8 @@ class YouTubeViewModel @Inject constructor(
         const val MAX_CLIENT_SWITCHES = 8
         const val PREFETCH_DELAY_MS = 250L
         const val MAX_CACHED = 24
+        /** How much of a video counts as watched for hiding it. */
+        const val WATCHED_PERCENT = 90
     }
 
     private val _state = MutableStateFlow(YtUiState())
@@ -125,6 +127,7 @@ class YouTubeViewModel @Inject constructor(
 
     fun selectTab(tab: YtTab) {
         backStack.clear()
+        filtersOn = tab != YtTab.HISTORY
         _state.update { YtUiState(tab = tab, signedIn = it.signedIn, loading = true) }
         load(tab.title) {
             val signed = runCatching { service.signInService.isSigned }.getOrDefault(false)
@@ -149,6 +152,7 @@ class YouTubeViewModel @Inject constructor(
 
     fun search(query: String) {
         if (query.isBlank()) return
+        filtersOn = true
         pushPage()
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
@@ -159,6 +163,7 @@ class YouTubeViewModel @Inject constructor(
 
     /** Opens a channel or playlist on top of the current page. */
     fun open(item: YtItem) {
+        filtersOn = true
         pushPage()
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
@@ -277,7 +282,23 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
-    private fun toItems(g: MediaGroup): List<YtItem> = g.mediaItems.orEmpty().mapNotNull(::toItem)
+    /** Feed filters apply everywhere except History, which is meant to show what you've watched. */
+    private var filtersOn = true
+
+    private fun toItems(g: MediaGroup): List<YtItem> = g.mediaItems.orEmpty().filter(::allowed).mapNotNull(::toItem)
+
+    /** Whether your filters in Settings let [i] through. Channels and playlists always do. */
+    private fun allowed(i: MediaItem): Boolean {
+        if (!filtersOn) return true
+        if (i.type == MediaItem.TYPE_CHANNEL || i.type == MediaItem.TYPE_PLAYLIST) return true
+        if (i.isShorts && YouTubeSettings.hideShorts(context)) return false
+        if (i.isUpcoming && YouTubeSettings.hideUpcoming(context)) return false
+        if (YouTubeSettings.hideWatched(context)) {
+            val watched = maxOf(i.percentWatched, YouTubeProgress.localPercent(context, i.videoId))
+            if (watched >= WATCHED_PERCENT) return false
+        }
+        return true
+    }
 
     private fun toItem(i: MediaItem): YtItem? {
         val kind = when (i.type) {
@@ -429,7 +450,7 @@ class YouTubeViewModel @Inject constructor(
     private fun upNext(currentVideoId: String): YtItem? {
         val meta = service.mediaItemService.getMetadataObserve(currentVideoId).blockingFirst()
         val candidates = listOfNotNull(meta.nextVideo) + meta.suggestions.orEmpty().flatMap { it.mediaItems.orEmpty() }
-        val items = candidates.mapNotNull(::toItem).filter { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
+        val items = candidates.filter(::allowed).mapNotNull(::toItem).filter { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
         // Whatever follows keeps playing on from this list.
         queue = listOfNotNull(toItem(candidates.firstOrNull() ?: return null)) + items
         return items.firstOrNull()
