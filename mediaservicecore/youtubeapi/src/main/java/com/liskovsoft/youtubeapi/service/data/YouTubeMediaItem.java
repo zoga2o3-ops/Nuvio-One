@@ -60,6 +60,14 @@ public class YouTubeMediaItem implements MediaItem {
     private String mDescription;
     private int mViewCount;
 
+    /** A bare item for actions that only need the ids, such as like and subscribe. */
+    public static YouTubeMediaItem fromIds(String videoId, String channelId) {
+        YouTubeMediaItem item = new YouTubeMediaItem();
+        item.mVideoId = videoId;
+        item.mChannelId = channelId;
+        return item;
+    }
+
     public static YouTubeMediaItem from(ItemWrapper item, int position) {
         YouTubeMediaItem mediaItem = from(item);
 

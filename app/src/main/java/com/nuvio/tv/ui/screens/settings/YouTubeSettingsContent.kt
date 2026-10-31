@@ -47,6 +47,7 @@ internal fun YouTubeSettingsContent(
     var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
     var sponsorNotice by remember { mutableStateOf(YouTubeSettings.sponsorNotice(context)) }
     var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
+    var rememberTab by remember { mutableStateOf(YouTubeSettings.rememberLastTab(context)) }
     var deThumbs by remember { mutableStateOf(YouTubeSettings.deArrowThumbnails(context)) }
     var hideShorts by remember { mutableStateOf(YouTubeSettings.hideShorts(context)) }
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
@@ -205,6 +206,15 @@ internal fun YouTubeSettingsContent(
             title = "Tabs",
             subtitle = "Choose which tabs show along the top of the YouTube page"
         ) {
+            SettingsToggleRow(
+                title = "Open on the last tab used",
+                subtitle = "Off: the page always opens on the first tab",
+                checked = rememberTab,
+                onToggle = {
+                    rememberTab = !rememberTab
+                    YouTubeSettings.setRememberLastTab(context, rememberTab)
+                }
+            )
             YtTab.entries.forEach { tab ->
                 val shown = tab.name !in hiddenTabs
                 val onlyOneLeft = shown && YtTab.entries.count { it.name !in hiddenTabs } <= 1

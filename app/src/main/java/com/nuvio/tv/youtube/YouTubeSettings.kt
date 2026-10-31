@@ -12,6 +12,8 @@ object YouTubeSettings {
     private const val KEY_AUTOPLAY = "autoplay_next"
     private const val KEY_HIDE_SHORTS = "hide_shorts"
     private const val KEY_LAST_TAB = "last_tab"
+    private const val KEY_REMEMBER_TAB = "remember_last_tab"
+    private const val KEY_SPEED = "playback_speed"
     private const val KEY_SPONSOR_NOTICE = "sponsorblock_notice"
     private const val KEY_DEARROW_TITLES = "dearrow_titles"
     private const val KEY_DEARROW_THUMBS = "dearrow_thumbnails"
@@ -71,9 +73,18 @@ object YouTubeSettings {
     /** The tab you were last on, if it's still switched on; otherwise the first one. */
     fun lastTab(context: Context): YtTab {
         val visible = visibleTabs(context)
+        if (!rememberLastTab(context)) return visible.first()
         val saved = prefs(context).getString(KEY_LAST_TAB, null)
         return visible.firstOrNull { it.name == saved } ?: visible.first()
     }
+
+    /** Open on the tab you were last on; off means the first tab each time. */
+    fun rememberLastTab(context: Context) = prefs(context).getBoolean(KEY_REMEMBER_TAB, true)
+    fun setRememberLastTab(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_REMEMBER_TAB, on).apply()
+
+    /** The playback speed you last picked on a YouTube video, used to start the next one. */
+    fun playbackSpeed(context: Context) = prefs(context).getFloat(KEY_SPEED, 1f)
+    fun setPlaybackSpeed(context: Context, speed: Float) = prefs(context).edit().putFloat(KEY_SPEED, speed).apply()
 
     fun setLastTab(context: Context, tab: YtTab) = prefs(context).edit().putString(KEY_LAST_TAB, tab.name).apply()
 

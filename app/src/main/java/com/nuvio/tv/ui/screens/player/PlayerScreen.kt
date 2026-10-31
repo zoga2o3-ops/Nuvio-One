@@ -62,6 +62,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
@@ -197,6 +198,8 @@ fun PlayerScreen(
     onPlaybackEnded: ((nextVideoId: String?, nextSeason: Int?, nextEpisode: Int?, exitReason: PlayerExitReason?) -> Unit)? = null,
     /** YouTube fork: anything extra to draw over the player, such as the "up next" card. */
     extraOverlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
+    /** YouTube fork: show the YouTube button in the controls. */
+    showYouTubeButton: Boolean = false,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
@@ -350,7 +353,7 @@ fun PlayerScreen(
             returnToDetailsFromEndPrompt()
         } else if (uiState.error != null) {
             exitPlayerFromError()
-        } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay) {
+        } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay || uiState.showYouTubePanel) {
             viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
         } else if (uiState.showStreamInfoOverlay) {
             dismissStreamInfoOverlay()
@@ -549,6 +552,7 @@ fun PlayerScreen(
         uiState.showSubtitleTimingDialog,
         uiState.showAudioOverlay,
         uiState.showQualityOverlay,
+        uiState.showYouTubePanel,
         uiState.showSubtitleOverlay,
         uiState.showSpeedDialog,
         shouldConfirmNextEpisodeOnEnd,
@@ -558,7 +562,7 @@ fun PlayerScreen(
         if (uiState.error != null) return@LaunchedEffect
         if (uiState.showPartyPanel) return@LaunchedEffect
         if (uiState.showControls && !uiState.showEpisodesPanel && !uiState.showSourcesPanel && !uiState.showChaptersPanel &&
-            !uiState.showAudioOverlay && !uiState.showSubtitleOverlay && !uiState.showQualityOverlay &&
+            !uiState.showAudioOverlay && !uiState.showSubtitleOverlay && !uiState.showQualityOverlay && !uiState.showYouTubePanel &&
             !uiState.showSubtitleStylePanel && !uiState.showSubtitleDelayOverlay &&
             !uiState.showSubtitleTimingDialog &&
             !uiState.showSpeedDialog
@@ -804,7 +808,7 @@ fun PlayerScreen(
                 // When a side panel or dialog is open, let it handle all keys
                 val panelOrDialogOpen = uiState.showEpisodesPanel || uiState.showSourcesPanel || uiState.showPartyPanel ||
                         uiState.showChaptersPanel ||
-                        uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay ||
+                        uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay || uiState.showYouTubePanel ||
                         uiState.showSubtitleStylePanel || uiState.showSpeedDialog ||
                         uiState.showSubtitleDelayOverlay || uiState.showSubtitleTimingDialog ||
                         uiState.showMoreDialog ||
@@ -1568,6 +1572,8 @@ fun PlayerScreen(
                 partyActive = partyState.party != null,
                 onShowAudioDialog = { viewModel.onEvent(PlayerEvent.OnShowAudioOverlay) },
                 onShowQualityDialog = { viewModel.onEvent(PlayerEvent.OnShowQualityOverlay) },
+                onShowYouTubePanel = { viewModel.onEvent(PlayerEvent.OnShowYouTubePanel) },
+                showYouTubeButton = showYouTubeButton,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -2626,6 +2632,8 @@ private fun PlayerControlsOverlay(
     partyActive: Boolean,
     onShowAudioDialog: () -> Unit,
     onShowQualityDialog: () -> Unit,
+    onShowYouTubePanel: () -> Unit,
+    showYouTubeButton: Boolean,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2896,6 +2904,17 @@ private fun PlayerControlsOverlay(
                             iconPainter = customSubtitlePainter,
                             contentDescription = stringResource(R.string.cd_subtitles),
                             onClick = onShowSubtitleDialog,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onHideControls,
+                            onFocused = onResetHideTimer
+                        )
+                    }
+
+                    if (showYouTubeButton) {
+                        ControlButton(
+                            icon = Icons.Default.PlayCircle,
+                            contentDescription = "YouTube",
+                            onClick = onShowYouTubePanel,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
                             onFocused = onResetHideTimer

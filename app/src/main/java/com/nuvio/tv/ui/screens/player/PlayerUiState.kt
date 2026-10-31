@@ -115,6 +115,7 @@ data class PlayerUiState(
     /** Video sizes the stream offers, tallest first; only set when there is a real choice. */
     val videoQualities: List<VideoQualityOption> = emptyList(),
     val showQualityOverlay: Boolean = false,
+    val showYouTubePanel: Boolean = false,
     /** The chosen video height; 0 is automatic. */
     val selectedVideoQualityHeight: Int = 0,
     val showSubtitleOverlay: Boolean = false,
@@ -336,6 +337,7 @@ sealed class PlayerEvent {
     data object OnToggleControls : PlayerEvent()
     data object OnShowAudioOverlay : PlayerEvent()
     data object OnShowQualityOverlay : PlayerEvent()
+    data object OnShowYouTubePanel : PlayerEvent()
     data class OnSelectVideoQuality(val height: Int) : PlayerEvent()
     data object OnShowSubtitleOverlay : PlayerEvent()
     data object OnOpenSubtitleStylePanel : PlayerEvent()

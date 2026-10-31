@@ -180,6 +180,16 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    /** Opens a channel by its id, on top of the current page. Used from the player's YouTube panel. */
+    fun openChannel(channelId: String, name: String) {
+        pushPage()
+        filtersOn = true
+        _state.update {
+            it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false, subTitle = name)
+        }
+        load(name) { rows(content.getChannelObserve(channelId).blockingFirst()) }
+    }
+
     private fun pushPage() {
         // A page that's still loading has nothing to come back to.
         if (!_state.value.loading) backStack.addLast(Page(_state.value, currentGroup))

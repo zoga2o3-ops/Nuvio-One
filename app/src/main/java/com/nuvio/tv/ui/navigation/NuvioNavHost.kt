@@ -61,6 +61,7 @@ import com.nuvio.tv.ui.screens.settings.TmdbSettingsScreen
 import com.nuvio.tv.ui.screens.stream.StreamScreen
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 import com.nuvio.tv.ui.screens.account.AuthQrSignInScreen
+import com.nuvio.tv.youtube.YouTubePlayerPanel
 import com.nuvio.tv.youtube.YouTubeUpNext
 import com.nuvio.tv.ui.screens.cast.CastDetailScreen
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionMode
@@ -1026,11 +1027,28 @@ private fun PlaybackNavHost(
             val upNextPlayerVm: com.nuvio.tv.ui.screens.player.PlayerViewModel =
                 androidx.hilt.navigation.compose.hiltViewModel()
 
+            val ytPlayerVm: com.nuvio.tv.youtube.YouTubePlayerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+
             PlayerScreen(
+                showYouTubeButton = upNextVideoId != null,
                 extraOverlay = {
                     if (upNextVideoId != null && youtubeVm != null) {
                         val timeline by upNextPlayerVm.playbackTimeline.collectAsState()
+                        val playerUi by upNextPlayerVm.uiState.collectAsState()
                         YouTubeUpNext(upNextVideoId, youtubeVm, timeline)
+                        if (playerUi.showYouTubePanel) {
+                            YouTubePlayerPanel(
+                                videoId = upNextVideoId,
+                                viewModel = ytPlayerVm,
+                                onClose = {
+                                    upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnDismissTransientOverlay)
+                                },
+                                onOpenChannel = { channelId, name ->
+                                    youtubeVm.openChannel(channelId, name)
+                                    navController.popBackStack()
+                                }
+                            )
+                        }
                     }
                 },
                 onBackPress = { currentVideoId, currentSeason, currentEpisode, autoPlayEnabled, playbackCompleted ->
