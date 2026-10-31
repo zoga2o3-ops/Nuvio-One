@@ -11,6 +11,10 @@ object YouTubeSettings {
     private const val KEY_HIDDEN_TABS = "hidden_tabs"
     private const val KEY_AUTOPLAY = "autoplay_next"
     private const val KEY_HIDE_SHORTS = "hide_shorts"
+    private const val KEY_LAST_TAB = "last_tab"
+    private const val KEY_SPONSOR_NOTICE = "sponsorblock_notice"
+    private const val KEY_DEARROW_TITLES = "dearrow_titles"
+    private const val KEY_DEARROW_THUMBS = "dearrow_thumbnails"
     private const val KEY_HIDE_WATCHED = "hide_watched"
     private const val KEY_HIDE_UPCOMING = "hide_upcoming"
     private const val KEY_CODEC = "codec_preference"
@@ -63,6 +67,25 @@ object YouTubeSettings {
         val hidden = hiddenTabs(context)
         return YtTab.entries.filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
     }
+
+    /** The tab you were last on, if it's still switched on; otherwise the first one. */
+    fun lastTab(context: Context): YtTab {
+        val visible = visibleTabs(context)
+        val saved = prefs(context).getString(KEY_LAST_TAB, null)
+        return visible.firstOrNull { it.name == saved } ?: visible.first()
+    }
+
+    fun setLastTab(context: Context, tab: YtTab) = prefs(context).edit().putString(KEY_LAST_TAB, tab.name).apply()
+
+    /** Whether skipping a SponsorBlock segment shows a short notice. */
+    fun sponsorNotice(context: Context) = prefs(context).getBoolean(KEY_SPONSOR_NOTICE, true)
+    fun setSponsorNotice(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_SPONSOR_NOTICE, on).apply()
+
+    /** DeArrow: community titles and thumbnails in place of clickbait. */
+    fun deArrowTitles(context: Context) = prefs(context).getBoolean(KEY_DEARROW_TITLES, true)
+    fun deArrowThumbnails(context: Context) = prefs(context).getBoolean(KEY_DEARROW_THUMBS, true)
+    fun setDeArrowTitles(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_DEARROW_TITLES, on).apply()
+    fun setDeArrowThumbnails(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_DEARROW_THUMBS, on).apply()
 
     /** Feed filters. Upcoming premieres can't be played yet, so they're hidden unless you say otherwise. */
     fun hideShorts(context: Context) = prefs(context).getBoolean(KEY_HIDE_SHORTS, false)

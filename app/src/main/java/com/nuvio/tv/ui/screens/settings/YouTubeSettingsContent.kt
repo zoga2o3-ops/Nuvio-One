@@ -45,6 +45,9 @@ internal fun YouTubeSettingsContent(
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
     var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
     var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
+    var sponsorNotice by remember { mutableStateOf(YouTubeSettings.sponsorNotice(context)) }
+    var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
+    var deThumbs by remember { mutableStateOf(YouTubeSettings.deArrowThumbnails(context)) }
     var hideShorts by remember { mutableStateOf(YouTubeSettings.hideShorts(context)) }
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
     var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
@@ -142,6 +145,30 @@ internal fun YouTubeSettingsContent(
         }
 
         SettingsGroupCard(
+            title = "DeArrow",
+            subtitle = "Community-written titles and thumbnails in place of clickbait. Takes effect the next time a page loads."
+        ) {
+            SettingsToggleRow(
+                title = "Better titles",
+                subtitle = "Plain titles where the community has written one",
+                checked = deTitles,
+                onToggle = {
+                    deTitles = !deTitles
+                    YouTubeSettings.setDeArrowTitles(context, deTitles)
+                }
+            )
+            SettingsToggleRow(
+                title = "Better thumbnails",
+                subtitle = "Thumbnails picked from the video itself",
+                checked = deThumbs,
+                onToggle = {
+                    deThumbs = !deThumbs
+                    YouTubeSettings.setDeArrowThumbnails(context, deThumbs)
+                }
+            )
+        }
+
+        SettingsGroupCard(
             title = "Feeds",
             subtitle = "Leave things out of the YouTube page. History always shows everything you've watched."
         ) {
@@ -211,6 +238,17 @@ internal fun YouTubeSettingsContent(
                     YouTubeSettings.setSponsorBlockEnabled(context, sponsorOn)
                 }
             )
+            if (sponsorOn) {
+                SettingsToggleRow(
+                    title = "Show a notice when skipping",
+                    subtitle = "A short message such as \"Skipped: Sponsor\"",
+                    checked = sponsorNotice,
+                    onToggle = {
+                        sponsorNotice = !sponsorNotice
+                        YouTubeSettings.setSponsorNotice(context, sponsorNotice)
+                    }
+                )
+            }
             if (sponsorOn) {
                 YouTubeSettings.sponsorCategories.forEach { (key, label) ->
                     SettingsToggleRow(

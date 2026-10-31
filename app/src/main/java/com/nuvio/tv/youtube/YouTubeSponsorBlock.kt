@@ -60,8 +60,10 @@ class SponsorBlockSession(context: Context, private val videoId: String) {
         } ?: return null
         skipped += hit.startMs
         val label = YouTubeSettings.sponsorCategories.firstOrNull { it.first == hit.category }?.second ?: "segment"
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(app, "Skipped: $label", Toast.LENGTH_SHORT).show()
+        if (YouTubeSettings.sponsorNotice(app)) {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(app, "Skipped: $label", Toast.LENGTH_SHORT).show()
+            }
         }
         return hit.endMs
     }

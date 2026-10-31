@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
@@ -85,6 +86,9 @@ fun YouTubeScreen(
     val account by accountViewModel.state.collectAsState()
     var signInStarted by remember { mutableStateOf(false) }
     var showAccounts by remember { mutableStateOf(false) }
+    var suggestionsOpen by remember { mutableStateOf(false) }
+    val suggestions by viewModel.suggestions.collectAsState()
+    val firstSuggestion = remember { FocusRequester() }
 
     // The tabs you've left on in Settings. Read each time you come to the page.
     val appContext = androidx.compose.ui.platform.LocalContext.current
@@ -106,6 +110,7 @@ fun YouTubeScreen(
     // Back goes up from a channel, playlist or search before it leaves the page.
     BackHandler(enabled = state.subTitle != null) { viewModel.back() }
     BackHandler(enabled = showAccounts) { showAccounts = false }
+    BackHandler(enabled = suggestionsOpen) { suggestionsOpen = false }
 
     Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -133,7 +138,10 @@ fun YouTubeScreen(
             var focused by remember { mutableStateOf(false) }
             BasicTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = {
+                    query = it
+                    viewModel.suggest(it)
+                },
                 singleLine = true,
                 textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
                 cursorBrush = SolidColor(Color.White),
@@ -141,6 +149,7 @@ fun YouTubeScreen(
                 keyboardActions = KeyboardActions(onSearch = {
                     // Close the keyboard and move on to the results.
                     keyboard?.hide()
+                    suggestionsOpen = false
                     focusManager.moveFocus(FocusDirection.Down)
                     viewModel.search(query)
                 }),
@@ -149,7 +158,15 @@ fun YouTubeScreen(
                     .clip(RoundedCornerShape(24.dp))
                     .background(CardBg)
                     .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
-                    .onFocusChanged { focused = it.isFocused }
+                    // Down from the box goes into the suggestions when they're showing.
+                    .focusProperties { if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion }
+                    .onFocusChanged {
+                        focused = it.isFocused
+                        if (it.isFocused) {
+                            suggestionsOpen = true
+                            viewModel.suggest(query)
+                        }
+                    }
                     .padding(horizontal = 20.dp, vertical = 10.dp),
                 decorationBox = { inner ->
                     if (query.isEmpty()) Text("Search YouTube", color = Color.Gray, fontSize = 18.sp)
@@ -165,6 +182,7 @@ fun YouTubeScreen(
             items(tabs) { tab ->
                 TabChip(tab.title, selected = state.tab == tab && state.subTitle == null) {
                     query = ""
+                    suggestionsOpen = false
                     viewModel.selectTab(tab)
                 }
             }
@@ -174,7 +192,23 @@ fun YouTubeScreen(
             Text(it, color = YtRed, modifier = Modifier.padding(bottom = 8.dp).clickable { viewModel.clearError() })
         }
 
-        Content(
+        if (suggestionsOpen && suggestions.isNotEmpty()) {
+            SuggestionList(
+                items = suggestions,
+                recent = query.isBlank(),
+                first = firstSuggestion,
+                onPick = { text ->
+                    query = text
+                    suggestionsOpen = false
+                    keyboard?.hide()
+                    viewModel.search(text)
+                },
+                onClearHistory = {
+                    viewModel.clearSearchHistory()
+                    suggestionsOpen = false
+                }
+            )
+        } else Content(
             state = state,
             account = account,
             viewModel = viewModel,
@@ -313,6 +347,23 @@ private fun SignInPanel(account: YouTubeAccountState, onCancel: () -> Unit) {
                 TabChip("Cancel", selected = false, onClick = onCancel)
             }
         }
+    }
+}
+
+@Composable
+private fun SuggestionList(
+    items: List<String>,
+    recent: Boolean,
+    first: FocusRequester,
+    onPick: (String) -> Unit,
+    onClearHistory: () -> Unit
+) {
+    Column(Modifier.width(520.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(if (recent) "Recent searches" else "Suggestions", color = Color.Gray, fontSize = 14.sp)
+        items.forEachIndexed { i, text ->
+            AccountRow(text, null, null, if (i == 0) Modifier.focusRequester(first) else Modifier) { onPick(text) }
+        }
+        if (recent) AccountRow("Clear search history", null, null, Modifier) { onClearHistory() }
     }
 }
 

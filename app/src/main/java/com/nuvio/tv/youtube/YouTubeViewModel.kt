@@ -56,6 +56,7 @@ enum class YtTab(val title: String, val needsSignIn: Boolean = false, val grid: 
     GAMING("Gaming"),
     NEWS("News"),
     SPORTS("Sports"),
+    SHORTS("Shorts", grid = true),
     CHANNELS("Channels", needsSignIn = true, grid = true)
 }
 
@@ -121,13 +122,14 @@ class YouTubeViewModel @Inject constructor(
 
     val canGoBack: Boolean get() = backStack.isNotEmpty()
 
-    init { selectTab(YtTab.HOME) }
+    init { selectTab(YouTubeSettings.lastTab(context)) }
 
     // ---- feeds ----
 
     fun selectTab(tab: YtTab) {
         backStack.clear()
-        filtersOn = tab != YtTab.HISTORY
+        filtersOn = tab != YtTab.HISTORY && tab != YtTab.SHORTS
+        YouTubeSettings.setLastTab(context, tab)
         _state.update { YtUiState(tab = tab, signedIn = it.signedIn, loading = true) }
         load(tab.title) {
             val signed = runCatching { service.signInService.isSigned }.getOrDefault(false)
@@ -142,6 +144,7 @@ class YouTubeViewModel @Inject constructor(
                 YtTab.NEWS -> rows(content.newsObserve.blockingFirst())
                 YtTab.SPORTS -> rows(content.sportsObserve.blockingFirst())
                 YtTab.SUBSCRIPTIONS -> grid(content.subscriptionsObserve.blockingFirst())
+                YtTab.SHORTS -> grid(content.shortsObserve.blockingFirst())
                 YtTab.CHANNELS -> grid(content.subscribedChannelsObserve.blockingFirst())
                 YtTab.HISTORY -> grid(content.historyObserve.blockingFirst())
                 YtTab.PLAYLISTS -> grid(content.playlistsObserve.blockingFirst())
@@ -209,6 +212,7 @@ class YouTubeViewModel @Inject constructor(
                     canLoadMore = next?.nextPageKey != null && more.isNotEmpty()
                 )
             }
+            fetchDeArrow()
         }
     }
 
@@ -269,6 +273,7 @@ class YouTubeViewModel @Inject constructor(
                             }
                         }
                     }
+                    fetchDeArrow()
                 },
                 onFailure = { e ->
                     Log.e(TAG, "couldn't load $label", e)
@@ -279,6 +284,43 @@ class YouTubeViewModel @Inject constructor(
                     }
                 }
             )
+        }
+    }
+
+    // ---- DeArrow: community titles and thumbnails ----
+
+    private val deArrow = java.util.concurrent.ConcurrentHashMap<String, Pair<String?, String?>>()
+    private val deArrowAsked: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** [item] with its DeArrow title and thumbnail, if they've been looked up and you've left them on. */
+    private fun deArrowCached(item: YtItem): YtItem {
+        val id = item.videoId ?: return item
+        val (title, thumb) = deArrow[id] ?: return item
+        return item.copy(
+            title = title?.takeIf { it.isNotBlank() && YouTubeSettings.deArrowTitles(context) } ?: item.title,
+            thumbnail = thumb?.takeIf { it.isNotBlank() && YouTubeSettings.deArrowThumbnails(context) } ?: item.thumbnail
+        )
+    }
+
+    /** Looks up DeArrow data for what's on screen, and swaps it in as each answer arrives. */
+    private fun fetchDeArrow() {
+        if (!YouTubeSettings.deArrowTitles(context) && !YouTubeSettings.deArrowThumbnails(context)) return
+        val s = _state.value
+        val ids = (s.rows.flatMap { it.items } + s.grid).mapNotNull { it.videoId }.filter { deArrowAsked.add(it) }.take(60)
+        if (ids.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                service.mediaItemService.getDeArrowDataObserve(ids).blockingForEach { d ->
+                    val id = d.videoId ?: return@blockingForEach
+                    deArrow[id] = d.title to d.thumbnailUrl
+                    _state.update { st ->
+                        st.copy(
+                            rows = st.rows.map { r -> r.copy(items = r.items.map { if (it.videoId == id) deArrowCached(it) else it }) },
+                            grid = st.grid.map { if (it.videoId == id) deArrowCached(it) else it }
+                        )
+                    }
+                }
+            }.onFailure { Log.w(TAG, "DeArrow lookup failed", it) }
         }
     }
 
@@ -307,7 +349,7 @@ class YouTubeViewModel @Inject constructor(
             else -> YtKind.VIDEO
         }
         if (kind == YtKind.VIDEO && i.videoId == null) return null
-        return YtItem(
+        val base = YtItem(
             kind = kind,
             videoId = i.videoId,
             title = i.title.orEmpty(),
@@ -318,6 +360,7 @@ class YouTubeViewModel @Inject constructor(
             percentWatched = i.percentWatched.coerceIn(0, 100),
             source = i
         )
+        return deArrowCached(base)
     }
 
     // ---- playback ----
@@ -343,7 +386,7 @@ class YouTubeViewModel @Inject constructor(
             info = service.mediaItemService.getFormatInfoObserve(videoId).blockingFirst()
             Log.i(TAG, "lookup with client=${info.clientInfo?.clientName} at ${since()}ms")
         }
-        if (info.isUnplayable) error(info.playabilityReason ?: "This video can't be played")
+        if (info.isUnplayable) error(friendlyReason(info.playabilityReason))
         Log.i(TAG, "formats video=$videoId dash=${info.containsDashFormats()} " +
             "sabr=${info.containsSabrFormats()} hls=${info.containsHlsUrl()} " +
             "adaptive=${info.adaptiveFormats?.size} live=${info.isLive} client=${info.clientInfo?.clientName}")
@@ -355,7 +398,7 @@ class YouTubeViewModel @Inject constructor(
             ?: info.hlsManifestUrl
             ?: info.dashManifestUrl
             ?: info.urlFormats?.firstOrNull()?.url
-            ?: error("No playable stream found")
+            ?: error("YouTube didn't return a stream for this video. Try again in a moment.")
         Log.i(TAG, "ready $videoId after ${since()}ms")
         // Stream URLs are tied to the client that asked for them, so the player has to present
         // the same user-agent.
@@ -456,12 +499,26 @@ class YouTubeViewModel @Inject constructor(
         return items.firstOrNull()
     }
 
+    /**
+     * If your account says you stopped part-way through, and this device hasn't played it since, start
+     * from there. The player resumes from what it has saved, so put the account's position there.
+     */
+    private fun seedResume(item: YtItem) {
+        val id = item.videoId ?: return
+        val durationMs = item.source.durationMs
+        if (item.isLive || durationMs <= 0 || item.percentWatched !in 3..94) return
+        val contentId = YouTubeProgress.ID_PREFIX + id
+        if (com.nuvio.tv.livetv.record.RecordingResume.load(context, contentId) != null) return
+        com.nuvio.tv.livetv.record.RecordingResume.save(context, contentId, durationMs * item.percentWatched / 100, durationMs)
+    }
+
     /** Plays a video, or opens a channel or playlist. [onReady] runs on the main thread. */
     fun activate(item: YtItem, from: List<YtItem>, onReady: (YtPlayable) -> Unit) {
         if (item.kind != YtKind.VIDEO) {
             open(item)
             return
         }
+        seedResume(item)
         // What was on screen with it becomes the list that plays on from here.
         queue = from.filter { it.kind == YtKind.VIDEO }
         played.clear()
@@ -474,6 +531,27 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    /** Turns YouTube's reason for refusing a video into something that says what to do. */
+    private fun friendlyReason(reason: String?): String {
+        val r = reason.orEmpty().lowercase()
+        val signedIn = runCatching { service.signInService.isSigned }.getOrDefault(false)
+        return when {
+            "age" in r || "confirm your age" in r || "inappropriate" in r ->
+                if (signedIn) "This video is age-restricted, and your account can't play it."
+                else "This video is age-restricted. Sign in to YouTube to watch it."
+            "country" in r || "region" in r || "location" in r -> "This video isn't available in your country."
+            "private" in r -> "This video is private."
+            "member" in r || "join this channel" in r -> "This video is for channel members only."
+            "premiere" in r || "will begin" in r || "live event" in r -> "This video hasn't started yet."
+            "copyright" in r -> "This video was removed over a copyright claim."
+            "removed" in r || "terminated" in r || "no longer available" in r || "unavailable" in r ->
+                "This video has been removed or isn't available."
+            "sign in" in r -> "YouTube wants you to sign in to watch this one."
+            reason.isNullOrBlank() -> "This video can't be played."
+            else -> reason
+        }
+    }
+
     private fun playable(info: MediaItemFormatInfo): Boolean =
         !info.isUnplayable && (info.containsDashFormats() || (info.isLive && info.containsHlsUrl()))
 
@@ -482,6 +560,31 @@ class YouTubeViewModel @Inject constructor(
         val mpd = runCatching { info.createMpdStream()?.use { it.readBytes() } }.getOrNull()
         Log.i(TAG, "mpd bytes=${mpd?.size}")
         return mpd?.takeIf { it.isNotEmpty() }?.let { YouTubeMpdServer.publish(videoId, it) }
+    }
+
+    // ---- search suggestions and recent searches ----
+
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestions: StateFlow<List<String>> = _suggestions.asStateFlow()
+    private var suggestJob: Job? = null
+
+    /** What to offer under the search box for [text]; with nothing typed, your recent searches. */
+    fun suggest(text: String) {
+        suggestJob?.cancel()
+        suggestJob = viewModelScope.launch {
+            delay(250)
+            val found = withContext(Dispatchers.IO) {
+                runCatching { content.getSearchTagsObserve(text.trim()).blockingFirst() }.getOrNull().orEmpty()
+            }
+            _suggestions.value = found.filter { it.isNotBlank() }.take(8)
+        }
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { content.clearSearchHistory() }
+            _suggestions.value = emptyList()
+        }
     }
 
     fun clearError() { _error.value = null }
