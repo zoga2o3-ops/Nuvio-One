@@ -25,6 +25,8 @@ data class YtVideoInfo(
     val title: String,
     val author: String,
     val channelId: String?,
+    /** The channel's profile picture. */
+    val authorImage: String?,
     val subscribers: String?,
     val likeCount: String?,
     val liked: Boolean,
@@ -98,6 +100,7 @@ class YouTubePlayerViewModel @Inject constructor(
         title = m.title.orEmpty(),
         author = m.author.orEmpty(),
         channelId = m.channelId,
+        authorImage = m.authorImageUrl?.takeIf { it.isNotBlank() },
         subscribers = m.subscriberCount,
         likeCount = m.likeCount,
         liked = m.likeStatus == MediaItemMetadata.LIKE_STATUS_LIKE,

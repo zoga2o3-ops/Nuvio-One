@@ -1043,6 +1043,7 @@ private fun PlaybackNavHost(
             PlayerScreen(
                 showYouTubeButton = upNextVideoId != null,
                 youtubeSubscribed = ytState.info?.subscribed == true,
+                youtubeChannelImage = ytState.info?.authorImage,
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
                 onYouTubeChannel = ytState.info?.channelId?.let { channel ->
                     {

@@ -207,6 +207,7 @@ fun PlayerScreen(
     youtubeSubscribed: Boolean = false,
     onYouTubeSubscribe: (() -> Unit)? = null,
     onYouTubeChannel: (() -> Unit)? = null,
+    youtubeChannelImage: String? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
@@ -1584,6 +1585,7 @@ fun PlayerScreen(
                 youtubeSubscribed = youtubeSubscribed,
                 onYouTubeSubscribe = onYouTubeSubscribe,
                 onYouTubeChannel = onYouTubeChannel,
+                youtubeChannelImage = youtubeChannelImage,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -2647,6 +2649,7 @@ private fun PlayerControlsOverlay(
     youtubeSubscribed: Boolean,
     onYouTubeSubscribe: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
+    youtubeChannelImage: String?,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2946,6 +2949,7 @@ private fun PlayerControlsOverlay(
                         onYouTubeChannel?.let { channel ->
                             ControlButton(
                                 icon = Icons.Default.AccountCircle,
+                                avatarUrl = youtubeChannelImage,
                                 contentDescription = "Open channel",
                                 onClick = channel,
                                 upFocusRequester = progressUpTarget,
@@ -3245,7 +3249,9 @@ private fun ControlButton(
     enabled: Boolean = true,
     onDownKey: (() -> Unit)? = null,
     onFocused: (() -> Unit)? = null,
-    contentColor: Color = Color.White
+    contentColor: Color = Color.White,
+    /** A picture to show in place of the icon, drawn as a circle and not tinted. */
+    avatarUrl: String? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
@@ -3298,7 +3304,14 @@ private fun ControlButton(
         ),
         shape = IconButtonDefaults.shape(shape = CircleShape)
     ) {
-        if (iconPainter != null) {
+        if (avatarUrl != null) {
+            coil3.compose.AsyncImage(
+                model = avatarUrl,
+                contentDescription = contentDescription,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.size(32.dp).clip(CircleShape)
+            )
+        } else if (iconPainter != null) {
             Icon(
                 painter = iconPainter,
                 contentDescription = contentDescription,
