@@ -105,7 +105,7 @@ fun StartupSplashScreen(
         ) {
             // Live TV fork: "Nuvio + IPTV" logo (in the theme's colors) and what the app does.
             BrandWordmark(
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.height(88.dp),
                 contentDescription = com.nuvio.tv.livetv.branding.LiveTvBranding.APP_NAME,
                 drawableOverride = com.nuvio.tv.livetv.branding.LiveTvBranding.iptvWordmark(
                     brandWordmarkRes ?: NuvioTheme.currentTheme.brandWordmarkResource
