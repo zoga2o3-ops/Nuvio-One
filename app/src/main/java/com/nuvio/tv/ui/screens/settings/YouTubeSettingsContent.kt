@@ -2,7 +2,9 @@ package com.nuvio.tv.ui.screens.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -61,6 +63,7 @@ internal fun YouTubeSettingsContent(
     var hiddenWords by remember { mutableStateOf(YouTubeSettings.hiddenKeywords(context)) }
     var hiddenChannels by remember { mutableStateOf(YouTubeSettings.hiddenChannels(context)) }
     var newWord by remember { mutableStateOf("") }
+    var addingWord by remember { mutableStateOf(false) }
     var hideShorts by remember { mutableStateOf(YouTubeSettings.hideShorts(context)) }
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
     var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
@@ -218,28 +221,50 @@ internal fun YouTubeSettingsContent(
             title = "Hidden words and channels",
             subtitle = "Videos with these words in the title or channel name, and these channels, stay off the YouTube page"
         ) {
-            OutlinedTextField(
-                value = newWord,
-                onValueChange = { newWord = it },
-                singleLine = true,
-                label = { Text("Add a word or phrase, then press Done") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    YouTubeSettings.addHiddenKeyword(context, newWord)
-                    hiddenWords = YouTubeSettings.hiddenKeywords(context)
+            // The keyboard only opens once you choose to type, not when you scroll past the field.
+            if (!addingWord) {
+                SettingsActionRow(
+                    title = "Add a word or phrase",
+                    subtitle = "Press OK to type one",
+                    onClick = { addingWord = true }
+                )
+            } else {
+                val wordFocus = remember { FocusRequester() }
+                val keyboard = LocalSoftwareKeyboardController.current
+                LaunchedEffect(Unit) {
+                    runCatching { wordFocus.requestFocus() }
+                    keyboard?.show()
+                }
+                // Back puts the box away without adding anything.
+                BackHandler {
                     newWord = ""
-                }),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color.White,
-                    focusedBorderColor = Color.White,
-                    unfocusedBorderColor = Color.Gray,
-                    focusedLabelColor = Color.White,
-                    unfocusedLabelColor = Color.Gray
-                ),
-                modifier = Modifier.fillMaxWidth().padding(vertical = NuvioTheme.spacing.xs)
-            )
+                    addingWord = false
+                }
+                OutlinedTextField(
+                    value = newWord,
+                    onValueChange = { newWord = it },
+                    singleLine = true,
+                    label = { Text("Type a word or phrase, then press Done") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        YouTubeSettings.addHiddenKeyword(context, newWord)
+                        hiddenWords = YouTubeSettings.hiddenKeywords(context)
+                        newWord = ""
+                        addingWord = false
+                        keyboard?.hide()
+                    }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color.White,
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.Gray,
+                        focusedLabelColor = Color.White,
+                        unfocusedLabelColor = Color.Gray
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = NuvioTheme.spacing.xs).focusRequester(wordFocus)
+                )
+            }
             hiddenWords.forEach { word ->
                 SettingsActionRow(
                     title = word,
