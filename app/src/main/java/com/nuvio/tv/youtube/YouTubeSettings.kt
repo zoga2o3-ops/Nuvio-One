@@ -8,6 +8,7 @@ object YouTubeSettings {
     private const val KEY_SPONSORBLOCK = "sponsorblock_enabled"
     private const val KEY_CATEGORIES = "sponsorblock_categories"
     private const val KEY_QUALITY = "preferred_height"
+    private const val KEY_HIDDEN_TABS = "hidden_tabs"
 
     /** SponsorBlock's segment types, in the order they're listed. */
     val sponsorCategories: List<Pair<String, String>> = listOf(
@@ -41,6 +42,21 @@ object YouTubeSettings {
     fun setSponsorCategory(context: Context, category: String, on: Boolean) {
         val next = sponsorCategoriesOn(context).toMutableSet().apply { if (on) add(category) else remove(category) }
         prefs(context).edit().putStringSet(KEY_CATEGORIES, next).apply()
+    }
+
+    /** Names of the tabs you've turned off on the YouTube page. */
+    fun hiddenTabs(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_HIDDEN_TABS, null)?.toSet() ?: emptySet()
+
+    fun setTabVisible(context: Context, tab: YtTab, visible: Boolean) {
+        val next = hiddenTabs(context).toMutableSet().apply { if (visible) remove(tab.name) else add(tab.name) }
+        prefs(context).edit().putStringSet(KEY_HIDDEN_TABS, next).apply()
+    }
+
+    /** The tabs to show, in order. There is always at least one. */
+    fun visibleTabs(context: Context): List<YtTab> {
+        val hidden = hiddenTabs(context)
+        return YtTab.entries.filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
     }
 
     /** The video height to start at; 0 lets the player choose. */

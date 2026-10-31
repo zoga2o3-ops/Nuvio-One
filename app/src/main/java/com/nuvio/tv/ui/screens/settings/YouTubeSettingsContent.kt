@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.nuvio.tv.youtube.YouTubeSettings
+import com.nuvio.tv.youtube.YtTab
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
@@ -42,6 +43,7 @@ internal fun YouTubeSettingsContent(
     var sponsorOn by remember { mutableStateOf(YouTubeSettings.sponsorBlockEnabled(context)) }
     var categories by remember { mutableStateOf(YouTubeSettings.sponsorCategoriesOn(context)) }
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
+    var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -113,6 +115,30 @@ internal fun YouTubeSettingsContent(
                     YouTubeSettings.setPreferredHeight(context, quality)
                 }
             )
+        }
+
+        SettingsGroupCard(
+            title = "Tabs",
+            subtitle = "Choose which tabs show along the top of the YouTube page"
+        ) {
+            YtTab.entries.forEach { tab ->
+                val shown = tab.name !in hiddenTabs
+                val onlyOneLeft = shown && YtTab.entries.count { it.name !in hiddenTabs } <= 1
+                SettingsToggleRow(
+                    title = tab.title,
+                    subtitle = when {
+                        onlyOneLeft -> "At least one tab has to stay on"
+                        tab.needsSignIn -> "Needs a signed-in account"
+                        else -> null
+                    },
+                    checked = shown,
+                    enabled = !onlyOneLeft,
+                    onToggle = {
+                        YouTubeSettings.setTabVisible(context, tab, !shown)
+                        hiddenTabs = YouTubeSettings.hiddenTabs(context)
+                    }
+                )
+            }
         }
 
         SettingsGroupCard(

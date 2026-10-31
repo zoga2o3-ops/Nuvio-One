@@ -85,6 +85,14 @@ fun YouTubeScreen(
     val account by accountViewModel.state.collectAsState()
     var signInStarted by remember { mutableStateOf(false) }
     var showAccounts by remember { mutableStateOf(false) }
+
+    // The tabs you've left on in Settings. Read each time you come to the page.
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+    val tabs = remember { YouTubeSettings.visibleTabs(appContext) }
+    LaunchedEffect(tabs) {
+        // A tab you've since turned off can't stay open.
+        if (state.tab !in tabs) viewModel.selectTab(tabs.first())
+    }
     LaunchedEffect(Unit) { accountViewModel.refresh() }
     LaunchedEffect(account.signedIn) {
         if (signInStarted && account.signedIn) {
@@ -154,7 +162,7 @@ fun YouTubeScreen(
             Modifier.padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(YtTab.entries) { tab ->
+            items(tabs) { tab ->
                 TabChip(tab.title, selected = state.tab == tab && state.subTitle == null) {
                     query = ""
                     viewModel.selectTab(tab)
