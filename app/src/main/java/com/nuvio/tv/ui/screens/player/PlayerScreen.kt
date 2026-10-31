@@ -63,6 +63,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.AccountCircle
@@ -208,6 +209,11 @@ fun PlayerScreen(
     onYouTubeSubscribe: (() -> Unit)? = null,
     onYouTubeChannel: (() -> Unit)? = null,
     youtubeChannelImage: String? = null,
+    /** YouTube fork: the live chat button (null when the stream has no chat), and whether chat is showing. */
+    onYouTubeChat: (() -> Unit)? = null,
+    youtubeChatOn: Boolean = false,
+    /** YouTube fork: sees every key first; returns true to keep the player from acting on it. */
+    previewKeyHook: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
@@ -648,6 +654,7 @@ fun PlayerScreen(
             .focusRequester(containerFocusRequester)
             .focusable(enabled = uiState.error == null)
             .onPreviewKeyEvent { keyEvent ->
+                if (previewKeyHook?.invoke(keyEvent) == true) return@onPreviewKeyEvent true
                 // Consume the confirm KEY_UP that opened the subtitle timing dialog before
                 // the newly focused "Sync" button can treat it as a second click. Preview
                 // is required: after open, focus moves into the dialog so onKeyEvent on
@@ -1586,6 +1593,8 @@ fun PlayerScreen(
                 onYouTubeSubscribe = onYouTubeSubscribe,
                 onYouTubeChannel = onYouTubeChannel,
                 youtubeChannelImage = youtubeChannelImage,
+                onYouTubeChat = onYouTubeChat,
+                youtubeChatOn = youtubeChatOn,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -2650,6 +2659,8 @@ private fun PlayerControlsOverlay(
     onYouTubeSubscribe: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
     youtubeChannelImage: String?,
+    onYouTubeChat: (() -> Unit)?,
+    youtubeChatOn: Boolean,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2944,6 +2955,17 @@ private fun PlayerControlsOverlay(
                                 upFocusRequester = progressUpTarget,
                                 onDownKey = onHideControls,
                                 onFocused = onResetHideTimer
+                            )
+                        }
+                        onYouTubeChat?.let { chat ->
+                            ControlButton(
+                                icon = Icons.Default.Forum,
+                                contentDescription = if (youtubeChatOn) "Hide live chat" else "Show live chat",
+                                onClick = chat,
+                                upFocusRequester = progressUpTarget,
+                                onDownKey = onHideControls,
+                                onFocused = onResetHideTimer,
+                                contentColor = if (youtubeChatOn) Color(0xFFFF4D6A) else Color.White
                             )
                         }
                         onYouTubeChannel?.let { channel ->

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.liskovsoft.mediaserviceinterfaces.data.CommentItem
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
@@ -11,6 +12,8 @@ import com.liskovsoft.youtubeapi.service.data.YouTubeMediaItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.reactivex.Observable
+import io.reactivex.disposables.Disposable
+import io.reactivex.schedulers.Schedulers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,12 +35,24 @@ data class YtVideoInfo(
     val liked: Boolean,
     val disliked: Boolean,
     val subscribed: Boolean,
-    val commentsKey: String?
+    val commentsKey: String?,
+    val newestCommentsKey: String?,
+    val liveChatKey: String?
 )
 
 data class YtPlaylistRow(val id: String, val title: String, val contains: Boolean)
 
-data class YtComment(val author: String, val text: String, val likes: String?, val published: String?)
+data class YtComment(
+    val author: String,
+    val text: String,
+    val likes: String?,
+    val published: String?,
+    /** What opens this comment's replies, if it has any. */
+    val replyKey: String?,
+    val replyCount: String?
+)
+
+data class YtChatLine(val id: String, val author: String, val message: String)
 
 data class YtPlayerState(
     val info: YtVideoInfo? = null,
@@ -48,21 +63,33 @@ data class YtPlayerState(
     val playlists: List<YtPlaylistRow>? = null,
     val comments: List<YtComment> = emptyList(),
     val commentsLoading: Boolean = false,
-    val canLoadMoreComments: Boolean = false
+    val canLoadMoreComments: Boolean = false,
+    /** 0 is Top comments, 1 is Newest first. */
+    val commentsSort: Int = 0,
+    val replies: List<YtComment> = emptyList(),
+    val repliesLoading: Boolean = false,
+    val canLoadMoreReplies: Boolean = false
 )
 
 /**
  * What you can do about the YouTube video that's playing: like it, subscribe to its channel, save it to a
- * playlist, read its comments. One per player screen; [load] picks up the video it's about.
+ * playlist, read its comments, follow its live chat. One per player screen; [load] picks up the video it's about.
  */
 @HiltViewModel
 class YouTubePlayerViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ) : ViewModel() {
-    private companion object { const val TAG = "YouTubePlayerVM" }
+    private companion object {
+        const val TAG = "YouTubePlayerVM"
+        const val CHAT_LINES = 40
+    }
 
     private val _state = MutableStateFlow(YtPlayerState())
     val state: StateFlow<YtPlayerState> = _state.asStateFlow()
+
+    private val _chat = MutableStateFlow<List<YtChatLine>>(emptyList())
+    val chat: StateFlow<List<YtChatLine>> = _chat.asStateFlow()
+    private var chatSubscription: Disposable? = null
 
     private val service by lazy {
         GlobalPreferences.instance(context)
@@ -72,11 +99,17 @@ class YouTubePlayerViewModel @Inject constructor(
 
     private var videoId: String? = null
     private var nextCommentsKey: String? = null
+    private var nextRepliesKey: String? = null
+    private var commentsGen = 0
+    private var repliesGen = 0
 
     fun load(id: String) {
         if (videoId == id) return
         videoId = id
         nextCommentsKey = null
+        nextRepliesKey = null
+        stopChat()
+        _chat.value = emptyList()
         _state.value = YtPlayerState(loading = true)
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -106,7 +139,9 @@ class YouTubePlayerViewModel @Inject constructor(
         liked = m.likeStatus == MediaItemMetadata.LIKE_STATUS_LIKE,
         disliked = m.likeStatus == MediaItemMetadata.LIKE_STATUS_DISLIKE,
         subscribed = m.isSubscribed,
-        commentsKey = m.commentsKey
+        commentsKey = m.commentsKey,
+        newestCommentsKey = m.newestCommentsKey,
+        liveChatKey = m.liveChatKey?.takeIf { it.isNotBlank() }
     )
 
     private fun item(info: YtVideoInfo) = YouTubeMediaItem.fromIds(info.videoId, info.channelId)
@@ -200,34 +235,51 @@ class YouTubePlayerViewModel @Inject constructor(
 
     // ---- comments ----
 
-    fun loadComments() {
-        val key = _state.value.info?.commentsKey
+    private fun toComment(c: CommentItem) = YtComment(
+        author = c.authorName.orEmpty(),
+        text = c.message.orEmpty(),
+        likes = c.likeCount,
+        published = c.publishedDate,
+        replyKey = c.nestedCommentsKey?.takeIf { it.isNotBlank() },
+        replyCount = c.replyCount?.takeIf { it.isNotBlank() }
+    )
+
+    /** Loads the comments in the chosen order. Does nothing if that order is already showing. */
+    fun loadComments(newest: Boolean = _state.value.commentsSort == 1) {
+        val info = _state.value.info ?: return
+        val sort = if (newest) 1 else 0
+        if (_state.value.commentsSort == sort && _state.value.comments.isNotEmpty()) return
+        val key = if (newest) info.newestCommentsKey else info.commentsKey
         if (key.isNullOrBlank()) {
-            _state.update { it.copy(message = "Comments are off for this video.") }
+            _state.update {
+                it.copy(message = if (newest) "Newest first isn't available for this video." else "Comments are off for this video.")
+            }
             return
         }
-        if (_state.value.comments.isNotEmpty()) return
-        fetchComments(key)
+        nextCommentsKey = null
+        val gen = ++commentsGen
+        _state.update { it.copy(comments = emptyList(), commentsSort = sort, canLoadMoreComments = false, message = null) }
+        fetchComments(key, gen)
     }
 
     fun loadMoreComments() {
         val key = nextCommentsKey ?: return
-        fetchComments(key)
+        if (_state.value.commentsLoading) return
+        fetchComments(key, commentsGen)
     }
 
-    private fun fetchComments(key: String) {
-        if (_state.value.commentsLoading) return
-        _state.update { it.copy(commentsLoading = true, message = null) }
+    private fun fetchComments(key: String, gen: Int) {
+        _state.update { it.copy(commentsLoading = true) }
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { service.commentsService.getCommentsObserve(key).blockingFirst() } }
+            // An answer for an order you've since left isn't wanted.
+            if (gen != commentsGen) return@launch
             val group = result.getOrNull()
             nextCommentsKey = group?.nextCommentsKey
             _state.update { s ->
                 s.copy(
                     commentsLoading = false,
-                    comments = s.comments + group?.comments.orEmpty().filter { !it.isEmpty }.map {
-                        YtComment(it.authorName.orEmpty(), it.message.orEmpty(), it.likeCount, it.publishedDate)
-                    },
+                    comments = s.comments + group?.comments.orEmpty().filter { !it.isEmpty }.map(::toComment),
                     canLoadMoreComments = group?.nextCommentsKey != null,
                     message = if (result.isFailure) "Couldn't load comments." else null
                 )
@@ -235,5 +287,72 @@ class YouTubePlayerViewModel @Inject constructor(
         }
     }
 
+    // ---- replies ----
+
+    fun loadReplies(key: String) {
+        nextRepliesKey = null
+        val gen = ++repliesGen
+        _state.update { it.copy(replies = emptyList(), canLoadMoreReplies = false, message = null) }
+        fetchReplies(key, gen)
+    }
+
+    fun loadMoreReplies() {
+        val key = nextRepliesKey ?: return
+        if (_state.value.repliesLoading) return
+        fetchReplies(key, repliesGen)
+    }
+
+    fun clearReplies() {
+        repliesGen++
+        nextRepliesKey = null
+        _state.update { it.copy(replies = emptyList(), repliesLoading = false, canLoadMoreReplies = false) }
+    }
+
+    private fun fetchReplies(key: String, gen: Int) {
+        _state.update { it.copy(repliesLoading = true) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { service.commentsService.getCommentsObserve(key).blockingFirst() } }
+            if (gen != repliesGen) return@launch
+            val group = result.getOrNull()
+            nextRepliesKey = group?.nextCommentsKey
+            _state.update { s ->
+                s.copy(
+                    repliesLoading = false,
+                    replies = s.replies + group?.comments.orEmpty().filter { !it.isEmpty }.map(::toComment),
+                    canLoadMoreReplies = group?.nextCommentsKey != null,
+                    message = if (result.isFailure) "Couldn't load replies." else null
+                )
+            }
+        }
+    }
+
+    // ---- live chat ----
+
+    /** Starts following the live chat of a live stream. Messages arrive in [chat], newest last. */
+    fun startChat() {
+        val key = _state.value.info?.liveChatKey ?: return
+        if (chatSubscription?.isDisposed == false) return
+        chatSubscription = service.liveChatService.openLiveChatObserve(key)
+            .subscribeOn(Schedulers.io())
+            .subscribe(
+                { item ->
+                    val line = YtChatLine(item.id.orEmpty(), item.authorName.orEmpty(), item.message.orEmpty())
+                    if (line.message.isNotBlank()) {
+                        _chat.update { (it + line).takeLast(CHAT_LINES) }
+                    }
+                },
+                { Log.w(TAG, "live chat ended", it) }
+            )
+    }
+
+    fun stopChat() {
+        chatSubscription?.dispose()
+        chatSubscription = null
+    }
+
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    override fun onCleared() {
+        stopChat()
+    }
 }

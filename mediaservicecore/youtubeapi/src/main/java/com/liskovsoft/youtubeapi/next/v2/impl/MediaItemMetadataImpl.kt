@@ -257,6 +257,8 @@ internal data class MediaItemMetadataImpl(private val watchNextResult: WatchNext
         return liveChatKeyItem
     }
 
+    override fun getNewestCommentsKey(): String? = commentsPanel?.getNewCommentsToken()
+
     override fun getCommentsKey(): String? {
         return commentsKeyItem
     }

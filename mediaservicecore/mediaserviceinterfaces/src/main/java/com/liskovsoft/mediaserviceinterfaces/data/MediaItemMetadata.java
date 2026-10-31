@@ -23,6 +23,8 @@ public interface MediaItemMetadata {
     boolean isLive();
     String getLiveChatKey();
     String getCommentsKey();
+    /** The key for the comments in newest-first order, if the video offers that. */
+    default String getNewestCommentsKey() { return null; }
     boolean isUpcoming();
     String getChannelId();
     String getParams();

@@ -15,6 +15,7 @@ object YouTubeSettings {
     private const val KEY_REMEMBER_TAB = "remember_last_tab"
     private const val KEY_SPEED = "playback_speed"
     private const val KEY_SPONSOR_NOTICE = "sponsorblock_notice"
+    private const val KEY_SPONSOR_ASK = "sponsorblock_ask"
     private const val KEY_DEARROW_TITLES = "dearrow_titles"
     private const val KEY_DEARROW_THUMBS = "dearrow_thumbnails"
     private const val KEY_HIDE_WATCHED = "hide_watched"
@@ -87,6 +88,10 @@ object YouTubeSettings {
     fun setPlaybackSpeed(context: Context, speed: Float) = prefs(context).edit().putFloat(KEY_SPEED, speed).apply()
 
     fun setLastTab(context: Context, tab: YtTab) = prefs(context).edit().putString(KEY_LAST_TAB, tab.name).apply()
+
+    /** Ask before skipping a SponsorBlock segment, instead of skipping it straight away. */
+    fun sponsorAsk(context: Context) = prefs(context).getBoolean(KEY_SPONSOR_ASK, false)
+    fun setSponsorAsk(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_SPONSOR_ASK, on).apply()
 
     /** Whether skipping a SponsorBlock segment shows a short notice. */
     fun sponsorNotice(context: Context) = prefs(context).getBoolean(KEY_SPONSOR_NOTICE, true)

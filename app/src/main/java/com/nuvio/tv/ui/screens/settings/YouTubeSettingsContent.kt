@@ -45,6 +45,7 @@ internal fun YouTubeSettingsContent(
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
     var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
     var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
+    var sponsorAsk by remember { mutableStateOf(YouTubeSettings.sponsorAsk(context)) }
     var sponsorNotice by remember { mutableStateOf(YouTubeSettings.sponsorNotice(context)) }
     var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
     var rememberTab by remember { mutableStateOf(YouTubeSettings.rememberLastTab(context)) }
@@ -249,6 +250,15 @@ internal fun YouTubeSettingsContent(
                 }
             )
             if (sponsorOn) {
+                SettingsToggleRow(
+                    title = "Ask before skipping",
+                    subtitle = "Shows a card when a marked part starts; press OK to skip it",
+                    checked = sponsorAsk,
+                    onToggle = {
+                        sponsorAsk = !sponsorAsk
+                        YouTubeSettings.setSponsorAsk(context, sponsorAsk)
+                    }
+                )
                 SettingsToggleRow(
                     title = "Show a notice when skipping",
                     subtitle = "A short message such as \"Skipped: Sponsor\"",

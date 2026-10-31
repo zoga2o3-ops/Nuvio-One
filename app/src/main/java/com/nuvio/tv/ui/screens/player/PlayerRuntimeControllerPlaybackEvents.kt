@@ -243,7 +243,7 @@ internal fun PlayerRuntimeController.skipYouTubeSponsorSegment(player: androidx.
     val session = sponsorSession ?: com.nuvio.tv.youtube.SponsorBlockSession(
         context, id!!.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
     ).also { sponsorSession = it }
-    session.skipTarget(positionMs)?.let { player.seekTo(it) }
+    session.onPosition(positionMs) { player.seekTo(it) }
 }
 
 internal fun PlayerRuntimeController.startProgressUpdates() {

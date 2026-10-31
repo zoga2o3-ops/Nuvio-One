@@ -61,6 +61,11 @@ import com.nuvio.tv.ui.screens.settings.TmdbSettingsScreen
 import com.nuvio.tv.ui.screens.stream.StreamScreen
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 import com.nuvio.tv.ui.screens.account.AuthQrSignInScreen
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import com.nuvio.tv.youtube.SponsorBlockUi
+import com.nuvio.tv.youtube.SponsorSkipCard
+import com.nuvio.tv.youtube.YouTubeChatOverlay
 import com.nuvio.tv.youtube.YouTubePlayerPanel
 import com.nuvio.tv.youtube.YouTubeUpNext
 import com.nuvio.tv.ui.screens.cast.CastDetailScreen
@@ -1040,7 +1045,40 @@ private fun PlaybackNavHost(
                 }
             }
 
+            // Live chat on or off, and the OK press that has just answered the "skip?" card.
+            val chatOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            val consumeConfirmUp = androidx.compose.runtime.remember { booleanArrayOf(false) }
+            androidx.compose.runtime.DisposableEffect(upNextVideoId) {
+                onDispose {
+                    SponsorBlockUi.clear()
+                    ytPlayerVm.stopChat()
+                }
+            }
+
             PlayerScreen(
+                previewKeyHook = hook@{ e ->
+                    val key = e.key
+                    val confirm = key == androidx.compose.ui.input.key.Key.DirectionCenter ||
+                        key == androidx.compose.ui.input.key.Key.Enter ||
+                        key == androidx.compose.ui.input.key.Key.NumPadEnter
+                    if (!confirm) return@hook false
+                    when {
+                        e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown && SponsorBlockUi.accept() -> {
+                            consumeConfirmUp[0] = true
+                            true
+                        }
+                        e.type == androidx.compose.ui.input.key.KeyEventType.KeyUp && consumeConfirmUp[0] -> {
+                            consumeConfirmUp[0] = false
+                            true
+                        }
+                        else -> false
+                    }
+                },
+                youtubeChatOn = chatOn.value,
+                onYouTubeChat = if (ytState.info?.liveChatKey != null) ({
+                    chatOn.value = !chatOn.value
+                    if (chatOn.value) ytPlayerVm.startChat() else ytPlayerVm.stopChat()
+                }) else null,
                 showYouTubeButton = upNextVideoId != null,
                 youtubeSubscribed = ytState.info?.subscribed == true,
                 youtubeChannelImage = ytState.info?.authorImage,
@@ -1056,6 +1094,8 @@ private fun PlaybackNavHost(
                         val timeline by upNextPlayerVm.playbackTimeline.collectAsState()
                         val playerUi by upNextPlayerVm.uiState.collectAsState()
                         YouTubeUpNext(upNextVideoId, youtubeVm, timeline)
+                        SponsorSkipCard()
+                        if (chatOn.value) YouTubeChatOverlay(ytPlayerVm)
                         if (playerUi.showYouTubePanel) {
                             YouTubePlayerPanel(
                                 videoId = upNextVideoId,
