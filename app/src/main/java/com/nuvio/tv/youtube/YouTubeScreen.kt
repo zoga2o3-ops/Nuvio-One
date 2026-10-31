@@ -38,7 +38,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -70,6 +73,20 @@ fun YouTubeScreen(
     val error by viewModel.error.collectAsState()
     var query by remember { mutableStateOf("") }
 
+    // Signing in happens on this page: the code shows here and the tab reloads when it's approved.
+    val accountViewModel: YouTubeAccountViewModel = hiltViewModel()
+    val account by accountViewModel.state.collectAsState()
+    var signInStarted by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { accountViewModel.refresh() }
+    LaunchedEffect(account.signedIn) {
+        if (signInStarted && account.signedIn) {
+            signInStarted = false
+            viewModel.selectTab(state.tab)
+        }
+    }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     // Back goes up from a channel, playlist or search before it leaves the page.
     BackHandler(enabled = state.subTitle != null) { viewModel.back() }
 
@@ -92,7 +109,12 @@ fun YouTubeScreen(
                 textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
                 cursorBrush = SolidColor(Color.White),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { viewModel.search(query) }),
+                keyboardActions = KeyboardActions(onSearch = {
+                    // Close the keyboard and move on to the results.
+                    keyboard?.hide()
+                    focusManager.moveFocus(FocusDirection.Down)
+                    viewModel.search(query)
+                }),
                 modifier = Modifier
                     .width(380.dp)
                     .clip(RoundedCornerShape(24.dp))
@@ -123,25 +145,42 @@ fun YouTubeScreen(
             Text(it, color = YtRed, modifier = Modifier.padding(bottom = 8.dp).clickable { viewModel.clearError() })
         }
 
-        Content(state, viewModel, onPlay, onOpenSettings)
+        Content(
+            state = state,
+            account = account,
+            viewModel = viewModel,
+            onPlay = onPlay,
+            onSignIn = {
+                signInStarted = true
+                accountViewModel.startSignIn()
+            },
+            onCancelSignIn = {
+                signInStarted = false
+                accountViewModel.cancelSignIn()
+            }
+        )
     }
 }
 
 @Composable
 private fun Content(
     state: YtUiState,
+    account: YouTubeAccountState,
     viewModel: YouTubeViewModel,
     onPlay: (YtPlayable) -> Unit,
-    onOpenSettings: () -> Unit
+    onSignIn: () -> Unit,
+    onCancelSignIn: () -> Unit
 ) {
     when {
+        account.code != null -> SignInPanel(account, onCancelSignIn)
+
         state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = YtRed) }
 
         state.tab.needsSignIn && !state.signedIn && state.subTitle == null -> Message(
             "Sign in to see your ${state.tab.title.lowercase()}",
-            "Open Settings, then YouTube, and sign in with the code.",
-            "Open YouTube settings",
-            onOpenSettings
+            account.error ?: "You'll get a code to enter at ${account.url}.",
+            "Sign in",
+            onSignIn
         )
 
         state.error != null && state.isEmpty -> Message(
@@ -154,7 +193,7 @@ private fun Content(
             "Home is picked for you",
             "YouTube only fills it once you sign in. Try Trending, Music or Gaming above, or sign in.",
             "Sign in",
-            onOpenSettings
+            onSignIn
         )
 
         state.isEmpty -> Message("Nothing here yet", null, null) {}
@@ -196,6 +235,24 @@ private fun Content(
                     ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, onPlay) }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SignInPanel(account: YouTubeAccountState, onCancel: () -> Unit) {
+    Box(Modifier.fillMaxSize(), Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Sign in to YouTube", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "On your phone or computer, go to ${account.url} and enter this code:",
+                color = Color.Gray,
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center
+            )
+            Text(account.code.orEmpty(), color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+            Text("Waiting for you to approve it…", color = Color.Gray, fontSize = 14.sp)
+            TabChip("Cancel", selected = false, onClick = onCancel)
         }
     }
 }
