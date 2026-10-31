@@ -14,6 +14,7 @@ object YouTubeSettings {
     private const val KEY_HIDDEN_WORDS = "hidden_keywords"
     private const val KEY_HIDDEN_CHANNELS = "hidden_channels"
     private const val KEY_LAST_TAB = "last_tab"
+    private const val KEY_TAB_ORDER = "tab_order"
     private const val KEY_REMEMBER_TAB = "remember_last_tab"
     private const val KEY_SPEED = "playback_speed"
     private const val KEY_SPONSOR_NOTICE = "sponsorblock_notice"
@@ -67,10 +68,23 @@ object YouTubeSettings {
         prefs(context).edit().putStringSet(KEY_HIDDEN_TABS, next).apply()
     }
 
-    /** The tabs to show, in order. There is always at least one. */
+    /** Every tab in the order you've set. Tabs added in a later version go on the end. */
+    fun tabOrder(context: Context): List<YtTab> {
+        val saved = prefs(context).getString(KEY_TAB_ORDER, null)
+            ?.split(',')
+            ?.mapNotNull { name -> YtTab.entries.firstOrNull { it.name == name } }
+            .orEmpty()
+            .distinct()
+        return saved + YtTab.entries.filter { it !in saved }
+    }
+
+    fun setTabOrder(context: Context, order: List<YtTab>) =
+        prefs(context).edit().putString(KEY_TAB_ORDER, order.joinToString(",") { it.name }).apply()
+
+    /** The tabs to show, in your order. There is always at least one. */
     fun visibleTabs(context: Context): List<YtTab> {
         val hidden = hiddenTabs(context)
-        return YtTab.entries.filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
+        return tabOrder(context).filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
     }
 
     /** The tab you were last on, if it's still switched on; otherwise the first one. */

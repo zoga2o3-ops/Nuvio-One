@@ -54,6 +54,8 @@ internal fun YouTubeSettingsContent(
     var sponsorAsk by remember { mutableStateOf(YouTubeSettings.sponsorAsk(context)) }
     var sponsorNotice by remember { mutableStateOf(YouTubeSettings.sponsorNotice(context)) }
     var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
+    var tabOrder by remember { mutableStateOf(YouTubeSettings.tabOrder(context)) }
+    var reordering by remember { mutableStateOf(false) }
     var rememberTab by remember { mutableStateOf(YouTubeSettings.rememberLastTab(context)) }
     var deThumbs by remember { mutableStateOf(YouTubeSettings.deArrowThumbnails(context)) }
     var hiddenWords by remember { mutableStateOf(YouTubeSettings.hiddenKeywords(context)) }
@@ -281,7 +283,24 @@ internal fun YouTubeSettingsContent(
                     YouTubeSettings.setRememberLastTab(context, rememberTab)
                 }
             )
-            YtTab.entries.forEach { tab ->
+            SettingsActionRow(
+                title = "Change the order",
+                subtitle = "Pick a tab, then move it up or down",
+                onClick = { reordering = true }
+            )
+            if (reordering) {
+                TabOrderEditor(
+                    order = tabOrder,
+                    hidden = hiddenTabs,
+                    onChange = {
+                        tabOrder = it
+                        YouTubeSettings.setTabOrder(context, it)
+                    },
+                    onDone = { reordering = false }
+                )
+            }
+            // The switches show in your order, except while you're moving tabs around.
+            tabOrder.filter { !reordering }.forEach { tab ->
                 val shown = tab.name !in hiddenTabs
                 val onlyOneLeft = shown && YtTab.entries.count { it.name !in hiddenTabs } <= 1
                 SettingsToggleRow(
