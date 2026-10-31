@@ -158,7 +158,7 @@ fun BoxScope.YouTubePlayerPanel(
                         title = c.text,
                         detail = listOfNotNull(
                             c.author, c.published, c.likes?.let { "$it likes" },
-                            c.replyCount?.let { if (c.replyKey != null) "$it replies" else null }
+                            c.replyCount?.let { if (c.replyKey == null) null else if (it.any { ch -> ch.isLetter() }) it else "$it replies" }
                         ).joinToString("  ·  "),
                         titleLines = 6,
                         onClick = {
