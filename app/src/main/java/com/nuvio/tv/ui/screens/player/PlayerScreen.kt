@@ -63,6 +63,9 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
@@ -200,6 +203,10 @@ fun PlayerScreen(
     extraOverlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
     /** YouTube fork: show the YouTube button in the controls. */
     showYouTubeButton: Boolean = false,
+    /** YouTube fork: whether you're subscribed to this video's channel, and the Subscribe and Channel buttons' actions. */
+    youtubeSubscribed: Boolean = false,
+    onYouTubeSubscribe: (() -> Unit)? = null,
+    onYouTubeChannel: (() -> Unit)? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
@@ -1574,6 +1581,9 @@ fun PlayerScreen(
                 onShowQualityDialog = { viewModel.onEvent(PlayerEvent.OnShowQualityOverlay) },
                 onShowYouTubePanel = { viewModel.onEvent(PlayerEvent.OnShowYouTubePanel) },
                 showYouTubeButton = showYouTubeButton,
+                youtubeSubscribed = youtubeSubscribed,
+                onYouTubeSubscribe = onYouTubeSubscribe,
+                onYouTubeChannel = onYouTubeChannel,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -2634,6 +2644,9 @@ private fun PlayerControlsOverlay(
     onShowQualityDialog: () -> Unit,
     onShowYouTubePanel: () -> Unit,
     showYouTubeButton: Boolean,
+    youtubeSubscribed: Boolean,
+    onYouTubeSubscribe: (() -> Unit)?,
+    onYouTubeChannel: (() -> Unit)?,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2919,6 +2932,27 @@ private fun PlayerControlsOverlay(
                             onDownKey = onHideControls,
                             onFocused = onResetHideTimer
                         )
+                        // Their own buttons: subscribe to the channel, and go to it.
+                        onYouTubeSubscribe?.let { subscribe ->
+                            ControlButton(
+                                icon = if (youtubeSubscribed) Icons.Default.NotificationsActive else Icons.Default.PersonAdd,
+                                contentDescription = if (youtubeSubscribed) "Subscribed" else "Subscribe",
+                                onClick = subscribe,
+                                upFocusRequester = progressUpTarget,
+                                onDownKey = onHideControls,
+                                onFocused = onResetHideTimer
+                            )
+                        }
+                        onYouTubeChannel?.let { channel ->
+                            ControlButton(
+                                icon = Icons.Default.AccountCircle,
+                                contentDescription = "Open channel",
+                                onClick = channel,
+                                upFocusRequester = progressUpTarget,
+                                onDownKey = onHideControls,
+                                onFocused = onResetHideTimer
+                            )
+                        }
                     }
 
                     if (uiState.videoQualities.isNotEmpty() && !isLivePlayback) {

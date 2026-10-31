@@ -3,7 +3,7 @@ package com.nuvio.tv.youtube
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -22,6 +23,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -30,8 +33,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,6 +48,15 @@ private enum class PanelMode { MAIN, PLAYLISTS, COMMENTS }
 
 private val PanelBg = Color(0xF2111114)
 private val RowBg = Color(0xFF1C1C1E)
+private val Accent = Color(0xFFFF0033)
+
+/** One row in the panel's lists. */
+private class PanelEntry(
+    val title: String,
+    val detail: String?,
+    val titleLines: Int = 2,
+    val onClick: () -> Unit = {}
+)
 
 /**
  * The YouTube panel over the player: what you can do about the video that's playing. Opened from the
@@ -55,18 +71,15 @@ fun BoxScope.YouTubePlayerPanel(
 ) {
     val state by viewModel.state.collectAsState()
     var mode by remember { mutableStateOf(PanelMode.MAIN) }
-    val first = remember { FocusRequester() }
 
     LaunchedEffect(videoId) { viewModel.load(videoId) }
-    // The first row takes focus whenever the panel changes level.
-    LaunchedEffect(mode, state.info != null, state.playlists != null, state.comments.size == 0) {
-        runCatching { first.requestFocus() }
-    }
     BackHandler(enabled = mode != PanelMode.MAIN) { mode = PanelMode.MAIN }
 
     Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(440.dp).background(PanelBg)) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val info = state.info
+
+            // The heading for this level. The list below it is always there, so it always owns the remote.
             when (mode) {
                 PanelMode.MAIN -> {
                     Text(
@@ -80,120 +93,153 @@ fun BoxScope.YouTubePlayerPanel(
                             color = Color.Gray, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    if (state.loading && info == null) {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = Color(0xFFFF0033)) }
-                    }
-                    if (info != null) {
-                        PanelRow(
-                            if (info.liked) "Liked   ✓" else "Like",
-                            info.likeCount, Modifier.focusRequester(first)
-                        ) { viewModel.toggleLike() }
-                        PanelRow(if (info.disliked) "Disliked   ✓" else "Dislike", null, Modifier) { viewModel.toggleDislike() }
-                        PanelRow(
-                            if (info.subscribed) "Subscribed   ✓" else "Subscribe",
-                            info.author.takeIf(String::isNotBlank), Modifier
-                        ) { viewModel.toggleSubscribe() }
-                        PanelRow("Save to playlist", null, Modifier) {
-                            mode = PanelMode.PLAYLISTS
-                            viewModel.loadPlaylists()
-                        }
-                        PanelRow("Comments", null, Modifier) {
-                            mode = PanelMode.COMMENTS
-                            viewModel.loadComments()
-                        }
-                        info.channelId?.let { channel ->
-                            PanelRow("Open channel", info.author.takeIf(String::isNotBlank), Modifier) {
-                                onOpenChannel(channel, info.author)
-                            }
-                        }
-                    }
                 }
+                PanelMode.PLAYLISTS -> Text("Save to playlist", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                PanelMode.COMMENTS -> Text("Comments", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
 
-                PanelMode.PLAYLISTS -> {
-                    Text("Save to playlist", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    val lists = state.playlists
-                    when {
-                        lists == null -> Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) {
-                            CircularProgressIndicator(color = Color(0xFFFF0033))
-                        }
-                        lists.isEmpty() -> Text("You have no playlists.", color = Color.Gray, fontSize = 14.sp)
-                        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(lists.size) { i ->
-                                val row = lists[i]
-                                PanelRow(
-                                    if (row.contains) "${row.title}   ✓" else row.title, null,
-                                    if (i == 0) Modifier.focusRequester(first) else Modifier
-                                ) { viewModel.togglePlaylist(row) }
-                            }
-                        }
-                    }
-                }
+            val busy = when (mode) {
+                PanelMode.MAIN -> state.loading && info == null
+                PanelMode.PLAYLISTS -> state.playlists == null
+                PanelMode.COMMENTS -> state.commentsLoading && state.comments.isEmpty()
+            }
+            if (busy) {
+                Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) { CircularProgressIndicator(color = Accent) }
+            }
 
-                PanelMode.COMMENTS -> {
-                    Text("Comments", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    if (state.comments.isEmpty()) {
-                        if (state.commentsLoading) {
-                            Box(Modifier.fillMaxWidth().padding(24.dp), Alignment.Center) { CircularProgressIndicator(color = Color(0xFFFF0033)) }
-                        } else {
-                            // Keeps a row to land on, so Back and the remote still work on an empty list.
-                            PanelRow("No comments to show", null, Modifier.focusRequester(first)) { mode = PanelMode.MAIN }
-                        }
-                    } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(state.comments.size) { i ->
-                                val c = state.comments[i]
-                                PanelRow(
-                                    title = c.text,
-                                    detail = listOfNotNull(c.author, c.published, c.likes?.let { "$it likes" }).joinToString("  ·  "),
-                                    modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
-                                    titleLines = 5
-                                ) {}
-                            }
-                            if (state.canLoadMoreComments) {
-                                item {
-                                    PanelRow(if (state.commentsLoading) "Loading…" else "Load more comments", null, Modifier) {
-                                        viewModel.loadMoreComments()
-                                    }
-                                }
-                            }
-                        }
+            val entries: List<PanelEntry> = when (mode) {
+                PanelMode.MAIN -> if (info == null) emptyList() else buildList {
+                    add(PanelEntry(if (info.liked) "Liked   ✓" else "Like", info.likeCount) { viewModel.toggleLike() })
+                    add(PanelEntry(if (info.disliked) "Disliked   ✓" else "Dislike", null) { viewModel.toggleDislike() })
+                    add(PanelEntry(if (info.subscribed) "Subscribed   ✓" else "Subscribe", info.author.takeIf(String::isNotBlank)) {
+                        viewModel.toggleSubscribe()
+                    })
+                    add(PanelEntry("Save to playlist", null) {
+                        mode = PanelMode.PLAYLISTS
+                        viewModel.loadPlaylists()
+                    })
+                    add(PanelEntry("Comments", null) {
+                        mode = PanelMode.COMMENTS
+                        viewModel.loadComments()
+                    })
+                    info.channelId?.let { channel ->
+                        add(PanelEntry("Open channel", info.author.takeIf(String::isNotBlank)) { onOpenChannel(channel, info.author) })
                     }
                 }
+                PanelMode.PLAYLISTS -> state.playlists.orEmpty().map { row ->
+                    PanelEntry(if (row.contains) "${row.title}   ✓" else row.title, null) { viewModel.togglePlaylist(row) }
+                }
+                PanelMode.COMMENTS -> state.comments.map { c ->
+                    PanelEntry(
+                        title = c.text,
+                        detail = listOfNotNull(c.author, c.published, c.likes?.let { "$it likes" }).joinToString("  ·  "),
+                        titleLines = 6
+                    )
+                }
+            }
+
+            if (!busy && entries.isEmpty()) {
+                Text(
+                    when (mode) {
+                        PanelMode.MAIN -> "Couldn't load this video's details."
+                        PanelMode.PLAYLISTS -> "You have no playlists."
+                        PanelMode.COMMENTS -> "No comments to show."
+                    },
+                    color = Color.Gray, fontSize = 14.sp
+                )
+            }
+
+            // A fresh list (and selection) for each level.
+            key(mode) {
+                NavigableList(
+                    entries = entries,
+                    modifier = Modifier.weight(1f),
+                    onNearEnd = { if (mode == PanelMode.COMMENTS && state.canLoadMoreComments) viewModel.loadMoreComments() }
+                )
             }
 
             state.message?.let {
-                Text(it, color = Color(0xFFFFC107), fontSize = 13.sp, modifier = Modifier.clickable { viewModel.clearMessage() })
+                Text(it, color = Color(0xFFFFC107), fontSize = 13.sp)
             }
             if (mode == PanelMode.MAIN && !state.signedIn && info != null) {
-                Text(
-                    "Sign in on the YouTube page to like, subscribe or save.",
-                    color = Color.Gray, fontSize = 12.sp
-                )
+                Text("Sign in on the YouTube page to like, subscribe or save.", color = Color.Gray, fontSize = 12.sp)
             }
         }
     }
 }
 
+/**
+ * A list that handles the remote itself. Up and Down move a highlight and scroll it into view, OK presses
+ * the highlighted row, and Left and Right do nothing. Focus never leaves the list, so scrolling a long list
+ * can't drop you back onto the player's controls; Back is how you leave.
+ */
 @Composable
-private fun PanelRow(
-    title: String,
-    detail: String?,
-    modifier: Modifier,
-    titleLines: Int = 2,
-    onClick: () -> Unit
+private fun NavigableList(
+    entries: List<PanelEntry>,
+    modifier: Modifier = Modifier,
+    onNearEnd: () -> Unit = {}
 ) {
-    var focused by remember { mutableStateOf(false) }
-    Column(
-        modifier
+    val listState = rememberLazyListState()
+    val focus = remember { FocusRequester() }
+    var selected by remember { mutableIntStateOf(0) }
+
+    // This list keeps the remote for as long as it's showing.
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // A list that gets shorter can't leave the highlight past its end.
+    LaunchedEffect(entries.size) {
+        if (selected > entries.lastIndex) selected = entries.lastIndex.coerceAtLeast(0)
+    }
+    // Bring the highlighted row into view, only when it isn't already fully visible.
+    LaunchedEffect(selected, entries.size) {
+        if (entries.isEmpty()) return@LaunchedEffect
+        val info = listState.layoutInfo
+        val row = info.visibleItemsInfo.firstOrNull { it.index == selected }
+        val fullyVisible = row != null && row.offset >= 0 && row.offset + row.size <= info.viewportEndOffset
+        if (!fullyVisible) listState.animateScrollToItem(selected)
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(RowBg)
-            .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp)
+            .focusRequester(focus)
+            .focusable()
+            .onPreviewKeyEvent { e ->
+                val handled = when (e.key) {
+                    Key.DirectionDown, Key.DirectionUp, Key.DirectionLeft, Key.DirectionRight,
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> true
+                    else -> false
+                }
+                if (handled && e.type == KeyEventType.KeyDown) {
+                    when (e.key) {
+                        Key.DirectionDown -> {
+                            if (selected < entries.lastIndex) selected += 1
+                            if (selected >= entries.lastIndex - 2) onNearEnd()
+                        }
+                        Key.DirectionUp -> if (selected > 0) selected -= 1
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> entries.getOrNull(selected)?.onClick?.invoke()
+                        else -> Unit
+                    }
+                }
+                handled
+            },
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(title, color = Color.White, fontSize = 15.sp, maxLines = titleLines, overflow = TextOverflow.Ellipsis)
-        if (!detail.isNullOrBlank()) Text(detail, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        itemsIndexed(entries) { index, entry ->
+            val isSelected = index == selected
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSelected) Color(0xFF2A2A2E) else RowBg)
+                    .border(2.dp, if (isSelected) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
+            ) {
+                Text(entry.title, color = Color.White, fontSize = 15.sp, maxLines = entry.titleLines, overflow = TextOverflow.Ellipsis)
+                if (!entry.detail.isNullOrBlank()) {
+                    Text(entry.detail, color = Color.Gray, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
     }
 }

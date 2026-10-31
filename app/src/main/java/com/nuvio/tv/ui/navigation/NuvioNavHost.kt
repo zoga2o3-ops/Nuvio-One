@@ -1029,8 +1029,27 @@ private fun PlaybackNavHost(
 
             val ytPlayerVm: com.nuvio.tv.youtube.YouTubePlayerViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 
+            val ytState by ytPlayerVm.state.collectAsState()
+            // Know the channel and whether you're subscribed from the start, so the buttons are right.
+            androidx.compose.runtime.LaunchedEffect(upNextVideoId) { upNextVideoId?.let { ytPlayerVm.load(it) } }
+            // Say what a button did, whether or not the panel is open.
+            androidx.compose.runtime.LaunchedEffect(ytState.message) {
+                ytState.message?.let { message ->
+                    android.widget.Toast.makeText(playerContext, message, android.widget.Toast.LENGTH_SHORT).show()
+                    ytPlayerVm.clearMessage()
+                }
+            }
+
             PlayerScreen(
                 showYouTubeButton = upNextVideoId != null,
+                youtubeSubscribed = ytState.info?.subscribed == true,
+                onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
+                onYouTubeChannel = ytState.info?.channelId?.let { channel ->
+                    {
+                        youtubeVm?.openChannel(channel, ytState.info?.author.orEmpty())
+                        navController.popBackStack()
+                    }
+                },
                 extraOverlay = {
                     if (upNextVideoId != null && youtubeVm != null) {
                         val timeline by upNextPlayerVm.playbackTimeline.collectAsState()
