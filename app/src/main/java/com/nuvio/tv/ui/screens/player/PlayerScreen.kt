@@ -1584,7 +1584,8 @@ fun PlayerScreen(
                 onShowChaptersPanel = { viewModel.onEvent(PlayerEvent.OnShowChaptersPanel) },
                 onShowEpisodesPanel = { viewModel.onEvent(PlayerEvent.OnShowEpisodesPanel) },
                 onShowSourcesPanel = { viewModel.onEvent(PlayerEvent.OnShowSourcesPanel) },
-                onShowPartyPanel = if (partyAvailable && viewModel.canUseParty) {
+                // YouTube fork: no watch party for YouTube videos.
+                onShowPartyPanel = if (partyAvailable && viewModel.canUseParty && !showYouTubeButton) {
                     { viewModel.onEvent(PlayerEvent.OnShowPartyPanel) }
                 } else {
                     null
@@ -3035,15 +3036,18 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    ControlButton(
-                        icon = Icons.Default.SwapHoriz,
-                        iconPainter = customSourcePainter,
-                        contentDescription = stringResource(R.string.cd_sources),
-                        onClick = onShowSourcesPanel,
-                        upFocusRequester = progressUpTarget,
-                        onDownKey = onHideControls,
-                        onFocused = onResetHideTimer
-                    )
+                    // YouTube fork: a YouTube video has no other sources to switch to.
+                    if (!showYouTubeButton) {
+                        ControlButton(
+                            icon = Icons.Default.SwapHoriz,
+                            iconPainter = customSourcePainter,
+                            contentDescription = stringResource(R.string.cd_sources),
+                            onClick = onShowSourcesPanel,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onHideControls,
+                            onFocused = onResetHideTimer
+                        )
+                    }
 
                     if (hasEpisodeContext) {
                         ControlButton(
