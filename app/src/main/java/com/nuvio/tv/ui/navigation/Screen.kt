@@ -148,6 +148,8 @@ sealed class Screen(val route: String) {
     data object Recordings : Screen("recordings")
     /** Live TV fork: scores, schedules and where to watch. */
     data object Sports : Screen("sports")
+    /** YouTube fork: its own section, kept off Home. */
+    data object YouTube : Screen("youtube")
     data object Tracking : Screen("trakt")
     data object WatchParty : Screen("watch_party?code={code}") {
         fun createRoute(code: String = ""): String = "watch_party?code=$code"

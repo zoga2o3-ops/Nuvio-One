@@ -815,6 +815,10 @@ internal fun PlayerRuntimeController.saveWatchProgressInternal(position: Long, d
     // Live TV fork: a recording keeps its own place (kept out of Continue Watching and history).
     if (com.nuvio.tv.livetv.record.RecordingResume.isRecording(contentType)) {
         if (position >= 1000) com.nuvio.tv.livetv.record.RecordingResume.save(context, contentId, position, duration)
+        // YouTube fork: also keep the bar on the card, and tell YouTube when signed in.
+        if (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)) {
+            com.nuvio.tv.youtube.YouTubeProgress.record(context, contentId, position, duration)
+        }
         return
     }
     if (contentType.equals("cloud", ignoreCase = true)) {
@@ -1128,7 +1132,7 @@ fun PlayerRuntimeController.scheduleHideControls() {
     hideControlsJob?.cancel()
     hideControlsJob = scope.launch {
         delay(3000)
-        if (_uiState.value.isPlaying && !_uiState.value.showAudioOverlay &&
+        if (_uiState.value.isPlaying && !_uiState.value.showAudioOverlay && !_uiState.value.showQualityOverlay &&
             !_uiState.value.showSubtitleOverlay && !_uiState.value.showSubtitleStylePanel &&
             !_uiState.value.showSpeedDialog && !_uiState.value.showMoreDialog &&
             !_uiState.value.showSubtitleDelayOverlay &&
@@ -1240,7 +1244,7 @@ internal fun PlayerRuntimeController.schedulePauseOverlay() {
         val s = _uiState.value
         val anyPanelOpen = s.showSubtitleOverlay || s.showSubtitleStylePanel ||
             s.showSpeedDialog || s.showMoreDialog || s.showEpisodesPanel ||
-            s.showSourcesPanel || s.showChaptersPanel || s.showAudioOverlay || s.showStreamInfoOverlay ||
+            s.showSourcesPanel || s.showChaptersPanel || s.showAudioOverlay || s.showQualityOverlay || s.showStreamInfoOverlay ||
             s.showSubtitleTimingDialog || s.showSubtitleDelayOverlay || s.showPartyPanel
         if (!s.isPlaying && s.pauseOverlayEnabled && s.error == null && !anyPanelOpen) {
             _uiState.update { it.copy(showPauseOverlay = true, showControls = false) }
@@ -1585,6 +1589,25 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                 scheduleHideControls()
             }
         }
+        PlayerEvent.OnShowQualityOverlay -> {
+            _uiState.update {
+                it.copy(
+                    showQualityOverlay = true,
+                    showAudioOverlay = false,
+                    showSubtitleOverlay = false,
+                    showSubtitleStylePanel = false,
+                    showMoreDialog = false,
+                    showSubtitleTimingDialog = false,
+                    showSubtitleDelayOverlay = false,
+                    showControls = true
+                )
+            }
+        }
+        is PlayerEvent.OnSelectVideoQuality -> {
+            selectVideoQuality(event.height)
+            _uiState.update { it.copy(showQualityOverlay = false, selectedVideoQualityHeight = event.height) }
+            scheduleHideControls()
+        }
         PlayerEvent.OnShowAudioOverlay -> {
             _uiState.update {
                 it.copy(
@@ -1754,6 +1777,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         PlayerEvent.OnDismissTransientOverlay -> {
             _uiState.update {
                 it.copy(
+                    showQualityOverlay = false,
                     showAudioOverlay = false,
                     showSubtitleOverlay = false,
                     showSubtitleStylePanel = false,

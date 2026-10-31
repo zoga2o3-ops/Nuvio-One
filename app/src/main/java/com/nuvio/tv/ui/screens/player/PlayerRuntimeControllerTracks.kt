@@ -25,6 +25,34 @@ import java.util.Locale
 import com.nuvio.tv.ui.util.languageCodeToName
 
 @UnstableApi
+/** Pins playback to [height] (the best supported track of that size), or back to automatic when 0. */
+internal fun PlayerRuntimeController.selectVideoQuality(height: Int) {
+    val player = _exoPlayer ?: return
+    val params = player.trackSelectionParameters.buildUpon()
+        .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+    if (height > 0) {
+        var bestGroup: androidx.media3.common.TrackGroup? = null
+        var bestIndex = -1
+        var bestBitrate = -1
+        for (g in player.currentTracks.groups) {
+            if (g.type != C.TRACK_TYPE_VIDEO) continue
+            for (i in 0 until g.length) {
+                if (!g.isTrackSupported(i)) continue
+                val f = g.getTrackFormat(i)
+                if (f.height == height && f.bitrate > bestBitrate) {
+                    bestGroup = g.mediaTrackGroup
+                    bestIndex = i
+                    bestBitrate = f.bitrate
+                }
+            }
+        }
+        if (bestGroup != null) {
+            params.setOverrideForType(androidx.media3.common.TrackSelectionOverride(bestGroup, bestIndex))
+        }
+    }
+    player.trackSelectionParameters = params.build()
+}
+
 internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
     logSwitchTrace(
         stage = "exo-tracks-update-start",
@@ -289,6 +317,14 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         selectedAudioIndex = restoredIndex
     }
 
+    val videoQualities = tracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { g -> (0 until g.length).filter { g.isTrackSupported(it) }.map { g.getTrackFormat(it).height } }
+        .filter { it > 0 }
+        .distinct()
+        .sortedDescending()
+        .let { heights -> if (heights.size > 1) heights.map { VideoQualityOption(it, "${it}p") } else emptyList() }
+
     _uiState.update { state ->
         val finalSubtitleIndex = when {
             state.selectedAddonSubtitle != null -> -1
@@ -297,6 +333,7 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         }
         state.copy(
             audioTracks = audioTracks,
+            videoQualities = videoQualities,
             subtitleTracks = subtitleTracks,
             selectedAudioTrackIndex = selectedAudioIndex,
             selectedSubtitleTrackIndex = finalSubtitleIndex,

@@ -61,6 +61,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
@@ -347,7 +348,7 @@ fun PlayerScreen(
             returnToDetailsFromEndPrompt()
         } else if (uiState.error != null) {
             exitPlayerFromError()
-        } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay) {
+        } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay) {
             viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
         } else if (uiState.showStreamInfoOverlay) {
             dismissStreamInfoOverlay()
@@ -545,6 +546,7 @@ fun PlayerScreen(
         uiState.showSubtitleDelayOverlay,
         uiState.showSubtitleTimingDialog,
         uiState.showAudioOverlay,
+        uiState.showQualityOverlay,
         uiState.showSubtitleOverlay,
         uiState.showSpeedDialog,
         shouldConfirmNextEpisodeOnEnd,
@@ -554,7 +556,7 @@ fun PlayerScreen(
         if (uiState.error != null) return@LaunchedEffect
         if (uiState.showPartyPanel) return@LaunchedEffect
         if (uiState.showControls && !uiState.showEpisodesPanel && !uiState.showSourcesPanel && !uiState.showChaptersPanel &&
-            !uiState.showAudioOverlay && !uiState.showSubtitleOverlay &&
+            !uiState.showAudioOverlay && !uiState.showSubtitleOverlay && !uiState.showQualityOverlay &&
             !uiState.showSubtitleStylePanel && !uiState.showSubtitleDelayOverlay &&
             !uiState.showSubtitleTimingDialog &&
             !uiState.showSpeedDialog
@@ -800,7 +802,7 @@ fun PlayerScreen(
                 // When a side panel or dialog is open, let it handle all keys
                 val panelOrDialogOpen = uiState.showEpisodesPanel || uiState.showSourcesPanel || uiState.showPartyPanel ||
                         uiState.showChaptersPanel ||
-                        uiState.showAudioOverlay || uiState.showSubtitleOverlay ||
+                        uiState.showAudioOverlay || uiState.showSubtitleOverlay || uiState.showQualityOverlay ||
                         uiState.showSubtitleStylePanel || uiState.showSpeedDialog ||
                         uiState.showSubtitleDelayOverlay || uiState.showSubtitleTimingDialog ||
                         uiState.showMoreDialog ||
@@ -1563,6 +1565,7 @@ fun PlayerScreen(
                 },
                 partyActive = partyState.party != null,
                 onShowAudioDialog = { viewModel.onEvent(PlayerEvent.OnShowAudioOverlay) },
+                onShowQualityDialog = { viewModel.onEvent(PlayerEvent.OnShowQualityOverlay) },
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -1971,6 +1974,16 @@ fun PlayerScreen(
                 )
             }
         }
+
+        QualitySelectionOverlay(
+            visible = uiState.showQualityOverlay,
+            options = uiState.videoQualities,
+            selectedHeight = uiState.selectedVideoQualityHeight,
+            onSelected = { viewModel.onEvent(PlayerEvent.OnSelectVideoQuality(it)) },
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(2.6f)
+        )
 
         // Audio track dialog
         AudioSelectionOverlay(
@@ -2608,6 +2621,7 @@ private fun PlayerControlsOverlay(
     onShowPartyPanel: (() -> Unit)?,
     partyActive: Boolean,
     onShowAudioDialog: () -> Unit,
+    onShowQualityDialog: () -> Unit,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2878,6 +2892,17 @@ private fun PlayerControlsOverlay(
                             iconPainter = customSubtitlePainter,
                             contentDescription = stringResource(R.string.cd_subtitles),
                             onClick = onShowSubtitleDialog,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onHideControls,
+                            onFocused = onResetHideTimer
+                        )
+                    }
+
+                    if (uiState.videoQualities.isNotEmpty() && !isLivePlayback) {
+                        ControlButton(
+                            icon = Icons.Default.HighQuality,
+                            contentDescription = "Video quality",
+                            onClick = onShowQualityDialog,
                             upFocusRequester = progressUpTarget,
                             onDownKey = onHideControls,
                             onFocused = onResetHideTimer

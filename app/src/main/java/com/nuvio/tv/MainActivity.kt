@@ -52,6 +52,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.GridView
@@ -1136,6 +1137,7 @@ open class MainActivity : ComponentActivity() {
                             add(Screen.OnDemand.route)
                             add(Screen.Recordings.route)
                             add(Screen.Sports.route)
+                            add(Screen.YouTube.route)
                             add(Screen.Search.route)
                             add(Screen.Library.route)
                             add(Screen.Settings.route)
@@ -1218,6 +1220,8 @@ open class MainActivity : ComponentActivity() {
                                 }
                             }
                             liveTvPages.forEachIndexed { i, page -> add(if (i == 0) page.copy(sectionStart = true) else page) }
+                            // YouTube fork: its own section after the Live TV pages.
+                            add(DrawerItem(route = Screen.YouTube.route, label = "YouTube", icon = Icons.Default.PlayCircle, sectionStart = true))
                             add(
                                 DrawerItem(
                                     route = Screen.Settings.route,

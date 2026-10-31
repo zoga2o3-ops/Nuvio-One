@@ -1420,6 +1420,29 @@ private fun PlaybackNavHost(
             )
         }
 
+        composable(Screen.YouTube.route) {
+            // YouTube fork: browse and search, played in Nuvio's own player.
+            com.nuvio.tv.youtube.YouTubeScreen(
+                onOpenSettings = {
+                    navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+                },
+                onPlay = { v ->
+                    navController.navigate(
+                        Screen.Player.createRoute(
+                            streamUrl = v.url,
+                            title = v.title,
+                            headers = v.headers.takeIf { it.isNotEmpty() },
+                            contentId = "youtube:" + v.videoId,
+                            contentType = "youtube",
+                            contentName = v.title,
+                            poster = v.poster,
+                            addonName = "YouTube"
+                        )
+                    )
+                }
+            )
+        }
+
         composable(Screen.Sports.route) {
             // Live TV fork: the Sports page (scores, schedules, which of your channels show each game).
             com.nuvio.tv.livetv.sports.SportsScreen(

@@ -139,7 +139,12 @@ object RecordingResume {
     private const val PREFIX = "rec:"
 
     fun contentIdFor(recordingId: String) = PREFIX + recordingId
-    fun isRecording(contentType: String?) = contentType.equals(CONTENT_TYPE, ignoreCase = true)
+    /** YouTube fork: YouTube videos use the same path: own resume point, never Continue Watching, history or Trakt. */
+    const val YOUTUBE_CONTENT_TYPE = "youtube"
+
+    fun isRecording(contentType: String?) =
+        contentType.equals(CONTENT_TYPE, ignoreCase = true) ||
+            contentType.equals(YOUTUBE_CONTENT_TYPE, ignoreCase = true)
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

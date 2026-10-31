@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CloudDownload
@@ -171,6 +172,7 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     // Live TV fork
     SettingsCategory.LIVE_TV -> SettingsSectionSpec(category, "Live TV", Icons.Default.LiveTv, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SPORTS -> SettingsSectionSpec(category, "Sports", Icons.Default.EmojiEvents, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.YOUTUBE -> SettingsSectionSpec(category, "YouTube", Icons.Default.PlayCircle, destination = SettingsSectionDestination.Inline)
     SettingsCategory.EXPERIENCE -> SettingsSectionSpec(category, stringResource(R.string.settings_experience), Icons.Default.Tune, destination = SettingsSectionDestination.Inline)
 }
 
@@ -243,6 +245,7 @@ fun SettingsScreen(
             SettingsCategory.TRACKING to FocusRequester(),
             SettingsCategory.LIVE_TV to FocusRequester(),
             SettingsCategory.SPORTS to FocusRequester(),
+            SettingsCategory.YOUTUBE to FocusRequester(),
             SettingsCategory.PLAYBACK to FocusRequester(),
             SettingsCategory.ADVANCED to FocusRequester(),
             SettingsCategory.ABOUT to FocusRequester(),
@@ -980,6 +983,13 @@ private fun SettingsDetailPane(
             page = LiveTvPage.HUB,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.LIVE_TV]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.YOUTUBE -> YouTubeSettingsContent(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.YOUTUBE]
             } else {
                 null
             }

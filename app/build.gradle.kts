@@ -393,7 +393,9 @@ android.defaultConfig.versionCode = (android.defaultConfig.versionCode ?: 1) * 1
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         val isPlaystore = variant.productFlavors.any { it.second == "playstore" }
-        variant.applicationId.set(if (isPlaystore) "com.nuvio.appdebug" else "com.nuvio.livetv")
+        // -PlivetvDebugAppId=<id> installs a debug build next to another copy (own data, own icon).
+        val debugAppId = (findProperty("livetvDebugAppId") as String?)?.takeIf { it.isNotBlank() } ?: "com.nuvio.livetv"
+        variant.applicationId.set(if (isPlaystore) "com.nuvio.appdebug" else debugAppId)
     }
     // Live TV fork: release builds get their own app ID too, so they install next to official
     // Nuvio and update the fork's earlier builds in place.
@@ -476,6 +478,9 @@ sentry {
 }
 
 dependencies {
+    // YouTube hub engine (SmartTube MediaServiceCore, MIT)
+    implementation(project(":mediaservicecore:youtubeapi"))
+    implementation(project(":mediaservicecore:sharedutils"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
 

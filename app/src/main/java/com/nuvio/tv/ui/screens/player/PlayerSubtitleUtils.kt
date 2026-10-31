@@ -286,5 +286,29 @@ internal object PlayerSubtitleUtils {
             .build()
     }
 
+    /**
+     * Puts a text cue back in the middle: drops the position, width and alignment the caption file
+     * asked for, so it's laid out like an ordinary subtitle.
+     */
+    fun centerCue(cue: Cue): Cue {
+        if (cue.bitmap != null || cue.verticalType != Cue.TYPE_UNSET) return cue
+        val builder = cue.buildUpon()
+            .setPosition(Cue.DIMEN_UNSET)
+            .setPositionAnchor(Cue.TYPE_UNSET)
+            .setSize(Cue.DIMEN_UNSET)
+            .setTextAlignment(android.text.Layout.Alignment.ALIGN_CENTER)
+        // Captions in TTML can also align inside the text itself.
+        val text = cue.text
+        if (text is android.text.Spanned) {
+            val spans = text.getSpans(0, text.length, android.text.style.AlignmentSpan::class.java)
+            if (spans.isNotEmpty()) {
+                val copy = android.text.SpannableStringBuilder(text)
+                spans.forEach { copy.removeSpan(it) }
+                builder.setText(copy)
+            }
+        }
+        return builder.build()
+    }
+
     private const val BOTTOM_CUE_LINE_FRACTION = 0.6f
 }

@@ -112,6 +112,11 @@ data class PlayerUiState(
     val centerMixLevelDb: Int = 0,
     val isCenterMixAvailable: Boolean = false,
     val showAudioOverlay: Boolean = false,
+    /** Video sizes the stream offers, tallest first; only set when there is a real choice. */
+    val videoQualities: List<VideoQualityOption> = emptyList(),
+    val showQualityOverlay: Boolean = false,
+    /** The chosen video height; 0 is automatic. */
+    val selectedVideoQualityHeight: Int = 0,
     val showSubtitleOverlay: Boolean = false,
     val showSubtitleStylePanel: Boolean = false,
     val showSubtitleTimingDialog: Boolean = false,
@@ -273,6 +278,8 @@ data class PlaybackTimelineState(
     val watchedDurationMs: Long = 0L
 )
 
+data class VideoQualityOption(val height: Int, val label: String)
+
 data class TrackInfo(
     val index: Int,
     val name: String,
@@ -328,6 +335,8 @@ sealed class PlayerEvent {
     data class OnSetPlaybackSpeed(val speed: Float) : PlayerEvent()
     data object OnToggleControls : PlayerEvent()
     data object OnShowAudioOverlay : PlayerEvent()
+    data object OnShowQualityOverlay : PlayerEvent()
+    data class OnSelectVideoQuality(val height: Int) : PlayerEvent()
     data object OnShowSubtitleOverlay : PlayerEvent()
     data object OnOpenSubtitleStylePanel : PlayerEvent()
     data object OnDismissSubtitleStylePanel : PlayerEvent()

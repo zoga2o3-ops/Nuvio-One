@@ -895,6 +895,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                 subtitleDelayUsProvider = subtitleDelayUs::get,
                 audioDelayUsProvider = audioDelayUs::get,
                 shouldNormalizeCuePositionProvider = { true },
+                // YouTube fork: YouTube captions carry their own position and alignment, which
+                // can push them off-centre; show them like normal subtitles.
+                shouldCenterCuesProvider = { com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) },
                 shouldStripSdhProvider = {
                     currentPlayerSettingsForReport.subtitleStyle.stripSdh
                 },
@@ -2124,6 +2127,7 @@ private class SubtitleOffsetRenderersFactory(
     private val subtitleDelayUsProvider: () -> Long,
     private val audioDelayUsProvider: () -> Long,
     private val shouldNormalizeCuePositionProvider: () -> Boolean,
+    private val shouldCenterCuesProvider: () -> Boolean = { false },
     private val shouldStripSdhProvider: () -> Boolean,
     private val isBuiltInSubtitleProvider: () -> Boolean,
     private val isSidecarAddonSubtitleActiveProvider: () -> Boolean = { false },
@@ -2275,6 +2279,7 @@ private class SubtitleOffsetRenderersFactory(
         val normalizingOutput = CueNormalizingTextOutput(
             delegate = SdhFilteringTextOutput(CueTrackingTextOutput(output, onCuesShown), shouldStripSdhProvider),
             shouldNormalizeCuePositionProvider = shouldNormalizeCuePositionProvider,
+            shouldCenterCuesProvider = shouldCenterCuesProvider,
             isBuiltInSubtitleProvider = isBuiltInSubtitleProvider,
             isSidecarAddonSubtitleActiveProvider = isSidecarAddonSubtitleActiveProvider,
             videoBoundsFractionProvider = videoBoundsFractionProvider
@@ -2325,6 +2330,7 @@ private fun FfmpegAudioRenderer.applyDownmixSettings(
 private class CueNormalizingTextOutput(
     private val delegate: TextOutput,
     private val shouldNormalizeCuePositionProvider: () -> Boolean,
+    private val shouldCenterCuesProvider: () -> Boolean,
     private val isBuiltInSubtitleProvider: () -> Boolean,
     private val isSidecarAddonSubtitleActiveProvider: () -> Boolean,
     private val videoBoundsFractionProvider: () -> RectF?
@@ -2397,6 +2403,9 @@ private class CueNormalizingTextOutput(
         processed = PlayerSubtitleRtlFix.fixCueText(processed, isBuiltInSubtitleProvider())
         if (shouldNormalizeCuePositionProvider()) {
             processed = PlayerSubtitleUtils.normalizeBottomCuePosition(processed)
+        }
+        if (shouldCenterCuesProvider()) {
+            processed = PlayerSubtitleUtils.centerCue(processed)
         }
         if (processed.bitmap != null) {
             val bounds = videoBoundsFractionProvider()

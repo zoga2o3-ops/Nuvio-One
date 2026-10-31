@@ -27,3 +27,10 @@ rootProject.name = "My Application"
 include(":app")
 include(":baselineprofile")
 include(":ffmpeg-decoder-downmix")
+
+// SmartTube's YouTube engine (MediaServiceCore, MIT). See mediaservicecore/LICENSE-*.
+include(":mediaservicecore:mediaserviceinterfaces")
+include(":mediaservicecore:youtubeapi")
+include(":mediaservicecore:sharedutils")
+include(":mediaservicecore:commons-io-2.8.0")
+include(":mediaservicecore:j2v8")
