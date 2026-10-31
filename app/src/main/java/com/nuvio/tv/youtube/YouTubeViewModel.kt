@@ -378,16 +378,42 @@ class YouTubeViewModel @Inject constructor(
     private var queue: List<YtItem> = emptyList()
     private val played = HashSet<String>()
 
+    /** What will play after the video on now, once it's been picked. Shown as the "up next" card. */
+    private val _upNext = MutableStateFlow<YtItem?>(null)
+    val upNext: StateFlow<YtItem?> = _upNext.asStateFlow()
+    private var upNextFor: String? = null
+
+    /**
+     * Picks what plays after [currentVideoId] ahead of time, and starts looking up its stream, so the
+     * card can show it and the switch is instant when the video ends.
+     */
+    fun prepareNext(currentVideoId: String) {
+        if (upNextFor == currentVideoId) return
+        upNextFor = currentVideoId
+        _upNext.value = null
+        viewModelScope.launch {
+            val next = pickNext(currentVideoId)
+            if (upNextFor == currentVideoId) _upNext.value = next
+            next?.let { lookup(it) }
+        }
+    }
+
+    /** The video after [currentVideoId]: the rest of the list it came from, then YouTube's pick. */
+    private suspend fun pickNext(currentVideoId: String): YtItem? {
+        played += currentVideoId
+        val fromList = queue.dropWhile { it.videoId != currentVideoId }.drop(1)
+            .firstOrNull { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
+        return fromList ?: withContext(Dispatchers.IO) { runCatching { upNext(currentVideoId) }.getOrNull() }
+    }
+
     /**
      * Plays the video after [currentVideoId], and calls [onReady] with it on the main thread, or
      * [onNone] if there isn't one. Used when a video ends and autoplay is on.
      */
     fun playNext(currentVideoId: String, onReady: (YtPlayable) -> Unit, onNone: () -> Unit) {
         viewModelScope.launch {
-            played += currentVideoId
-            val fromList = queue.dropWhile { it.videoId != currentVideoId }.drop(1)
-                .firstOrNull { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
-            val next = fromList ?: withContext(Dispatchers.IO) { runCatching { upNext(currentVideoId) }.getOrNull() }
+            // The one the card showed, if it was picked in time.
+            val next = _upNext.value?.takeIf { upNextFor == currentVideoId } ?: pickNext(currentVideoId)
             if (next == null) {
                 onNone()
                 return@launch

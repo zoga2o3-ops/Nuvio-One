@@ -195,6 +195,8 @@ fun PlayerScreen(
     onBackPress: (currentVideoId: String?, currentSeason: Int?, currentEpisode: Int?, autoPlayEnabled: Boolean, playbackCompleted: Boolean) -> Unit,
     onPlaybackErrorBack: () -> Unit = { onBackPress(null, null, null, false, false) },
     onPlaybackEnded: ((nextVideoId: String?, nextSeason: Int?, nextEpisode: Int?, exitReason: PlayerExitReason?) -> Unit)? = null,
+    /** YouTube fork: anything extra to draw over the player, such as the "up next" card. */
+    extraOverlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
     onOpenRecommendationDetails: (PostPlayRecommendation) -> Unit = {},
     onOpenPartyMedia: (PartyMedia) -> Unit = {}
@@ -1974,6 +1976,8 @@ fun PlayerScreen(
                 )
             }
         }
+
+        extraOverlay()
 
         QualitySelectionOverlay(
             visible = uiState.showQualityOverlay,

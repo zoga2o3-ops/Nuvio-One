@@ -61,6 +61,7 @@ import com.nuvio.tv.ui.screens.settings.TmdbSettingsScreen
 import com.nuvio.tv.ui.screens.stream.StreamScreen
 import com.nuvio.tv.ui.screens.home.ContinueWatchingItem
 import com.nuvio.tv.ui.screens.account.AuthQrSignInScreen
+import com.nuvio.tv.youtube.YouTubeUpNext
 import com.nuvio.tv.ui.screens.cast.CastDetailScreen
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionMode
 import com.nuvio.tv.ui.screens.profile.ProfileSelectionScreen
@@ -1018,7 +1019,20 @@ private fun PlaybackNavHost(
                 null
             }
 
+            val upNextVideoId = backStackEntry.arguments?.getString("contentId")
+                ?.takeIf { com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(it) }
+                ?.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
+            // The same view model the player screen uses, so the card can follow the playback position.
+            val upNextPlayerVm: com.nuvio.tv.ui.screens.player.PlayerViewModel =
+                androidx.hilt.navigation.compose.hiltViewModel()
+
             PlayerScreen(
+                extraOverlay = {
+                    if (upNextVideoId != null && youtubeVm != null) {
+                        val timeline by upNextPlayerVm.playbackTimeline.collectAsState()
+                        YouTubeUpNext(upNextVideoId, youtubeVm, timeline)
+                    }
+                },
                 onBackPress = { currentVideoId, currentSeason, currentEpisode, autoPlayEnabled, playbackCompleted ->
                     val args = backStackEntry.arguments
                     // Live TV fork: a recording goes back to Recordings (it has no details page).
