@@ -82,8 +82,13 @@ data class YtPlayable(
     val title: String,
     val poster: String?,
     val videoId: String,
-    val headers: Map<String, String> = emptyMap()
-)
+    val headers: Map<String, String> = emptyMap(),
+    /** When this was looked up. YouTube's stream links stop working after a few hours. */
+    val lookedUpAt: Long = android.os.SystemClock.elapsedRealtime()
+) {
+    /** Still safe to play from, without asking YouTube again. */
+    val isFresh: Boolean get() = android.os.SystemClock.elapsedRealtime() - lookedUpAt < 20 * 60 * 1000L
+}
 
 /**
  * The YouTube section's data. Everything here is shown only inside the YouTube page; nothing is
@@ -442,7 +447,7 @@ class YouTubeViewModel @Inject constructor(
     /** One lookup per video at a time: hovering a card and then pressing OK share the same request. */
     private fun lookup(video: YtItem): Deferred<Result<YtPlayable>> {
         val id = video.videoId ?: return CompletableDeferred(Result.failure(IllegalStateException("Not a video")))
-        resolved[id]?.let { return CompletableDeferred(Result.success(it)) }
+        resolved[id]?.takeIf { it.isFresh }?.let { return CompletableDeferred(Result.success(it)) }
         return inflight.getOrPut(id) {
             viewModelScope.async(Dispatchers.IO) {
                 runCatching { resolveBlocking(video) }.also { r ->
@@ -462,7 +467,7 @@ class YouTubeViewModel @Inject constructor(
      */
     fun prefetch(item: YtItem) {
         val id = item.videoId ?: return
-        if (item.kind != YtKind.VIDEO || resolved.containsKey(id)) return
+        if (item.kind != YtKind.VIDEO || resolved[id]?.isFresh == true) return
         prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch {
             delay(PREFETCH_DELAY_MS)

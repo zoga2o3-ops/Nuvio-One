@@ -149,3 +149,16 @@
 
 -dontwarn java.beans.ConstructorProperties
 -dontwarn java.beans.Transient
+
+# YouTube fork: SmartTube's MediaServiceCore reads YouTube's JSON into classes by field name, calls into a
+# JavaScript engine, and builds its requests with reflection. Shrinking or renaming any of it breaks YouTube.
+-keep class com.liskovsoft.** { *; }
+-keepclassmembers class com.liskovsoft.** { *; }
+-dontwarn com.liskovsoft.**
+-keep class com.eclipsesource.v8.** { *; }
+-dontwarn com.eclipsesource.v8.**
+-keep class com.nuvio.tv.youtube.** { *; }
+-dontwarn org.chromium.net.**
+-dontwarn com.google.net.cronet.**
+-dontwarn com.jayway.jsonpath.**
+-dontwarn net.minidev.**

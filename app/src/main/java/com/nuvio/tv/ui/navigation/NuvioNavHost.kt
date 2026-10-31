@@ -1085,7 +1085,8 @@ private fun PlaybackNavHost(
                     chatOn.value = !chatOn.value
                     if (chatOn.value) ytPlayerVm.startChat() else ytPlayerVm.stopChat()
                 }) else null,
-                showYouTubeButton = upNextVideoId != null,
+                // The YouTube page has to be underneath for the panel and buttons to work.
+                showYouTubeButton = upNextVideoId != null && youtubeVm != null,
                 youtubeSubscribed = ytState.info?.subscribed == true,
                 youtubeChannelImage = ytState.info?.authorImage,
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,

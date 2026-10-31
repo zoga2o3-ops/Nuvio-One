@@ -1,3 +1,35 @@
+<!-- 1tube-front -->
+# Nuvio + IPTV + 1Tube
+
+**A fork of [NuvioPlusIPTV](https://github.com/homelessbrian/NuvioPlusIPTV) that adds a YouTube section: everything in Nuvio plus IPTV, plus YouTube, in one app for Google TV, Android TV and Fire TV.**
+
+1Tube is built on [Nuvio](https://github.com/NuvioMedia/NuvioTV) and the Live TV work of NuvioPlusIPTV, with the authors' agreement. Nuvio accounts, add-ons, Trakt, Simkl and the rest work as they do there.
+
+### What 1Tube adds
+- **A YouTube page of its own** in the side menu: Home, Subscriptions, History, Playlists, Live, Music, Gaming, News, Sports, Shorts and Channels, which you can turn on or off and put in any order. Nothing from YouTube shows up on Home or in Continue Watching.
+- **Sign in with a QR code**, switch between accounts and channel profiles, and your watch progress goes back to YouTube.
+- **Search with suggestions and history**, channel and playlist pages, and endless scrolling.
+- **Plays in Nuvio's own player**, with a video quality picker, a choice of video format, chapters, loop, captions, autoplay of the next video with an up-next card, and a remembered playback speed.
+- **Like, dislike, subscribe, save to a playlist, comments** (Top or Newest, with replies) and **live chat**, from a panel in the player.
+- **SponsorBlock** (skip or ask first) and **DeArrow** (community titles and thumbnails).
+- **Hide Shorts, watched videos, upcoming videos, words and whole channels.**
+
+### Credits
+- The YouTube engine is [MediaServiceCore](https://github.com/yuliskov/MediaServiceCore) from [SmartTube](https://github.com/yuliskov/SmartTube), by Yurii Liskov, used under the MIT licence (the licence texts are in `mediaservicecore/`).
+- SponsorBlock and DeArrow data come from [sponsor.ajay.app](https://sponsor.ajay.app) and [dearrow.ajay.app](https://dearrow.ajay.app), used under CC BY-NC-SA 4.0.
+- This project is **not affiliated with or endorsed by Google, YouTube, SmartTube, or the Nuvio project**. YouTube is a trademark of Google LLC.
+
+### Building
+Needs JDK 17 and the Android SDK. Copy `local.example.properties` to `local.properties` and fill in the services you use, then:
+
+```
+./gradlew :app:assembleFullDebug
+```
+
+The YouTube code is in `app/src/main/java/com/nuvio/tv/youtube/`. It is licensed GPL-3.0 like the rest of the project; if you share a build, share its source too.
+
+---
+
 <div align="center">
 
 # Nuvio + IPTV

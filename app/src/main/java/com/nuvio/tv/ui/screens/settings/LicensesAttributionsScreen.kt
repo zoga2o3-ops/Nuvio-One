@@ -74,6 +74,9 @@ private const val PremiumizeUrl = "https://www.premiumize.me"
 private const val TorboxUrl = "https://torbox.app"
 private const val MdbListUrl = "https://mdblist.com"
 private const val IntroDbUrl = "https://introdb.app/"
+private const val SmartTubeUrl = "https://github.com/yuliskov/SmartTube"
+private const val SponsorBlockUrl = "https://sponsor.ajay.app"
+private const val DeArrowUrl = "https://dearrow.ajay.app"
 private const val ImdbDatasetsUrl = "https://developer.imdb.com/non-commercial-datasets/"
 private const val ApacheLicenseUrl = "https://www.apache.org/licenses/LICENSE-2.0"
 private const val HazeLicenseUrl = "https://github.com/chrisbanes/haze/blob/1.7.2/LICENSE"
@@ -399,6 +402,21 @@ private fun dataAttributionItems() = listOf(
         body = stringResource(R.string.licenses_attributions_introdb_body),
         url = IntroDbUrl,
         logo = LicenseLogo.Drawable(R.drawable.introdb_favicon)
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.licenses_attributions_smarttube_title),
+        body = stringResource(R.string.licenses_attributions_smarttube_body),
+        url = SmartTubeUrl
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.licenses_attributions_sponsorblock_title),
+        body = stringResource(R.string.licenses_attributions_sponsorblock_body),
+        url = SponsorBlockUrl
+    ),
+    LicenseAttributionItem(
+        title = stringResource(R.string.licenses_attributions_dearrow_title),
+        body = stringResource(R.string.licenses_attributions_dearrow_body),
+        url = DeArrowUrl
     ),
     LicenseAttributionItem(
         title = stringResource(R.string.licenses_attributions_imdb_title),
