@@ -101,6 +101,18 @@ fun YouTubeScreen(
 
     Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Who's watching: the account or channel profile in use. Sign in when there's none.
+            // First in the row, so pressing up from the first tab lands straight on it.
+            TabChip(
+                label = if (account.signedIn) "●  ${account.accountName ?: "Account"}" else "Sign in",
+                selected = false
+            ) {
+                if (account.signedIn) showAccounts = !showAccounts
+                else {
+                    signInStarted = true
+                    accountViewModel.startSignIn()
+                }
+            }
             Text(
                 state.subTitle ?: "YouTube",
                 color = Color.White,
@@ -108,7 +120,7 @@ fun YouTubeScreen(
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.width(360.dp)
+                modifier = Modifier.width(300.dp)
             )
             var focused by remember { mutableStateOf(false) }
             BasicTextField(
@@ -136,18 +148,6 @@ fun YouTubeScreen(
                     inner()
                 }
             )
-            Spacer(Modifier.weight(1f))
-            // Who's watching: the account or channel profile in use. Sign in when there's none.
-            TabChip(
-                label = if (account.signedIn) "\u25CF  ${account.accountName ?: "Account"}" else "Sign in",
-                selected = false
-            ) {
-                if (account.signedIn) showAccounts = !showAccounts
-                else {
-                    signInStarted = true
-                    accountViewModel.startSignIn()
-                }
-            }
         }
 
         LazyRow(
