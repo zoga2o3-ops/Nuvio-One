@@ -59,9 +59,9 @@ fun BoxScope.YouTubeUpNext(
         Modifier
             .align(Alignment.BottomEnd)
             // Above the seek bar, so it doesn't sit on the controls.
-            .padding(end = 40.dp, bottom = 120.dp)
-            .width(260.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .padding(end = 32.dp, bottom = 110.dp)
+            .width(180.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xE6111114))
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -72,16 +72,15 @@ fun BoxScope.YouTubeUpNext(
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
             )
         }
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text("Up next in $seconds", color = Color(0xFFBBBBBB), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
+            Text("Up next in $seconds", color = Color(0xFFBBBBBB), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 item.title,
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            item.author?.let { Text(it, color = Color(0xFF999999), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
 }
