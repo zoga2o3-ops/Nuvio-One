@@ -341,6 +341,19 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         )
     }
     updateAudioControlAvailability(audioTracks, selectedAudioIndex)
+    // YouTube fork: start at your default quality, once, when the sizes are known.
+    if (!youtubeQualityApplied && videoQualities.isNotEmpty() &&
+        com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)
+    ) {
+        youtubeQualityApplied = true
+        val preferred = com.nuvio.tv.youtube.YouTubeSettings.preferredHeight(context)
+        if (preferred > 0) {
+            val height = videoQualities.map { it.height }.firstOrNull { it <= preferred }
+                ?: videoQualities.last().height
+            selectVideoQuality(height)
+            _uiState.update { it.copy(selectedVideoQualityHeight = height) }
+        }
+    }
     logSwitchTrace(
         stage = "exo-tracks-update-end",
         message = "audioCount=${audioTracks.size} subtitleCount=${subtitleTracks.size} " +

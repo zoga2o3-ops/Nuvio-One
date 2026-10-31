@@ -236,6 +236,16 @@ internal fun shouldTreatAsNaturalPlaybackCompletion(
 /** Streams shorter than ~2:01 are treated as error/placeholder clips, not real episodes. */
 internal fun isShortPlaceholderDuration(duration: Long): Boolean = duration in 1..120_999L
 
+/** YouTube fork: jumps past a SponsorBlock segment you've chosen to skip. */
+internal fun PlayerRuntimeController.skipYouTubeSponsorSegment(player: androidx.media3.exoplayer.ExoPlayer, positionMs: Long) {
+    val id = contentId
+    if (!com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(id) || player.isCurrentMediaItemLive) return
+    val session = sponsorSession ?: com.nuvio.tv.youtube.SponsorBlockSession(
+        context, id!!.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
+    ).also { sponsorSession = it }
+    session.skipTarget(positionMs)?.let { player.seekTo(it) }
+}
+
 internal fun PlayerRuntimeController.startProgressUpdates() {
     progressJob?.cancel()
     progressJob = scope.launch {
@@ -349,6 +359,7 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
 
             _exoPlayer?.let { player ->
                 val pos = player.currentPosition.coerceAtLeast(0L)
+                skipYouTubeSponsorSegment(player, pos)
                 val playerDuration = player.duration
                 if (playerDuration > lastKnownDuration) {
                     lastKnownDuration = playerDuration

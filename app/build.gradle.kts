@@ -177,8 +177,11 @@ android {
         buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
 
         // In-app updater (GitHub Releases)
-        buildConfigField("String", "GITHUB_OWNER", "\"homelessbrian\"")
-        buildConfigField("String", "GITHUB_REPO", "\"NuvioPlusIPTV\"")
+        // YouTube fork: no update source by default, so it never checks (or downloads from) someone
+        // else's releases. Build with -PlivetvUpdateRepo=owner/repo to turn the updater on.
+        val updateRepo = (findProperty("livetvUpdateRepo") as String?).orEmpty().trim()
+        buildConfigField("String", "GITHUB_OWNER", "\"${updateRepo.substringBefore('/', "")}\"")
+        buildConfigField("String", "GITHUB_REPO", "\"${updateRepo.substringAfter('/', "")}\"")
     }
 
     flavorDimensions += "distribution"

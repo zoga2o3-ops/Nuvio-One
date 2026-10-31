@@ -5,6 +5,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.nuvio.tv.youtube.YouTubeSettings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
@@ -31,8 +38,13 @@ internal fun YouTubeSettingsContent(
     val state by viewModel.state.collectAsState()
     LaunchedEffect(Unit) { viewModel.refresh() }
 
+    val context = LocalContext.current
+    var sponsorOn by remember { mutableStateOf(YouTubeSettings.sponsorBlockEnabled(context)) }
+    var categories by remember { mutableStateOf(YouTubeSettings.sponsorCategoriesOn(context)) }
+    var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
+
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
     ) {
         SettingsDetailHeader(
@@ -85,6 +97,48 @@ internal fun YouTubeSettingsContent(
                         onClick = viewModel::startSignIn,
                         leadingIcon = Icons.Default.Login,
                         modifier = first
+                    )
+                }
+            }
+        }
+
+        SettingsGroupCard(title = "Playback") {
+            SettingsActionRow(
+                title = "Default quality",
+                subtitle = "The video size to start at. You can still change it in the player.",
+                value = YouTubeSettings.qualityLabel(quality),
+                onClick = {
+                    val choices = YouTubeSettings.qualityChoices
+                    quality = choices[(choices.indexOf(quality).coerceAtLeast(0) + 1) % choices.size]
+                    YouTubeSettings.setPreferredHeight(context, quality)
+                }
+            )
+        }
+
+        SettingsGroupCard(
+            title = "SponsorBlock",
+            subtitle = "Skips parts of videos that viewers have marked, such as sponsor reads"
+        ) {
+            SettingsToggleRow(
+                title = "Skip marked segments",
+                subtitle = "Jumps past them and shows what was skipped",
+                checked = sponsorOn,
+                onToggle = {
+                    sponsorOn = !sponsorOn
+                    YouTubeSettings.setSponsorBlockEnabled(context, sponsorOn)
+                }
+            )
+            if (sponsorOn) {
+                YouTubeSettings.sponsorCategories.forEach { (key, label) ->
+                    SettingsToggleRow(
+                        title = label,
+                        subtitle = null,
+                        checked = key in categories,
+                        onToggle = {
+                            val on = key !in categories
+                            YouTubeSettings.setSponsorCategory(context, key, on)
+                            categories = YouTubeSettings.sponsorCategoriesOn(context)
+                        }
                     )
                 }
             }

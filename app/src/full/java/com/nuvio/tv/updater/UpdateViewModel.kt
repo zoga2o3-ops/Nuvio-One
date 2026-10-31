@@ -77,6 +77,8 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates(force: Boolean, showNoUpdateFeedback: Boolean) {
+        // YouTube fork: no update source is set, so there is nothing to check.
+        if (BuildConfig.GITHUB_OWNER.isBlank() || BuildConfig.GITHUB_REPO.isBlank()) return
         if (!force && !_uiState.value.updateBannerEnabled) return
 
         updateCheckJob?.cancel()
