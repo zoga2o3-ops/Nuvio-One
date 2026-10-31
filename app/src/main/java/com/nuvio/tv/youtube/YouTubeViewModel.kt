@@ -374,12 +374,50 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    /** What plays after the video that's on now: the rest of the list it was picked from, then YouTube's pick. */
+    private var queue: List<YtItem> = emptyList()
+    private val played = HashSet<String>()
+
+    /**
+     * Plays the video after [currentVideoId], and calls [onReady] with it on the main thread, or
+     * [onNone] if there isn't one. Used when a video ends and autoplay is on.
+     */
+    fun playNext(currentVideoId: String, onReady: (YtPlayable) -> Unit, onNone: () -> Unit) {
+        viewModelScope.launch {
+            played += currentVideoId
+            val fromList = queue.dropWhile { it.videoId != currentVideoId }.drop(1)
+                .firstOrNull { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
+            val next = fromList ?: withContext(Dispatchers.IO) { runCatching { upNext(currentVideoId) }.getOrNull() }
+            if (next == null) {
+                onNone()
+                return@launch
+            }
+            lookup(next).await().fold(
+                onSuccess = { onReady(it) },
+                onFailure = { onNone() }
+            )
+        }
+    }
+
+    /** YouTube's own "up next", or the first suggestion that hasn't played yet. */
+    private fun upNext(currentVideoId: String): YtItem? {
+        val meta = service.mediaItemService.getMetadataObserve(currentVideoId).blockingFirst()
+        val candidates = listOfNotNull(meta.nextVideo) + meta.suggestions.orEmpty().flatMap { it.mediaItems.orEmpty() }
+        val items = candidates.mapNotNull(::toItem).filter { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
+        // Whatever follows keeps playing on from this list.
+        queue = listOfNotNull(toItem(candidates.firstOrNull() ?: return null)) + items
+        return items.firstOrNull()
+    }
+
     /** Plays a video, or opens a channel or playlist. [onReady] runs on the main thread. */
-    fun activate(item: YtItem, onReady: (YtPlayable) -> Unit) {
+    fun activate(item: YtItem, from: List<YtItem>, onReady: (YtPlayable) -> Unit) {
         if (item.kind != YtKind.VIDEO) {
             open(item)
             return
         }
+        // What was on screen with it becomes the list that plays on from here.
+        queue = from.filter { it.kind == YtKind.VIDEO }
+        played.clear()
         prefetchJob?.cancel()
         viewModelScope.launch {
             lookup(item).await().fold(

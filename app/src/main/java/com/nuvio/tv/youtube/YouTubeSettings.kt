@@ -9,6 +9,8 @@ object YouTubeSettings {
     private const val KEY_CATEGORIES = "sponsorblock_categories"
     private const val KEY_QUALITY = "preferred_height"
     private const val KEY_HIDDEN_TABS = "hidden_tabs"
+    private const val KEY_AUTOPLAY = "autoplay_next"
+    private const val KEY_CODEC = "codec_preference"
 
     /** SponsorBlock's segment types, in the order they're listed. */
     val sponsorCategories: List<Pair<String, String>> = listOf(
@@ -57,6 +59,43 @@ object YouTubeSettings {
     fun visibleTabs(context: Context): List<YtTab> {
         val hidden = hiddenTabs(context)
         return YtTab.entries.filter { it.name !in hidden }.ifEmpty { listOf(YtTab.HOME) }
+    }
+
+    /** Play the next video when one ends. */
+    fun autoplayNext(context: Context) = prefs(context).getBoolean(KEY_AUTOPLAY, true)
+
+    fun setAutoplayNext(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTOPLAY, on).apply()
+    }
+
+    /** Which video format to prefer when YouTube offers the same size in several. */
+    val codecChoices = listOf("auto", "avc", "vp9", "av1")
+
+    fun codecPreference(context: Context): String =
+        prefs(context).getString(KEY_CODEC, "auto")?.takeIf { it in codecChoices } ?: "auto"
+
+    fun setCodecPreference(context: Context, codec: String) {
+        prefs(context).edit().putString(KEY_CODEC, codec).apply()
+    }
+
+    fun codecLabel(codec: String) = when (codec) {
+        "avc" -> "H.264 (most compatible)"
+        "vp9" -> "VP9"
+        "av1" -> "AV1"
+        else -> "Auto"
+    }
+
+    /** Video MIME types in the order to try them. Auto leaves AV1 for last: few boxes decode it well. */
+    fun codecMimeOrder(context: Context): List<String> {
+        val vp9 = "video/x-vnd.on2.vp9"
+        val avc = "video/avc"
+        val av1 = "video/av01"
+        return when (codecPreference(context)) {
+            "avc" -> listOf(avc, vp9, av1)
+            "vp9" -> listOf(vp9, avc, av1)
+            "av1" -> listOf(av1, vp9, avc)
+            else -> listOf(vp9, avc, av1)
+        }
     }
 
     /** The video height to start at; 0 lets the player choose. */

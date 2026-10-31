@@ -44,6 +44,8 @@ internal fun YouTubeSettingsContent(
     var categories by remember { mutableStateOf(YouTubeSettings.sponsorCategoriesOn(context)) }
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
     var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
+    var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
+    var codec by remember { mutableStateOf(YouTubeSettings.codecPreference(context)) }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -105,6 +107,25 @@ internal fun YouTubeSettingsContent(
         }
 
         SettingsGroupCard(title = "Playback") {
+            SettingsToggleRow(
+                title = "Autoplay next video",
+                subtitle = "When a video ends, play the next one in the list, or YouTube's pick",
+                checked = autoplay,
+                onToggle = {
+                    autoplay = !autoplay
+                    YouTubeSettings.setAutoplayNext(context, autoplay)
+                }
+            )
+            SettingsActionRow(
+                title = "Video format",
+                subtitle = "Auto prefers VP9, then H.264, and leaves AV1 for last. Pick H.264 if video stutters.",
+                value = YouTubeSettings.codecLabel(codec),
+                onClick = {
+                    val choices = YouTubeSettings.codecChoices
+                    codec = choices[(choices.indexOf(codec).coerceAtLeast(0) + 1) % choices.size]
+                    YouTubeSettings.setCodecPreference(context, codec)
+                }
+            )
             SettingsActionRow(
                 title = "Default quality",
                 subtitle = "The video size to start at. You can still change it in the player.",

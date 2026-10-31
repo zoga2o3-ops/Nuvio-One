@@ -25,6 +25,15 @@ import java.util.Locale
 import com.nuvio.tv.ui.util.languageCodeToName
 
 @UnstableApi
+/** YouTube fork: tells the player which video format to prefer when a size comes in several. */
+internal fun PlayerRuntimeController.applyYouTubeCodecPreference() {
+    val player = _exoPlayer ?: return
+    val order = com.nuvio.tv.youtube.YouTubeSettings.codecMimeOrder(context)
+    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        .setPreferredVideoMimeTypes(*order.toTypedArray())
+        .build()
+}
+
 /** Pins playback to [height] (the best supported track of that size), or back to automatic when 0. */
 internal fun PlayerRuntimeController.selectVideoQuality(height: Int) {
     val player = _exoPlayer ?: return
@@ -34,14 +43,22 @@ internal fun PlayerRuntimeController.selectVideoQuality(height: Int) {
         var bestGroup: androidx.media3.common.TrackGroup? = null
         var bestIndex = -1
         var bestBitrate = -1
+        // YouTube fork: the chosen codec comes first; the rest only if that size isn't offered in it.
+        val order = if (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)) {
+            com.nuvio.tv.youtube.YouTubeSettings.codecMimeOrder(context)
+        } else emptyList()
+        var bestRank = Int.MAX_VALUE
         for (g in player.currentTracks.groups) {
             if (g.type != C.TRACK_TYPE_VIDEO) continue
             for (i in 0 until g.length) {
                 if (!g.isTrackSupported(i)) continue
                 val f = g.getTrackFormat(i)
-                if (f.height == height && f.bitrate > bestBitrate) {
+                if (f.height != height) continue
+                val rank = order.indexOf(f.sampleMimeType).let { if (it < 0) order.size else it }
+                if (rank < bestRank || (rank == bestRank && f.bitrate > bestBitrate)) {
                     bestGroup = g.mediaTrackGroup
                     bestIndex = i
+                    bestRank = rank
                     bestBitrate = f.bitrate
                 }
             }
@@ -346,6 +363,7 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)
     ) {
         youtubeQualityApplied = true
+        applyYouTubeCodecPreference()
         val preferred = com.nuvio.tv.youtube.YouTubeSettings.preferredHeight(context)
         if (preferred > 0) {
             val height = videoQualities.map { it.height }.firstOrNull { it <= preferred }

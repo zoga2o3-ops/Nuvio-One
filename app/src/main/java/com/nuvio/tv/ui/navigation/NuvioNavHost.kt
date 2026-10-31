@@ -67,6 +67,19 @@ import com.nuvio.tv.ui.screens.profile.ProfileSelectionScreen
 import com.nuvio.tv.ui.screens.tmdb.TmdbEntityBrowseScreen
 import com.nuvio.tv.ui.screens.home.HeroBackdropState
 
+/** The player route for a YouTube video; used from the page and when autoplay moves on. */
+private fun youtubePlayerRoute(v: com.nuvio.tv.youtube.YtPlayable): String =
+    Screen.Player.createRoute(
+        streamUrl = v.url,
+        title = v.title,
+        headers = v.headers.takeIf { it.isNotEmpty() },
+        contentId = com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX + v.videoId,
+        contentType = "youtube",
+        contentName = v.title,
+        poster = v.poster,
+        addonName = "YouTube"
+    )
+
 @Composable
 fun NuvioNavHost(
     navController: NavHostController,
@@ -995,6 +1008,16 @@ private fun PlaybackNavHost(
                 }
             }
 
+            // YouTube fork: the YouTube page is still underneath the player, and its view model knows what plays next.
+            val playerContext = androidx.compose.ui.platform.LocalContext.current
+            val youtubeEntry: androidx.navigation.NavBackStackEntry? =
+                runCatching { navController.getBackStackEntry(Screen.YouTube.route) }.getOrNull()
+            val youtubeVm: com.nuvio.tv.youtube.YouTubeViewModel? = if (youtubeEntry != null) {
+                androidx.hilt.navigation.compose.hiltViewModel<com.nuvio.tv.youtube.YouTubeViewModel>(youtubeEntry)
+            } else {
+                null
+            }
+
             PlayerScreen(
                 onBackPress = { currentVideoId, currentSeason, currentEpisode, autoPlayEnabled, playbackCompleted ->
                     val args = backStackEntry.arguments
@@ -1102,6 +1125,24 @@ private fun PlaybackNavHost(
                 },
                 onPlaybackEnded = { nextVideoId, nextSeason, nextEpisode, exitReason ->
                     val args = backStackEntry.arguments
+                    // YouTube fork: a video that ends by itself carries on with the next one, if autoplay is on.
+                    val endedYouTubeId = args?.getString("contentId")
+                        ?.takeIf { com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(it) }
+                        ?.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
+                    if (endedYouTubeId != null && exitReason == null && youtubeVm != null &&
+                        com.nuvio.tv.youtube.YouTubeSettings.autoplayNext(playerContext)
+                    ) {
+                        youtubeVm.playNext(
+                            currentVideoId = endedYouTubeId,
+                            onReady = { v ->
+                                navController.navigate(youtubePlayerRoute(v)) {
+                                    popUpTo(backStackEntry.destination.id) { inclusive = true }
+                                }
+                            },
+                            onNone = { navController.popBackStack() }
+                        )
+                        return@PlayerScreen
+                    }
                     // Live TV fork: a recording that finishes goes back to Recordings.
                     if (com.nuvio.tv.livetv.record.RecordingResume.isRecording(args?.getString("contentType"))) {
                         navController.popBackStack()
@@ -1426,20 +1467,7 @@ private fun PlaybackNavHost(
                 onOpenSettings = {
                     navController.navigate(Screen.Settings.route) { launchSingleTop = true }
                 },
-                onPlay = { v ->
-                    navController.navigate(
-                        Screen.Player.createRoute(
-                            streamUrl = v.url,
-                            title = v.title,
-                            headers = v.headers.takeIf { it.isNotEmpty() },
-                            contentId = "youtube:" + v.videoId,
-                            contentType = "youtube",
-                            contentName = v.title,
-                            poster = v.poster,
-                            addonName = "YouTube"
-                        )
-                    )
-                }
+                onPlay = { v -> navController.navigate(youtubePlayerRoute(v)) }
             )
         }
 

@@ -256,7 +256,7 @@ private fun Content(
                     LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         items(row.items) { v ->
                             ItemCard(v, Modifier.width(260.dp), onFocused = { viewModel.prefetch(v) }) {
-                                viewModel.activate(v, onPlay)
+                                viewModel.activate(v, row.items, onPlay)
                             }
                         }
                     }
@@ -281,7 +281,7 @@ private fun Content(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 gridItems(state.grid) { v ->
-                    ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, onPlay) }
+                    ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
                 }
             }
         }
