@@ -150,6 +150,13 @@ private fun Content(
             "Try again"
         ) { viewModel.selectTab(state.tab) }
 
+        state.isEmpty && !state.signedIn && state.tab == YtTab.HOME && state.subTitle == null -> Message(
+            "Home is picked for you",
+            "YouTube only fills it once you sign in. Try Trending, Music or Gaming above, or sign in.",
+            "Sign in",
+            onOpenSettings
+        )
+
         state.isEmpty -> Message("Nothing here yet", null, null) {}
 
         state.rows.isNotEmpty() -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {

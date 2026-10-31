@@ -130,6 +130,7 @@ class YouTubeViewModel @Inject constructor(
             val signed = runCatching { service.signInService.isSigned }.getOrDefault(false)
             _state.update { it.copy(signedIn = signed) }
             if (tab.needsSignIn && !signed) return@load Feed.Nothing
+            withRetry {
             when (tab) {
                 YtTab.HOME -> rows(content.homeObserve.blockingFirst())
                 YtTab.TRENDING -> rows(content.trendingObserve.blockingFirst())
@@ -142,6 +143,7 @@ class YouTubeViewModel @Inject constructor(
                 YtTab.CHANNELS -> grid(content.subscribedChannelsObserve.blockingFirst())
                 YtTab.HISTORY -> grid(content.historyObserve.blockingFirst())
                 YtTab.PLAYLISTS -> grid(content.playlistsObserve.blockingFirst())
+            }
             }
         }
     }
@@ -206,6 +208,25 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Runs a feed request, trying again if YouTube answers with nothing or an error. Right after a
+     * clean install the first answers can be empty until the engine has set up its session, so the
+     * first retry also asks it to refresh that.
+     */
+    private fun <T> withRetry(block: () -> T): T {
+        var last: Throwable? = null
+        for (attempt in 0 until 3) {
+            try {
+                return block()
+            } catch (e: Throwable) {
+                last = e
+                if (attempt == 0) runCatching { service.refreshCacheIfNeeded() }
+                if (attempt < 2) Thread.sleep(1500L * (attempt + 1))
+            }
+        }
+        throw last ?: IllegalStateException("No answer from YouTube")
+    }
+
     private sealed interface Feed {
         data object Nothing : Feed
         class Rows(val rows: List<YtRow>) : Feed
@@ -247,7 +268,11 @@ class YouTubeViewModel @Inject constructor(
                 },
                 onFailure = { e ->
                     Log.e(TAG, "couldn't load $label", e)
-                    _state.update { it.copy(loading = false, error = e.message ?: "Couldn't load $label") }
+                    _state.update {
+                        // "Nothing came back" is an empty page, not a broken connection.
+                        if (e is NoSuchElementException) it.copy(loading = false)
+                        else it.copy(loading = false, error = e.message ?: "Couldn't load $label")
+                    }
                 }
             )
         }
