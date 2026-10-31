@@ -1,6 +1,7 @@
 package com.nuvio.tv.youtube
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,7 +10,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,11 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil3.compose.AsyncImage
+import com.nuvio.tv.core.qr.QrCodeGenerator
 
 private val YtRed = Color(0xFFFF0033)
 private val CardBg = Color(0xFF1C1C1E)
@@ -77,6 +84,7 @@ fun YouTubeScreen(
     val accountViewModel: YouTubeAccountViewModel = hiltViewModel()
     val account by accountViewModel.state.collectAsState()
     var signInStarted by remember { mutableStateOf(false) }
+    var showAccounts by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { accountViewModel.refresh() }
     LaunchedEffect(account.signedIn) {
         if (signInStarted && account.signedIn) {
@@ -89,6 +97,7 @@ fun YouTubeScreen(
 
     // Back goes up from a channel, playlist or search before it leaves the page.
     BackHandler(enabled = state.subTitle != null) { viewModel.back() }
+    BackHandler(enabled = showAccounts) { showAccounts = false }
 
     Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -127,6 +136,18 @@ fun YouTubeScreen(
                     inner()
                 }
             )
+            Spacer(Modifier.weight(1f))
+            // Who's watching: the account or channel profile in use. Sign in when there's none.
+            TabChip(
+                label = if (account.signedIn) "\u25CF  ${account.accountName ?: "Account"}" else "Sign in",
+                selected = false
+            ) {
+                if (account.signedIn) showAccounts = !showAccounts
+                else {
+                    signInStarted = true
+                    accountViewModel.startSignIn()
+                }
+            }
         }
 
         LazyRow(
@@ -157,6 +178,20 @@ fun YouTubeScreen(
             onCancelSignIn = {
                 signInStarted = false
                 accountViewModel.cancelSignIn()
+            },
+            showAccounts = showAccounts,
+            onSelectAccount = { id ->
+                showAccounts = false
+                accountViewModel.selectAccount(id) { viewModel.selectTab(state.tab) }
+            },
+            onAddAccount = {
+                showAccounts = false
+                signInStarted = true
+                accountViewModel.startSignIn()
+            },
+            onSignOut = {
+                showAccounts = false
+                accountViewModel.signOut { viewModel.selectTab(state.tab) }
             }
         )
     }
@@ -169,10 +204,16 @@ private fun Content(
     viewModel: YouTubeViewModel,
     onPlay: (YtPlayable) -> Unit,
     onSignIn: () -> Unit,
-    onCancelSignIn: () -> Unit
+    onCancelSignIn: () -> Unit,
+    showAccounts: Boolean,
+    onSelectAccount: (Int) -> Unit,
+    onAddAccount: () -> Unit,
+    onSignOut: () -> Unit
 ) {
     when {
         account.code != null -> SignInPanel(account, onCancelSignIn)
+
+        showAccounts -> AccountsPanel(account, onSelectAccount, onAddAccount, onSignOut)
 
         state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = YtRed) }
 
@@ -241,18 +282,84 @@ private fun Content(
 
 @Composable
 private fun SignInPanel(account: YouTubeAccountState, onCancel: () -> Unit) {
+    val qr = remember(account.activateLink) {
+        account.activateLink?.let { link ->
+            runCatching { QrCodeGenerator.generate(link, 480, margin = 1).asImageBitmap() }.getOrNull()
+        }
+    }
     Box(Modifier.fillMaxSize(), Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("Sign in to YouTube", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "On your phone or computer, go to ${account.url} and enter this code:",
-                color = Color.Gray,
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center
+        Row(horizontalArrangement = Arrangement.spacedBy(48.dp), verticalAlignment = Alignment.CenterVertically) {
+            qr?.let {
+                Image(it, contentDescription = "QR code to sign in", modifier = Modifier.size(260.dp).clip(RoundedCornerShape(12.dp)))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Sign in to YouTube", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (qr != null) "Scan the code with your phone, or go to ${account.url} and enter:"
+                    else "On your phone or computer, go to ${account.url} and enter:",
+                    color = Color.Gray,
+                    fontSize = 16.sp
+                )
+                Text(account.code.orEmpty(), color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+                Text("Waiting for you to approve it\u2026", color = Color.Gray, fontSize = 14.sp)
+                TabChip("Cancel", selected = false, onClick = onCancel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountsPanel(
+    account: YouTubeAccountState,
+    onSelect: (Int) -> Unit,
+    onAdd: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    Box(Modifier.fillMaxSize(), Alignment.TopCenter) {
+        Column(Modifier.width(520.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Who's watching?", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            account.accounts.forEachIndexed { i, a ->
+                AccountRow(
+                    title = if (a.selected) "${a.name}   \u2713" else a.name,
+                    detail = a.detail,
+                    avatar = a.avatar,
+                    modifier = if (i == 0) Modifier.focusRequester(first) else Modifier
+                ) { onSelect(a.id) }
+            }
+            AccountRow("Add another account", null, null, Modifier) { onAdd() }
+            AccountRow("Sign out of ${account.accountName ?: "this account"}", null, null, Modifier) { onSignOut() }
+        }
+    }
+}
+
+@Composable
+private fun AccountRow(title: String, detail: String?, avatar: String?, modifier: Modifier, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(CardBg)
+            .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(12.dp))
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (avatar != null) {
+            AsyncImage(
+                model = avatar,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(20.dp))
             )
-            Text(account.code.orEmpty(), color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Bold)
-            Text("Waiting for you to approve it…", color = Color.Gray, fontSize = 14.sp)
-            TabChip("Cancel", selected = false, onClick = onCancel)
+        }
+        Column {
+            Text(title, color = Color.White, fontSize = 17.sp)
+            detail?.let { Text(it, color = Color.Gray, fontSize = 13.sp) }
         }
     }
 }

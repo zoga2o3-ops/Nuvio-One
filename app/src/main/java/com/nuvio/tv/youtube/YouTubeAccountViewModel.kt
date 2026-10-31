@@ -3,6 +3,7 @@ package com.nuvio.tv.youtube
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import com.liskovsoft.mediaserviceinterfaces.oauth.Account
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,16 +16,31 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
+/** One account or channel profile you can switch to. */
+data class YtAccount(
+    val id: Int,
+    val name: String,
+    val detail: String?,
+    val avatar: String?,
+    val selected: Boolean
+)
+
 data class YouTubeAccountState(
     val signedIn: Boolean = false,
+    /** The account or profile in use. */
     val accountName: String? = null,
+    /** Every account and channel profile on this device. */
+    val accounts: List<YtAccount> = emptyList(),
     /** The code to enter at [url] while a sign-in is waiting. */
     val code: String? = null,
     val url: String = "youtube.com/activate",
     val error: String? = null
-)
+) {
+    /** What a phone should open to enter the code; the code is filled in when YouTube allows it. */
+    val activateLink: String? get() = code?.let { "https://www.$url?user_code=$it" }
+}
 
-/** Signs in to YouTube with the TV device-code flow, and signs out. */
+/** Signs in to YouTube with the TV device-code flow, switches between accounts and profiles, and signs out. */
 @HiltViewModel
 class YouTubeAccountViewModel @Inject constructor(
     @ApplicationContext private val context: Context
@@ -35,19 +51,34 @@ class YouTubeAccountViewModel @Inject constructor(
     val state: StateFlow<YouTubeAccountState> = _state.asStateFlow()
 
     private var signIn: Disposable? = null
+    private var rawAccounts: List<Account> = emptyList()
 
     private val signInService by lazy {
         GlobalPreferences.instance(context)
         YouTubeServiceManager.instance().signInService
     }
 
+    private fun label(a: Account): String =
+        a.name?.takeIf(String::isNotBlank) ?: a.email?.takeIf(String::isNotBlank) ?: "Account"
+
     fun refresh() {
         // Reading accounts touches storage, so keep it off the main thread.
         Schedulers.io().scheduleDirect {
-            val account = runCatching { signInService.selectedAccount }.getOrNull()
             val signed = runCatching { signInService.isSigned }.getOrDefault(false)
-            val name = account?.let { it.name?.takeIf(String::isNotBlank) ?: it.email?.takeIf(String::isNotBlank) }
-            _state.update { it.copy(signedIn = signed, accountName = name) }
+            val list = runCatching { signInService.accounts.orEmpty() }.getOrDefault(emptyList())
+            rawAccounts = list
+            val items = list.map {
+                YtAccount(
+                    id = it.id,
+                    name = label(it),
+                    // Only worth showing the email when the name is something else.
+                    detail = it.email?.takeIf { e -> e.isNotBlank() && e != label(it) },
+                    avatar = it.avatarImageUrl,
+                    selected = it.isSelected
+                )
+            }
+            val current = runCatching { signInService.selectedAccount }.getOrNull()
+            _state.update { it.copy(signedIn = signed, accountName = current?.let(::label), accounts = items) }
         }
     }
 
@@ -75,12 +106,25 @@ class YouTubeAccountViewModel @Inject constructor(
         _state.update { it.copy(code = null) }
     }
 
-    fun signOut() {
+    /** Switches to another account or profile. [onDone] runs once it has taken effect. */
+    fun selectAccount(id: Int, onDone: () -> Unit = {}) {
+        Schedulers.io().scheduleDirect {
+            runCatching { rawAccounts.firstOrNull { it.id == id }?.let(signInService::selectAccount) }
+                .onFailure { Log.e(TAG, "couldn't switch account", it) }
+            // The feeds and stream lookups belong to the account that was in use.
+            runCatching { YouTubeServiceManager.instance().invalidateCache() }
+            refresh()
+            onDone()
+        }
+    }
+
+    fun signOut(onDone: () -> Unit = {}) {
         Schedulers.io().scheduleDirect {
             runCatching { signInService.selectedAccount?.let(signInService::removeAccount) }
                 .onFailure { Log.e(TAG, "sign-out failed", it) }
-            YouTubeServiceManager.instance().invalidateCache()
+            runCatching { YouTubeServiceManager.instance().invalidateCache() }
             refresh()
+            onDone()
         }
     }
 
