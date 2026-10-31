@@ -232,7 +232,7 @@ private fun Content(
 
         state.isEmpty && !state.signedIn && state.tab == YtTab.HOME && state.subTitle == null -> Message(
             "Home is picked for you",
-            "YouTube only fills it once you sign in. Try Trending, Music or Gaming above, or sign in.",
+            "YouTube only fills it once you sign in. Try Live, Music or Gaming above, or sign in.",
             "Sign in",
             onSignIn
         )

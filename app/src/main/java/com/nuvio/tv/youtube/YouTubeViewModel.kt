@@ -46,17 +46,17 @@ data class YtRow(val title: String, val items: List<YtItem>)
 
 /** The feeds along the top. Grid feeds are one long list; the others are rows of videos. */
 enum class YtTab(val title: String, val needsSignIn: Boolean = false, val grid: Boolean = false) {
+    // No Trending: YouTube retired that page, and its requests are now refused.
     HOME("Home"),
-    TRENDING("Trending"),
     SUBSCRIPTIONS("Subscriptions", needsSignIn = true, grid = true),
-    CHANNELS("Channels", needsSignIn = true, grid = true),
     HISTORY("History", needsSignIn = true, grid = true),
     PLAYLISTS("Playlists", needsSignIn = true, grid = true),
     LIVE("Live"),
     MUSIC("Music"),
     GAMING("Gaming"),
     NEWS("News"),
-    SPORTS("Sports")
+    SPORTS("Sports"),
+    CHANNELS("Channels", needsSignIn = true, grid = true)
 }
 
 data class YtUiState(
@@ -133,7 +133,6 @@ class YouTubeViewModel @Inject constructor(
             withRetry {
             when (tab) {
                 YtTab.HOME -> rows(content.homeObserve.blockingFirst())
-                YtTab.TRENDING -> rows(content.trendingObserve.blockingFirst())
                 YtTab.LIVE -> rows(content.liveObserve.blockingFirst())
                 YtTab.MUSIC -> rows(content.musicObserve.blockingFirst())
                 YtTab.GAMING -> rows(content.gamingObserve.blockingFirst())
