@@ -111,6 +111,10 @@ class PlayerViewModel @Inject constructor(
         trailerPlayerPool.yield()
     }
 
+    /** YouTube fork: chapters for the video playing, and repeating it. */
+    fun setExternalChapters(chapters: List<PlayerChapter>) = controller.setExternalChapters(chapters)
+    fun setRepeatOne(enabled: Boolean) = controller.setRepeatOne(enabled)
+
     internal val controller = PlayerRuntimeController(
         context = context,
         watchProgressRepository = watchProgressRepository,

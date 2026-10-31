@@ -3,6 +3,12 @@ package com.nuvio.tv.ui.screens.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -50,6 +56,9 @@ internal fun YouTubeSettingsContent(
     var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
     var rememberTab by remember { mutableStateOf(YouTubeSettings.rememberLastTab(context)) }
     var deThumbs by remember { mutableStateOf(YouTubeSettings.deArrowThumbnails(context)) }
+    var hiddenWords by remember { mutableStateOf(YouTubeSettings.hiddenKeywords(context)) }
+    var hiddenChannels by remember { mutableStateOf(YouTubeSettings.hiddenChannels(context)) }
+    var newWord by remember { mutableStateOf("") }
     var hideShorts by remember { mutableStateOf(YouTubeSettings.hideShorts(context)) }
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
     var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
@@ -201,6 +210,62 @@ internal fun YouTubeSettingsContent(
                     YouTubeSettings.setHideUpcoming(context, hideUpcoming)
                 }
             )
+        }
+
+        SettingsGroupCard(
+            title = "Hidden words and channels",
+            subtitle = "Videos with these words in the title or channel name, and these channels, stay off the YouTube page"
+        ) {
+            OutlinedTextField(
+                value = newWord,
+                onValueChange = { newWord = it },
+                singleLine = true,
+                label = { Text("Add a word or phrase, then press Done") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    YouTubeSettings.addHiddenKeyword(context, newWord)
+                    hiddenWords = YouTubeSettings.hiddenKeywords(context)
+                    newWord = ""
+                }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = Color.White,
+                    focusedBorderColor = Color.White,
+                    unfocusedBorderColor = Color.Gray,
+                    focusedLabelColor = Color.White,
+                    unfocusedLabelColor = Color.Gray
+                ),
+                modifier = Modifier.fillMaxWidth().padding(vertical = NuvioTheme.spacing.xs)
+            )
+            hiddenWords.forEach { word ->
+                SettingsActionRow(
+                    title = word,
+                    subtitle = "Press OK to stop hiding this word",
+                    onClick = {
+                        YouTubeSettings.removeHiddenKeyword(context, word)
+                        hiddenWords = YouTubeSettings.hiddenKeywords(context)
+                    }
+                )
+            }
+            hiddenChannels.forEach { (id, name) ->
+                SettingsActionRow(
+                    title = name,
+                    subtitle = "Hidden channel. Press OK to show it again",
+                    onClick = {
+                        YouTubeSettings.unhideChannel(context, id)
+                        hiddenChannels = YouTubeSettings.hiddenChannels(context)
+                    }
+                )
+            }
+            if (hiddenWords.isEmpty() && hiddenChannels.isEmpty()) {
+                Text(
+                    text = "Nothing hidden yet. Hide a channel from the YouTube panel in the player.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = NuvioTheme.colors.TextSecondary,
+                    modifier = Modifier.padding(vertical = NuvioTheme.spacing.sm)
+                )
+            }
         }
 
         SettingsGroupCard(

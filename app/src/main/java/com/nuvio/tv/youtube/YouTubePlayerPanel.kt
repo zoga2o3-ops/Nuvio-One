@@ -147,6 +147,7 @@ fun BoxScope.YouTubePlayerPanel(
                     })
                     info.channelId?.let { channel ->
                         add(PanelEntry("Open channel", info.author.takeIf(String::isNotBlank)) { onOpenChannel(channel, info.author) })
+                        add(PanelEntry("Hide this channel", "Keeps it off the YouTube page") { viewModel.hideChannel() })
                     }
                 }
                 PanelMode.PLAYLISTS -> state.playlists.orEmpty().map { row ->

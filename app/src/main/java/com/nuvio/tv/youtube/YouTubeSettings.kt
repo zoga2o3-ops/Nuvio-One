@@ -11,6 +11,8 @@ object YouTubeSettings {
     private const val KEY_HIDDEN_TABS = "hidden_tabs"
     private const val KEY_AUTOPLAY = "autoplay_next"
     private const val KEY_HIDE_SHORTS = "hide_shorts"
+    private const val KEY_HIDDEN_WORDS = "hidden_keywords"
+    private const val KEY_HIDDEN_CHANNELS = "hidden_channels"
     private const val KEY_LAST_TAB = "last_tab"
     private const val KEY_REMEMBER_TAB = "remember_last_tab"
     private const val KEY_SPEED = "playback_speed"
@@ -102,6 +104,36 @@ object YouTubeSettings {
     fun deArrowThumbnails(context: Context) = prefs(context).getBoolean(KEY_DEARROW_THUMBS, true)
     fun setDeArrowTitles(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_DEARROW_TITLES, on).apply()
     fun setDeArrowThumbnails(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_DEARROW_THUMBS, on).apply()
+
+    /** Words that keep a video off the page when they're in its title or channel name. Lower case. */
+    fun hiddenKeywords(context: Context): List<String> =
+        (prefs(context).getStringSet(KEY_HIDDEN_WORDS, null) ?: emptySet()).sorted()
+
+    fun addHiddenKeyword(context: Context, word: String) {
+        val clean = word.trim().lowercase()
+        if (clean.isBlank()) return
+        prefs(context).edit().putStringSet(KEY_HIDDEN_WORDS, (hiddenKeywords(context) + clean).toSet()).apply()
+    }
+
+    fun removeHiddenKeyword(context: Context, word: String) {
+        prefs(context).edit().putStringSet(KEY_HIDDEN_WORDS, (hiddenKeywords(context) - word).toSet()).apply()
+    }
+
+    /** Channels you've hidden, as (id, name). */
+    fun hiddenChannels(context: Context): List<Pair<String, String>> =
+        (prefs(context).getStringSet(KEY_HIDDEN_CHANNELS, null) ?: emptySet())
+            .mapNotNull { entry -> entry.split('|', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }
+            .sortedBy { it.second.lowercase() }
+
+    fun hideChannel(context: Context, id: String, name: String) {
+        val kept = hiddenChannels(context).filter { it.first != id } + (id to name)
+        prefs(context).edit().putStringSet(KEY_HIDDEN_CHANNELS, kept.map { "${it.first}|${it.second}" }.toSet()).apply()
+    }
+
+    fun unhideChannel(context: Context, id: String) {
+        val kept = hiddenChannels(context).filter { it.first != id }
+        prefs(context).edit().putStringSet(KEY_HIDDEN_CHANNELS, kept.map { "${it.first}|${it.second}" }.toSet()).apply()
+    }
 
     /** Feed filters. Upcoming premieres can't be played yet, so they're hidden unless you say otherwise. */
     fun hideShorts(context: Context) = prefs(context).getBoolean(KEY_HIDE_SHORTS, false)

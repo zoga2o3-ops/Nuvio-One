@@ -64,6 +64,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Forum
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.AccountCircle
@@ -212,6 +214,9 @@ fun PlayerScreen(
     /** YouTube fork: the live chat button (null when the stream has no chat), and whether chat is showing. */
     onYouTubeChat: (() -> Unit)? = null,
     youtubeChatOn: Boolean = false,
+    /** YouTube fork: the loop button, and whether the video is repeating. */
+    onYouTubeLoop: (() -> Unit)? = null,
+    youtubeLoopOn: Boolean = false,
     /** YouTube fork: sees every key first; returns true to keep the player from acting on it. */
     previewKeyHook: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
@@ -1595,6 +1600,8 @@ fun PlayerScreen(
                 youtubeChannelImage = youtubeChannelImage,
                 onYouTubeChat = onYouTubeChat,
                 youtubeChatOn = youtubeChatOn,
+                onYouTubeLoop = onYouTubeLoop,
+                youtubeLoopOn = youtubeLoopOn,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -2661,6 +2668,8 @@ private fun PlayerControlsOverlay(
     youtubeChannelImage: String?,
     onYouTubeChat: (() -> Unit)?,
     youtubeChatOn: Boolean,
+    onYouTubeLoop: (() -> Unit)?,
+    youtubeLoopOn: Boolean,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2955,6 +2964,17 @@ private fun PlayerControlsOverlay(
                                 upFocusRequester = progressUpTarget,
                                 onDownKey = onHideControls,
                                 onFocused = onResetHideTimer
+                            )
+                        }
+                        onYouTubeLoop?.let { loop ->
+                            ControlButton(
+                                icon = if (youtubeLoopOn) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                contentDescription = if (youtubeLoopOn) "Stop looping" else "Loop this video",
+                                onClick = loop,
+                                upFocusRequester = progressUpTarget,
+                                onDownKey = onHideControls,
+                                onFocused = onResetHideTimer,
+                                contentColor = if (youtubeLoopOn) Color(0xFFFF4D6A) else Color.White
                             )
                         }
                         onYouTubeChat?.let { chat ->

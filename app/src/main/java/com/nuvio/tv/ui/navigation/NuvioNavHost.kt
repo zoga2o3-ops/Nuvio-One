@@ -1047,6 +1047,7 @@ private fun PlaybackNavHost(
 
             // Live chat on or off, and the OK press that has just answered the "skip?" card.
             val chatOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            val loopOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
             val consumeConfirmUp = androidx.compose.runtime.remember { booleanArrayOf(false) }
             androidx.compose.runtime.DisposableEffect(upNextVideoId) {
                 onDispose {
@@ -1075,6 +1076,11 @@ private fun PlaybackNavHost(
                     }
                 },
                 youtubeChatOn = chatOn.value,
+                youtubeLoopOn = loopOn.value,
+                onYouTubeLoop = if (upNextVideoId != null) ({
+                    loopOn.value = !loopOn.value
+                    upNextPlayerVm.setRepeatOne(loopOn.value)
+                }) else null,
                 onYouTubeChat = if (ytState.info?.liveChatKey != null) ({
                     chatOn.value = !chatOn.value
                     if (chatOn.value) ytPlayerVm.startChat() else ytPlayerVm.stopChat()
@@ -1093,7 +1099,18 @@ private fun PlaybackNavHost(
                     if (upNextVideoId != null && youtubeVm != null) {
                         val timeline by upNextPlayerVm.playbackTimeline.collectAsState()
                         val playerUi by upNextPlayerVm.uiState.collectAsState()
-                        YouTubeUpNext(upNextVideoId, youtubeVm, timeline)
+                        // The video's own chapters; set again once the stream is playing, in case it reset them.
+                        androidx.compose.runtime.LaunchedEffect(ytState.info?.chapters, timeline.duration > 0) {
+                            val chapters = ytState.info?.chapters.orEmpty()
+                            if (chapters.isNotEmpty() && timeline.duration > 0) {
+                                upNextPlayerVm.setExternalChapters(
+                                    chapters.map { (title, start) ->
+                                        com.nuvio.tv.ui.screens.player.PlayerChapter(startMs = start, title = title)
+                                    }
+                                )
+                            }
+                        }
+                        YouTubeUpNext(upNextVideoId, youtubeVm, timeline, looping = loopOn.value)
                         SponsorSkipCard()
                         if (chatOn.value) YouTubeChatOverlay(ytPlayerVm)
                         if (playerUi.showYouTubePanel) {

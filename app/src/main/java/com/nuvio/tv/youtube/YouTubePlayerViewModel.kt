@@ -37,7 +37,9 @@ data class YtVideoInfo(
     val subscribed: Boolean,
     val commentsKey: String?,
     val newestCommentsKey: String?,
-    val liveChatKey: String?
+    val liveChatKey: String?,
+    /** The video's chapters, as (title, start in ms). */
+    val chapters: List<Pair<String, Long>>
 )
 
 data class YtPlaylistRow(val id: String, val title: String, val contains: Boolean)
@@ -141,7 +143,8 @@ class YouTubePlayerViewModel @Inject constructor(
         subscribed = m.isSubscribed,
         commentsKey = m.commentsKey,
         newestCommentsKey = m.newestCommentsKey,
-        liveChatKey = m.liveChatKey?.takeIf { it.isNotBlank() }
+        liveChatKey = m.liveChatKey?.takeIf { it.isNotBlank() },
+        chapters = m.chapters.orEmpty().mapNotNull { c -> c.title?.takeIf { it.isNotBlank() }?.let { it to c.startTimeMs } }
     )
 
     private fun item(info: YtVideoInfo) = YouTubeMediaItem.fromIds(info.videoId, info.channelId)
@@ -189,6 +192,18 @@ class YouTubePlayerViewModel @Inject constructor(
         act(if (subscribed) "Unsubscribed" else "Subscribed",
             { if (subscribed) media.unsubscribeObserve(channel) else media.subscribeObserve(channel) },
             { it.copy(subscribed = !subscribed) })
+    }
+
+    /** Keeps this video's channel off the YouTube page, until you bring it back in Settings. */
+    fun hideChannel() {
+        val info = _state.value.info ?: return
+        val id = info.channelId
+        if (id == null) {
+            _state.update { it.copy(message = "This video has no channel to hide.") }
+            return
+        }
+        YouTubeSettings.hideChannel(context, id, info.author.ifBlank { "This channel" })
+        _state.update { it.copy(message = "Hidden: ${info.author}. Bring it back in Settings, then YouTube.") }
     }
 
     // ---- playlists ----

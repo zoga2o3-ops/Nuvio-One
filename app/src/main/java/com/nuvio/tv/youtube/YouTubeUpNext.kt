@@ -39,7 +39,9 @@ private const val PICK_WITHIN_MS = 45_000L
 fun BoxScope.YouTubeUpNext(
     videoId: String,
     viewModel: YouTubeViewModel,
-    timeline: PlaybackTimelineState
+    timeline: PlaybackTimelineState,
+    /** While the video is repeating, nothing is coming up next. */
+    looping: Boolean = false
 ) {
     val context = LocalContext.current
     val next by viewModel.upNext.collectAsState()
@@ -48,11 +50,11 @@ fun BoxScope.YouTubeUpNext(
 
     // Pick the next video early enough that it's ready, and its stream is looked up.
     LaunchedEffect(videoId, inRange) {
-        if (inRange && YouTubeSettings.autoplayNext(context)) viewModel.prepareNext(videoId)
+        if (inRange && !looping && YouTubeSettings.autoplayNext(context)) viewModel.prepareNext(videoId)
     }
 
     val item = next
-    if (item == null || !inRange || remaining > SHOW_WITHIN_MS || !YouTubeSettings.autoplayNext(context)) return
+    if (looping || item == null || !inRange || remaining > SHOW_WITHIN_MS || !YouTubeSettings.autoplayNext(context)) return
 
     val seconds = ((remaining + 999) / 1000).toInt().coerceAtLeast(1)
     Column(

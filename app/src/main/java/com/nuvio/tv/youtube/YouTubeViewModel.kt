@@ -37,6 +37,7 @@ data class YtItem(
     val thumbnail: String?,
     val badge: String?,
     val isLive: Boolean,
+    val channelId: String?,
     /** How much YouTube says you've watched (0-100), from your account. */
     val percentWatched: Int,
     internal val source: MediaItem
@@ -115,7 +116,7 @@ class YouTubeViewModel @Inject constructor(
     private val content: ContentService get() = service.contentService
 
     /** The page being shown: pages opened from it go on top, and Back takes them off. */
-    private class Page(val state: YtUiState, val group: MediaGroup?)
+    private class Page(val state: YtUiState, val group: MediaGroup?, val channelBlockOn: Boolean)
     private val backStack = ArrayDeque<Page>()
     private var currentGroup: MediaGroup? = null
     private var loadJob: Job? = null
@@ -129,6 +130,7 @@ class YouTubeViewModel @Inject constructor(
     fun selectTab(tab: YtTab) {
         backStack.clear()
         filtersOn = tab != YtTab.HISTORY && tab != YtTab.SHORTS
+        channelBlockOn = true
         YouTubeSettings.setLastTab(context, tab)
         _state.update { YtUiState(tab = tab, signedIn = it.signedIn, loading = true) }
         load(tab.title) {
@@ -156,6 +158,7 @@ class YouTubeViewModel @Inject constructor(
     fun search(query: String) {
         if (query.isBlank()) return
         filtersOn = true
+        channelBlockOn = true
         pushPage()
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
@@ -167,6 +170,7 @@ class YouTubeViewModel @Inject constructor(
     /** Opens a channel or playlist on top of the current page. */
     fun open(item: YtItem) {
         filtersOn = true
+        channelBlockOn = item.kind != YtKind.CHANNEL
         pushPage()
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
@@ -184,6 +188,7 @@ class YouTubeViewModel @Inject constructor(
     fun openChannel(channelId: String, name: String) {
         pushPage()
         filtersOn = true
+        channelBlockOn = false
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false, subTitle = name)
         }
@@ -192,7 +197,7 @@ class YouTubeViewModel @Inject constructor(
 
     private fun pushPage() {
         // A page that's still loading has nothing to come back to.
-        if (!_state.value.loading) backStack.addLast(Page(_state.value, currentGroup))
+        if (!_state.value.loading) backStack.addLast(Page(_state.value, currentGroup, channelBlockOn))
     }
 
     /** Takes the top page off. Returns false when there's nothing to go back to. */
@@ -200,6 +205,7 @@ class YouTubeViewModel @Inject constructor(
         val page = backStack.removeLastOrNull() ?: return false
         loadJob?.cancel()
         currentGroup = page.group
+        channelBlockOn = page.channelBlockOn
         _state.value = page.state.copy(loading = false)
         return true
     }
@@ -257,6 +263,7 @@ class YouTubeViewModel @Inject constructor(
     private fun grid(group: MediaGroup?): Feed = if (group == null) Feed.Nothing else Feed.Grid(group)
 
     private fun load(label: String, fetch: () -> Feed) {
+        refreshHidden()
         loadJob?.cancel()
         currentGroup = null
         loadJob = viewModelScope.launch {
@@ -336,6 +343,15 @@ class YouTubeViewModel @Inject constructor(
 
     /** Feed filters apply everywhere except History, which is meant to show what you've watched. */
     private var filtersOn = true
+    /** Hidden channels are left out of feeds, but not out of that channel's own page. */
+    private var channelBlockOn = true
+    private var hiddenWords: List<String> = emptyList()
+    private var hiddenChannelIds: Set<String> = emptySet()
+
+    private fun refreshHidden() {
+        hiddenWords = YouTubeSettings.hiddenKeywords(context)
+        hiddenChannelIds = YouTubeSettings.hiddenChannels(context).map { it.first }.toSet()
+    }
 
     private fun toItems(g: MediaGroup): List<YtItem> = g.mediaItems.orEmpty().filter(::allowed).mapNotNull(::toItem)
 
@@ -345,6 +361,11 @@ class YouTubeViewModel @Inject constructor(
         if (i.type == MediaItem.TYPE_CHANNEL || i.type == MediaItem.TYPE_PLAYLIST) return true
         if (i.isShorts && YouTubeSettings.hideShorts(context)) return false
         if (i.isUpcoming && YouTubeSettings.hideUpcoming(context)) return false
+        if (hiddenWords.isNotEmpty()) {
+            val text = "${i.title.orEmpty()} ${i.author.orEmpty()}".lowercase()
+            if (hiddenWords.any { it in text }) return false
+        }
+        if (channelBlockOn && i.channelId != null && i.channelId in hiddenChannelIds) return false
         if (YouTubeSettings.hideWatched(context)) {
             val watched = maxOf(i.percentWatched, YouTubeProgress.localPercent(context, i.videoId))
             if (watched >= WATCHED_PERCENT) return false
@@ -367,6 +388,7 @@ class YouTubeViewModel @Inject constructor(
             thumbnail = i.cardImageUrl,
             badge = i.badgeText,
             isLive = i.isLive,
+            channelId = i.channelId,
             percentWatched = i.percentWatched.coerceIn(0, 100),
             source = i
         )
