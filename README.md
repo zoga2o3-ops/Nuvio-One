@@ -208,7 +208,7 @@ ESPN's public feed, TheSportsDB and sporting-events.org. Sports they don't cover
 
 Enjoying the app? A coffee keeps the updates coming. Totally optional, always appreciated
 
-<a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=zoga2o3m&button_colour=5F7FFF&font_colour=ffffff&font_family=Lato&outline_colour=000000&coffee_colour=FFDD00" alt="Buy me a coffee" /></a>
+<a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-5F7FFF?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy me a coffee" /></a>
 
 ---
 
