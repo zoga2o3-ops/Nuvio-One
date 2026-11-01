@@ -47,6 +47,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,7 +112,9 @@ internal fun EpisodeOptionsOverlay(
     onMarkPreviousEpisodesWatched: () -> Unit = {},
     showWatchedActions: Boolean = true,
     isCurrentlyPlaying: Boolean = false,
-    onNavigateEpisode: ((Int) -> Unit)? = null
+    onNavigateEpisode: ((Int) -> Unit)? = null,
+    /** Live TV fork: more lines after Play (Record on your channel, Live TV options). */
+    extraActions: List<Pair<String, () -> Unit>> = emptyList()
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -232,6 +236,7 @@ internal fun EpisodeOptionsOverlay(
                 onClick = onPlay
             )
         )
+        extraActions.forEach { (label, onClick) -> add(EpisodeOverlayAction(label = label, onClick = onClick)) }
         if (showOpenEpisodeComments) {
             add(
                 EpisodeOverlayAction(
@@ -371,6 +376,7 @@ internal fun EpisodeOptionsOverlay(
                                     }
                                     .focusable()
                                     .onFocusChanged { descriptionFocused = it.isFocused }
+                                    .semantics { contentDescription = title }
                                     .onPreviewKeyEvent { event ->
                                         val step = episodeStepForKey(event.nativeKeyEvent.keyCode, isRtl)
                                         when {

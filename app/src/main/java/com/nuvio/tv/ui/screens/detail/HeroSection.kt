@@ -59,6 +59,12 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import android.util.Log
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.ContentType
@@ -70,6 +76,8 @@ import com.nuvio.tv.ui.components.ImdbRatingSourceLabel
 import com.nuvio.tv.ui.components.MDBListRatingsRow
 import com.nuvio.tv.ui.components.SynopsisDescription
 import com.nuvio.tv.ui.theme.NuvioTheme
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Visibility
@@ -276,6 +284,20 @@ fun HeroContentSection(
                             onFocused = onHeroActionFocused
                         )
 
+                        // Live TV fork: the bell puts it on your Calendar (new episodes on Home).
+                        com.nuvio.tv.livetv.calendar.rememberCalendarBell(meta)?.let { bell ->
+                            ActionIconButton(
+                                icon = if (bell.on) Icons.Default.NotificationsActive
+                                else Icons.Default.NotificationsNone,
+                                contentDescription = if (bell.on) "Turn off the bell" else "Ring the bell: new episodes on Home and in your Calendar",
+                                onClick = bell.toggle,
+                                selected = bell.on,
+                                selectedContainerColor = Color.White,
+                                selectedContentColor = Color.Black,
+                                onFocused = onHeroActionFocused
+                            )
+                        }
+
                         if (meta.apiType == "movie") {
                             ActionIconButton(
                                 icon = if (isMovieWatched) {
@@ -291,6 +313,7 @@ fun HeroContentSection(
                                 onClick = onToggleMovieWatched,
                                 enabled = !isMovieWatchedPending,
                                 selected = isMovieWatched,
+                                toggleable = true,
                                 selectedContainerColor = Color.White,
                                 selectedContentColor = Color.Black,
                                 onFocused = onHeroActionFocused
@@ -318,6 +341,9 @@ fun HeroContentSection(
                     }
 
                     Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
+
+                    // Live TV fork: when the next episode airs (and Record, when it's in your guide).
+                    com.nuvio.tv.livetv.calendar.CalendarNextLine(meta = meta, onFocused = onHeroActionFocused)
 
                     // Director/Writer line above description
                     if (!creditLine.isNullOrBlank()) {
@@ -378,6 +404,7 @@ internal fun PlayButton(
 ) {
     var longPressTriggered by remember { mutableStateOf(false) }
     val longPressKeyTracker = rememberLongPressKeyTracker()
+    val playFallbackLabel = stringResource(R.string.hero_play)
 
     LaunchedEffect(restoreFocusToken) {
         if (restoreFocusToken > 0 && focusRequester != null) {
@@ -434,7 +461,14 @@ internal fun PlayButton(
                 }
                 false
             }
-            .focusProperties { up = FocusRequester.Cancel },
+            .focusProperties { up = FocusRequester.Cancel }
+            .then(
+                if (text == null) {
+                    Modifier.semantics { this.contentDescription = playFallbackLabel }
+                } else {
+                    Modifier
+                }
+            ),
         colors = ButtonDefaults.colors(
             containerColor = androidx.compose.ui.graphics.Color.White,
             focusedContainerColor = androidx.compose.ui.graphics.Color.White,
@@ -533,6 +567,9 @@ private fun ActionIconButton(
     onLongPress: (() -> Unit)? = null,
     enabled: Boolean = true,
     selected: Boolean = false,
+    // When true this icon button is a state toggle (watched/unwatched) and announces itself as
+    // such; the library add/remove button is a plain action and leaves this off.
+    toggleable: Boolean = false,
     selectedContainerColor: Color = Color(0xFF7CFF9B),
     selectedContentColor: Color = Color.Black,
     onFocused: () -> Unit = {},
@@ -588,7 +625,13 @@ private fun ActionIconButton(
                 }
                 false
             }
-            .focusProperties { up = FocusRequester.Cancel },
+            .focusProperties { up = FocusRequester.Cancel }
+            .semantics {
+                if (toggleable) {
+                    role = Role.Checkbox
+                    toggleableState = if (selected) ToggleableState.On else ToggleableState.Off
+                }
+            },
         colors = IconButtonDefaults.colors(
             containerColor = if (selected) selectedContainerColor else NuvioTheme.colors.BackgroundCard,
             focusedContainerColor = NuvioTheme.colors.Secondary,

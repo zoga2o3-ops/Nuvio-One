@@ -18,6 +18,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -49,7 +54,10 @@ fun PosterOptionsDialog(
     onDismiss: () -> Unit,
     onDetails: () -> Unit,
     onToggleLibrary: () -> Unit,
-    onToggleWatched: () -> Unit
+    onToggleWatched: () -> Unit,
+    /** Live TV fork: the Calendar's bell for a show ("Ring the bell…"), when offered. */
+    bellLabel: String? = null,
+    onBell: () -> Unit = {}
 ) {
     val primaryFocusRequester = remember { FocusRequester() }
 
@@ -95,6 +103,19 @@ fun PosterOptionsDialog(
                     }
                 }
             )
+        }
+
+        if (bellLabel != null) {
+            Button(
+                onClick = onBell,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.colors(
+                    containerColor = NuvioTheme.colors.BackgroundCard,
+                    contentColor = NuvioTheme.colors.TextPrimary
+                )
+            ) {
+                Text(bellLabel)
+            }
         }
 
         if (isMovie || isSeries) {
@@ -159,16 +180,18 @@ fun PosterListPickerDialog(
         ) {
             items(tabs, key = { it.key }) { tab ->
                 val selected = membership[tab.key] == true
-                val titleText = if (selected) "✓ ${tab.localizedMembershipTitle()}" else tab.localizedMembershipTitle()
                 Button(
                     onClick = { onToggle(tab.key) },
                     enabled = !isPending,
-                    modifier = if (tab.key == tabs.firstOrNull()?.key) {
+                    modifier = (if (tab.key == tabs.firstOrNull()?.key) {
                         Modifier
                             .fillMaxWidth()
                             .focusRequester(primaryFocusRequester)
                     } else {
                         Modifier.fillMaxWidth()
+                    }).semantics {
+                        role = Role.Checkbox
+                        toggleableState = if (selected) ToggleableState.On else ToggleableState.Off
                     },
                     colors = ButtonDefaults.colors(
                         containerColor = if (selected) NuvioTheme.colors.FocusBackground else NuvioTheme.colors.BackgroundCard,
@@ -176,7 +199,7 @@ fun PosterListPickerDialog(
                     )
                 ) {
                     Text(
-                        text = titleText,
+                        text = tab.localizedMembershipTitle(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -205,7 +228,9 @@ fun PosterListPickerDialog(
 fun PosterOptionsHost(
     state: PosterOptionsState,
     controller: PosterOptionsController,
-    onNavigateToDetail: (id: String, type: String, addonBaseUrl: String) -> Unit
+    onNavigateToDetail: (id: String, type: String, addonBaseUrl: String) -> Unit,
+    /** Live TV fork: offer the Calendar's bell for shows (Search). */
+    calendarBell: Boolean = false
 ) {
     val target = state.target
     if (target != null) {
@@ -213,6 +238,9 @@ fun PosterOptionsHost(
         val isSeries = target.apiType.equals("series", ignoreCase = true) ||
             target.apiType.equals("tv", ignoreCase = true) ||
             target.apiType.equals("anime", ignoreCase = true)
+        val bell = if (calendarBell && isSeries) {
+            com.nuvio.tv.livetv.calendar.rememberShowBell(target.id, null, target.name, target.poster, target.background)
+        } else null
         PosterOptionsDialog(
             title = target.name,
             isInLibrary = state.isInLibrary,
@@ -241,6 +269,11 @@ fun PosterOptionsHost(
                 } else {
                     controller.toggleSeriesWatched()
                 }
+                controller.dismiss()
+            },
+            bellLabel = bell?.let { if (it.on) "Turn off the bell" else "Ring the bell (new episodes on your Calendar)" },
+            onBell = {
+                bell?.toggle?.invoke()
                 controller.dismiss()
             }
         )

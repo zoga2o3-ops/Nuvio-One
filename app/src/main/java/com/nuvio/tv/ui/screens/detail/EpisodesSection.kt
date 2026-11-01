@@ -63,6 +63,10 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -343,6 +347,10 @@ fun SeasonTabs(
                             return@onPreviewKeyEvent true
                         }
                         false
+                    }
+                    .semantics {
+                        role = Role.Tab
+                        selected = isSelected
                     },
                 shape = CardDefaults.shape(shape = tabShape),
                 colors = CardDefaults.colors(
@@ -405,6 +413,10 @@ fun EpisodesRow(
 ) {
     val dedupedEpisodes = remember(episodes) { episodes.distinctBy { it.id } }
     var optionsEpisode by remember { mutableStateOf<Video?>(null) }
+    // Live TV fork: Record and the Live TV options for the episode whose menu is open.
+    val liveTvLines = com.nuvio.tv.livetv.calendar.rememberEpisodeLiveTv(
+        optionsEpisode?.id, optionsEpisode?.season, optionsEpisode?.episode
+    )
     val isOverlayOpen = optionsEpisode != null
     val cardMetrics = rememberEpisodeCardMetrics(posterCardCornerRadiusDp)
     val density = LocalDensity.current
@@ -590,6 +602,7 @@ fun EpisodesRow(
                 adjacentEpisode(dedupedEpisodes, selectedEpisode, step)?.let { optionsEpisode = it }
             },
             isPlayEnabled = canPlayEpisode(selectedEpisode),
+            extraActions = liveTvLines.map { (label, act) -> label to { optionsEpisode = null; act() } },
             onPlay = {
                 onEpisodeClick(selectedEpisode)
                 optionsEpisode = null
@@ -887,7 +900,9 @@ private fun EpisodeCard(
             val bgPainter = remember(cardBgColor) { androidx.compose.ui.graphics.painter.ColorPainter(cardBgColor) }
             AsyncImage(
                 model = thumbnailRequest,
-                contentDescription = episode.title.localizeEpisodeTitle(context),
+                // The card announces the episode title through FocusMarqueeText below, so the
+                // artwork must not repeat it.
+                contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -1323,6 +1338,8 @@ private fun formatEpisodeCardDate(isoDate: String): String {
     val bestPattern = android.text.format.DateFormat.getBestDateTimePattern(locale, "dMMMMy")
     val formatter = java.time.format.DateTimeFormatter.ofPattern(bestPattern, locale)
     val localDate = parseEpisodeReleaseLocalDate(isoDate) ?: return ""
+    // Live TV fork: episodes not out yet say when they air (instead of looking like they're missing).
+    if (localDate.isAfter(java.time.LocalDate.now())) return "Airs " + formatter.format(localDate)
     return formatter.format(localDate)
 }
 

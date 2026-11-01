@@ -50,6 +50,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
@@ -173,6 +175,8 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     SettingsCategory.LIVE_TV -> SettingsSectionSpec(category, "Live TV", Icons.Default.LiveTv, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SPORTS -> SettingsSectionSpec(category, "Sports", Icons.Default.EmojiEvents, destination = SettingsSectionDestination.Inline)
     SettingsCategory.YOUTUBE -> SettingsSectionSpec(category, "YouTube", Icons.Default.PlayCircle, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.SIDE_MENU -> SettingsSectionSpec(category, "Menu & Features", Icons.Default.Menu, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.CALENDAR -> SettingsSectionSpec(category, "Calendar", Icons.Default.DateRange, destination = SettingsSectionDestination.Inline)
     SettingsCategory.EXPERIENCE -> SettingsSectionSpec(category, stringResource(R.string.settings_experience), Icons.Default.Tune, destination = SettingsSectionDestination.Inline)
 }
 
@@ -246,6 +250,8 @@ fun SettingsScreen(
             SettingsCategory.LIVE_TV to FocusRequester(),
             SettingsCategory.SPORTS to FocusRequester(),
             SettingsCategory.YOUTUBE to FocusRequester(),
+            SettingsCategory.SIDE_MENU to FocusRequester(),
+            SettingsCategory.CALENDAR to FocusRequester(),
             SettingsCategory.PLAYBACK to FocusRequester(),
             SettingsCategory.ADVANCED to FocusRequester(),
             SettingsCategory.ABOUT to FocusRequester(),
@@ -259,6 +265,7 @@ fun SettingsScreen(
     val integrationMdbListFocusRequester = remember { FocusRequester() }
     val integrationAnimeSkipFocusRequester = remember { FocusRequester() }
     var integrationSection by remember { mutableStateOf(IntegrationSettingsSection.Hub) }
+    var integrationHubReturnSection by remember { mutableStateOf(IntegrationSettingsSection.Hub) }
     var pendingContentFocusCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var pendingContentFocusRequestId by remember { mutableLongStateOf(0L) }
     // Saveable so it survives a trip out to one of the screens a category opens. The pane bounces
@@ -448,6 +455,7 @@ fun SettingsScreen(
                 } else {
                     if (section.category == SettingsCategory.INTEGRATION) {
                         integrationSection = IntegrationSettingsSection.Hub
+                        integrationHubReturnSection = IntegrationSettingsSection.Hub
                     }
                     allowDetailAutofocus = true
                     selectedCategory = section.category
@@ -462,6 +470,7 @@ fun SettingsScreen(
                 if (selectedCategory != category) {
                     if (category == SettingsCategory.INTEGRATION) {
                         integrationSection = IntegrationSettingsSection.Hub
+                        integrationHubReturnSection = IntegrationSettingsSection.Hub
                     }
                     allowDetailAutofocus = false
                     selectedCategory = category
@@ -653,7 +662,13 @@ fun SettingsScreen(
                                 contentFocusRequesters = contentFocusRequesters,
                                 experienceModeViewModel = experienceModeViewModel,
                                 integrationSection = integrationSection,
-                                onSelectIntegrationSection = { integrationSection = it },
+                                onSelectIntegrationSection = { section ->
+                                    if (section != IntegrationSettingsSection.Hub) {
+                                        integrationHubReturnSection = section
+                                    }
+                                    integrationSection = section
+                                },
+                                integrationHubReturnSection = integrationHubReturnSection,
                                 integrationHubFocusRequester = integrationHubFocusRequester,
                                 integrationDebridFocusRequester = integrationDebridFocusRequester,
                                 integrationTmdbFocusRequester = integrationTmdbFocusRequester,
@@ -808,7 +823,13 @@ fun SettingsScreen(
                         contentFocusRequesters = contentFocusRequesters,
                         experienceModeViewModel = experienceModeViewModel,
                         integrationSection = integrationSection,
-                        onSelectIntegrationSection = { integrationSection = it },
+                        onSelectIntegrationSection = { section ->
+                            if (section != IntegrationSettingsSection.Hub) {
+                                integrationHubReturnSection = section
+                            }
+                            integrationSection = section
+                        },
+                        integrationHubReturnSection = integrationHubReturnSection,
                         integrationHubFocusRequester = integrationHubFocusRequester,
                         integrationDebridFocusRequester = integrationDebridFocusRequester,
                         integrationTmdbFocusRequester = integrationTmdbFocusRequester,
@@ -839,6 +860,7 @@ private fun SettingsDetailPane(
     experienceModeViewModel: ExperienceModeSettingsViewModel,
     integrationSection: IntegrationSettingsSection,
     onSelectIntegrationSection: (IntegrationSettingsSection) -> Unit,
+    integrationHubReturnSection: IntegrationSettingsSection,
     integrationHubFocusRequester: FocusRequester,
     integrationDebridFocusRequester: FocusRequester,
     integrationTmdbFocusRequester: FocusRequester,
@@ -932,6 +954,7 @@ private fun SettingsDetailPane(
         SettingsCategory.INTEGRATION -> IntegrationSettingsContent(
             selectedSection = integrationSection,
             onSelectSection = onSelectIntegrationSection,
+            hubReturnSection = integrationHubReturnSection,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.INTEGRATION]
             } else {
@@ -990,6 +1013,20 @@ private fun SettingsDetailPane(
         SettingsCategory.YOUTUBE -> YouTubeSettingsContent(
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.YOUTUBE]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.SIDE_MENU -> SideMenuSettingsContent(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.SIDE_MENU]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.CALENDAR -> CalendarSettingsContent(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.CALENDAR]
             } else {
                 null
             }
@@ -1079,6 +1116,7 @@ private fun AccountSettingsInline(
 private fun IntegrationSettingsContent(
     selectedSection: IntegrationSettingsSection,
     onSelectSection: (IntegrationSettingsSection) -> Unit,
+    hubReturnSection: IntegrationSettingsSection,
     initialFocusRequester: FocusRequester?,
     hubFocusRequester: FocusRequester,
     debridFocusRequester: FocusRequester,
@@ -1090,7 +1128,17 @@ private fun IntegrationSettingsContent(
     BackHandler(enabled = selectedSection != IntegrationSettingsSection.Hub) {
         onSelectSection(IntegrationSettingsSection.Hub)
     }
-    val hubEntryFocusRequester = initialFocusRequester ?: hubFocusRequester
+    val hubEntryFocusRequester = when (hubReturnSection) {
+        IntegrationSettingsSection.Hub ->
+            initialFocusRequester ?: hubFocusRequester
+        IntegrationSettingsSection.Debrid -> debridFocusRequester
+        IntegrationSettingsSection.Tmdb -> tmdbFocusRequester
+        IntegrationSettingsSection.MdbList -> mdbListFocusRequester
+        IntegrationSettingsSection.AnimeSkip -> animeSkipFocusRequester
+    }
+    val hubEntryTargetSection = hubReturnSection.takeIf {
+        it != IntegrationSettingsSection.Hub
+    } ?: IntegrationSettingsSection.Debrid
 
     LaunchedEffect(selectedSection, autoFocusEnabled) {
         if (!autoFocusEnabled) return@LaunchedEffect
@@ -1132,7 +1180,11 @@ private fun IntegrationSettingsContent(
                                     subtitle = stringResource(R.string.settings_debrid_subtitle),
                                     leadingIcon = Icons.Default.CloudDownload,
                                     onClick = { onSelectSection(IntegrationSettingsSection.Debrid) },
-                                    modifier = Modifier.focusRequester(hubEntryFocusRequester)
+                                    modifier = if (hubEntryTargetSection == IntegrationSettingsSection.Debrid) {
+                                        Modifier.focusRequester(hubEntryFocusRequester)
+                                    } else {
+                                        Modifier
+                                    }
                                 )
                             }
                             item(key = "integration_hub_tmdb") {
@@ -1140,7 +1192,12 @@ private fun IntegrationSettingsContent(
                                     title = "TMDB",
                                     subtitle = stringResource(R.string.settings_tmdb_subtitle),
                                     leadingRawIconRes = R.raw.mdblist_tmdb,
-                                    onClick = { onSelectSection(IntegrationSettingsSection.Tmdb) }
+                                    onClick = { onSelectSection(IntegrationSettingsSection.Tmdb) },
+                                    modifier = if (hubEntryTargetSection == IntegrationSettingsSection.Tmdb) {
+                                        Modifier.focusRequester(hubEntryFocusRequester)
+                                    } else {
+                                        Modifier
+                                    }
                                 )
                             }
                             item(key = "integration_hub_mdblist") {
@@ -1148,7 +1205,12 @@ private fun IntegrationSettingsContent(
                                     title = stringResource(R.string.mdblist_title),
                                     subtitle = stringResource(R.string.settings_mdblist_subtitle),
                                     leadingRawIconRes = R.raw.mdblist_logo,
-                                    onClick = { onSelectSection(IntegrationSettingsSection.MdbList) }
+                                    onClick = { onSelectSection(IntegrationSettingsSection.MdbList) },
+                                    modifier = if (hubEntryTargetSection == IntegrationSettingsSection.MdbList) {
+                                        Modifier.focusRequester(hubEntryFocusRequester)
+                                    } else {
+                                        Modifier
+                                    }
                                 )
                             }
                             item(key = "integration_hub_animeskip") {
@@ -1156,7 +1218,12 @@ private fun IntegrationSettingsContent(
                                     title = "Anime-Skip",
                                     subtitle = stringResource(R.string.settings_animeskip_subtitle),
                                     leadingIcon = Icons.Default.FastForward,
-                                    onClick = { onSelectSection(IntegrationSettingsSection.AnimeSkip) }
+                                    onClick = { onSelectSection(IntegrationSettingsSection.AnimeSkip) },
+                                    modifier = if (hubEntryTargetSection == IntegrationSettingsSection.AnimeSkip) {
+                                        Modifier.focusRequester(hubEntryFocusRequester)
+                                    } else {
+                                        Modifier
+                                    }
                                 )
                             }
                         }
