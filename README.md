@@ -204,6 +204,14 @@ ESPN's public feed, TheSportsDB and sporting-events.org. Sports they don't cover
 
 ---
 
+## ☕ Support the project
+
+Nuvio + IPTV + 1Tube is free. If it's made your TV better and you'd like to say thanks, you can buy me a coffee. It's completely optional, and every bit helps keep updates coming.
+
+<a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=zoga2o3m&button_colour=5F7FFF&font_colour=ffffff&font_family=Lato&outline_colour=000000&coffee_colour=FFDD00" alt="Buy me a coffee" /></a>
+
+---
+
 ## Credits
 
 - **[Nuvio](https://github.com/NuvioMedia/NuvioTV)** by the NuvioMedia team, which this app is built on.
