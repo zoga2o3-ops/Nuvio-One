@@ -263,6 +263,64 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    /** The videos of the channel highlighted in the Channels list, shown beside it. */
+    data class ChannelPreview(
+        val title: String = "",
+        val items: List<YtItem> = emptyList(),
+        val loading: Boolean = false,
+        val canLoadMore: Boolean = false,
+        internal val group: MediaGroup? = null
+    )
+
+    private val _preview = MutableStateFlow(ChannelPreview())
+    val preview: StateFlow<ChannelPreview> = _preview.asStateFlow()
+    private val previews = java.util.concurrent.ConcurrentHashMap<String, ChannelPreview>()
+    private var previewJob: Job? = null
+
+    /** Shows [channel]'s videos beside the list. Waits a moment, so scrolling past channels doesn't ask for each one. */
+    fun previewChannel(channel: YtItem) {
+        previewJob?.cancel()
+        previews[channel.title]?.let { _preview.value = it; return }
+        _preview.value = ChannelPreview(title = channel.title, loading = true)
+        previewJob = viewModelScope.launch {
+            delay(350)
+            val group = withContext(Dispatchers.IO) {
+                runCatching { content.getGroupObserve(channel.source).blockingFirst() }.getOrNull()
+            }
+            val result = ChannelPreview(
+                title = channel.title,
+                items = group?.let(::toItems).orEmpty(),
+                canLoadMore = group?.nextPageKey != null,
+                group = group
+            )
+            if (group != null) previews[channel.title] = result
+            _preview.value = result
+            fetchDeArrow()
+        }
+    }
+
+    fun previewMore() {
+        val cur = _preview.value
+        val group = cur.group ?: return
+        if (cur.loading || !cur.canLoadMore) return
+        _preview.value = cur.copy(loading = true)
+        viewModelScope.launch {
+            val next = withContext(Dispatchers.IO) {
+                runCatching { content.continueGroupObserve(group).blockingFirst() }.getOrNull()
+            }
+            val more = next?.let(::toItems).orEmpty()
+            val merged = cur.copy(
+                items = cur.items + more,
+                loading = false,
+                canLoadMore = next?.nextPageKey != null && more.isNotEmpty(),
+                group = next ?: group
+            )
+            previews[cur.title] = merged
+            if (_preview.value.title == cur.title) _preview.value = merged
+            fetchDeArrow()
+        }
+    }
+
     fun loadMore() {
         val group = currentGroup ?: return
         val s = _state.value

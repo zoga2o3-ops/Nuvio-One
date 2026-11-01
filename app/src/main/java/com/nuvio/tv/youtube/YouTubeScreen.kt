@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -313,6 +314,8 @@ private fun Content(
             }
         }
 
+        state.tab == YtTab.CHANNELS && state.subTitle == null -> ChannelsSplit(state, viewModel, onPlay)
+
         else -> {
             val gridState = rememberLazyGridState()
             // Keep loading as you near the end, like an endless feed.
@@ -332,6 +335,75 @@ private fun Content(
                 gridItems(state.grid) { v ->
                     ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
                 }
+            }
+        }
+    }
+}
+
+/** Your subscribed channels as a list; the highlighted one's videos show beside it, like SmartTube. */
+@Composable
+private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay: (YtPlayable) -> Unit) {
+    val preview by viewModel.preview.collectAsState()
+    LaunchedEffect(state.grid.firstOrNull()?.title) { state.grid.firstOrNull()?.let(viewModel::previewChannel) }
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        LazyColumn(Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            itemsIndexed(state.grid) { i, channel ->
+                var focused by remember { mutableStateOf(false) }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+                        .onFocusChanged {
+                            focused = it.isFocused
+                            if (it.isFocused) {
+                                viewModel.previewChannel(channel)
+                                if (i >= state.grid.size - 5) viewModel.loadMore()
+                            }
+                        }
+                        .clickable { viewModel.open(channel) }
+                        .background(if (preview.title == channel.title) Color(0xFF2A2A2E) else CardBg)
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AsyncImage(
+                        model = channel.thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    )
+                    Text(
+                        channel.title,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            val gridState = rememberLazyGridState()
+            LaunchedEffect(gridState, preview.canLoadMore, preview.title) {
+                snapshotFlow {
+                    val info = gridState.layoutInfo
+                    (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
+                }.collect { nearEnd -> if (nearEnd) viewModel.previewMore() }
+            }
+            LazyVerticalGrid(
+                state = gridState,
+                columns = GridCells.Adaptive(220.dp),
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                gridItems(preview.items) { v ->
+                    ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, preview.items, onPlay) }
+                }
+            }
+            if (preview.loading && preview.items.isEmpty()) {
+                CircularProgressIndicator(color = YtRed, modifier = Modifier.align(Alignment.Center))
             }
         }
     }
