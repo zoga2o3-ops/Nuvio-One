@@ -43,7 +43,13 @@ data class YtItem(
     internal val source: MediaItem
 )
 
-data class YtRow(val title: String, val items: List<YtItem>)
+data class YtRow(
+    val title: String,
+    val items: List<YtItem>,
+    /** Where this row's next page comes from, so scrolling to its end can load more. */
+    internal val group: MediaGroup? = null,
+    val canLoadMore: Boolean = false,
+)
 
 /** The feeds along the top. Grid feeds are one long list; the others are rows of videos. */
 enum class YtTab(val title: String, val needsSignIn: Boolean = false, val grid: Boolean = false) {
@@ -138,6 +144,19 @@ class YouTubeViewModel @Inject constructor(
         channelBlockOn = true
         YouTubeSettings.setLastTab(context, tab)
         _state.update { YtUiState(tab = tab, signedIn = it.signedIn, loading = true) }
+        val rowsSource: (() -> io.reactivex.Observable<List<MediaGroup>>)? = when (tab) {
+            YtTab.HOME -> { { content.homeObserve } }
+            YtTab.LIVE -> { { content.liveObserve } }
+            YtTab.MUSIC -> { { content.musicObserve } }
+            YtTab.GAMING -> { { content.gamingObserve } }
+            YtTab.NEWS -> { { content.newsObserve } }
+            YtTab.SPORTS -> { { content.sportsObserve } }
+            else -> null
+        }
+        if (rowsSource != null) {
+            loadRows(tab.title, rowsSource)
+            return
+        }
         load(tab.title) {
             val signed = runCatching { service.signInService.isSigned }.getOrDefault(false)
             _state.update { it.copy(signedIn = signed) }
@@ -169,7 +188,7 @@ class YouTubeViewModel @Inject constructor(
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
                 subTitle = "Results for \"${query.trim()}\"")
         }
-        load(query) { rows(content.getSearchObserve(query).blockingFirst()) }
+        loadRows(query) { content.getSearchObserve(query) }
     }
 
     /** Opens a channel or playlist on top of the current page. */
@@ -183,7 +202,10 @@ class YouTubeViewModel @Inject constructor(
         }
         load(item.title) {
             when (item.kind) {
-                YtKind.CHANNEL -> rows(content.getChannelObserve(item.source).blockingFirst())
+                // A channel from the Channels list opens its uploads by its reload key; any other by its id.
+                YtKind.CHANNEL ->
+                    if (item.channelId == null && item.source.reloadPageKey != null) grid(content.getGroupObserve(item.source).blockingFirst())
+                    else rows(content.getChannelObserve(item.source).blockingFirst())
                 else -> grid(content.getGroupObserve(item.source).blockingFirst())
             }
         }
@@ -197,7 +219,7 @@ class YouTubeViewModel @Inject constructor(
         _state.update {
             it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false, subTitle = name)
         }
-        load(name) { rows(content.getChannelObserve(channelId).blockingFirst()) }
+        loadRows(name) { content.getChannelObserve(channelId) }
     }
 
     private fun pushPage() {
@@ -213,6 +235,32 @@ class YouTubeViewModel @Inject constructor(
         channelBlockOn = page.channelBlockOn
         _state.value = page.state.copy(loading = false)
         return true
+    }
+
+    private val rowsLoading: MutableSet<MediaGroup> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** Loads the next page of row [index], when you're getting near its end. */
+    fun loadMoreRow(index: Int) {
+        val row = _state.value.rows.getOrNull(index) ?: return
+        val group = row.group ?: return
+        if (!row.canLoadMore || !rowsLoading.add(group)) return
+        viewModelScope.launch {
+            val next = withContext(Dispatchers.IO) {
+                runCatching { content.continueGroupObserve(group).blockingFirst() }.getOrNull()
+            }
+            val more = next?.let(::toItems).orEmpty()
+            _state.update { s ->
+                s.copy(rows = s.rows.map { r ->
+                    if (r.group === group) r.copy(
+                        items = r.items + more,
+                        group = next ?: group,
+                        canLoadMore = next?.nextPageKey != null && more.isNotEmpty()
+                    ) else r
+                })
+            }
+            rowsLoading.remove(group)
+            fetchDeArrow()
+        }
     }
 
     fun loadMore() {
@@ -242,6 +290,65 @@ class YouTubeViewModel @Inject constructor(
      * clean install the first answers can be empty until the engine has set up its session, so the
      * first retry also asks it to refresh that.
      */
+    private fun toRows(groups: List<MediaGroup>?): List<YtRow> =
+        groups.orEmpty().map { YtRow(it.title.orEmpty(), toItems(it), it, it.nextPageKey != null) }.filter { it.items.isNotEmpty() }
+
+    /**
+     * Loads a page made of rows. YouTube sends it in batches of rows, and SmartTube keeps taking batches until
+     * there are none left; so the first batch shows straight away, and the rest are added underneath as they come.
+     */
+    private fun loadRows(label: String, source: () -> io.reactivex.Observable<List<MediaGroup>>) {
+        refreshHidden()
+        loadJob?.cancel()
+        currentGroup = null
+        loadJob = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val signed = runCatching { service.signInService.isSigned }.getOrDefault(false)
+                    _state.update { it.copy(signedIn = signed) }
+                    val tab = _state.value.tab
+                    if (_state.value.subTitle == null && tab.needsSignIn && !signed) return@runCatching
+                    var got = false
+                    var lastError: Throwable? = null
+                    for (attempt in 0 until 3) {
+                        try {
+                            source().blockingForEach { groups ->
+                                val batch = toRows(groups)
+                                if (batch.isEmpty()) return@blockingForEach
+                                val firstEver = !got
+                                got = true
+                                _state.update { s ->
+                                    s.copy(loading = false, grid = emptyList(), canLoadMore = false, rows = if (firstEver) batch else s.rows + batch)
+                                }
+                                if (firstEver) {
+                                    // The first lookup after the app starts is slow, so do it while you're still choosing.
+                                    batch.firstOrNull()?.items?.firstOrNull { it.kind == YtKind.VIDEO }?.let { lookup(it) }
+                                }
+                            }
+                            lastError = null
+                            break
+                        } catch (e: Throwable) {
+                            lastError = e
+                            if (got) break // what's already shown stays
+                            if (attempt == 0) runCatching { service.refreshCacheIfNeeded() }
+                            if (attempt < 2) Thread.sleep(1500L * (attempt + 1))
+                        }
+                    }
+                    lastError?.let { if (!got) throw it }
+                }
+            }
+            result.onFailure { e ->
+                Log.e(TAG, "couldn't load $label", e)
+                _state.update {
+                    if (e is NoSuchElementException) it.copy(loading = false)
+                    else it.copy(loading = false, error = e.message ?: "Couldn't load $label")
+                }
+            }
+            _state.update { it.copy(loading = false) }
+            fetchDeArrow()
+        }
+    }
+
     private fun <T> withRetry(block: () -> T): T {
         var last: Throwable? = null
         for (attempt in 0 until 3) {
@@ -263,7 +370,7 @@ class YouTubeViewModel @Inject constructor(
     }
 
     private fun rows(groups: List<MediaGroup>?): Feed =
-        Feed.Rows(groups.orEmpty().map { YtRow(it.title.orEmpty(), toItems(it)) }.filter { it.items.isNotEmpty() })
+        Feed.Rows(groups.orEmpty().map { YtRow(it.title.orEmpty(), toItems(it), it, it.nextPageKey != null) }.filter { it.items.isNotEmpty() })
 
     private fun grid(group: MediaGroup?): Feed = if (group == null) Feed.Nothing else Feed.Grid(group)
 
@@ -379,9 +486,11 @@ class YouTubeViewModel @Inject constructor(
     }
 
     private fun toItem(i: MediaItem): YtItem? {
-        val kind = when (i.type) {
-            MediaItem.TYPE_CHANNEL -> YtKind.CHANNEL
-            MediaItem.TYPE_PLAYLIST -> YtKind.PLAYLIST
+        val kind = when {
+            i.type == MediaItem.TYPE_CHANNEL -> YtKind.CHANNEL
+            i.type == MediaItem.TYPE_PLAYLIST -> YtKind.PLAYLIST
+            // A subscribed channel in the Channels list: no video, opened through its reload key.
+            i.videoId == null && i.reloadPageKey != null -> YtKind.CHANNEL
             else -> YtKind.VIDEO
         }
         if (kind == YtKind.VIDEO && i.videoId == null) return null

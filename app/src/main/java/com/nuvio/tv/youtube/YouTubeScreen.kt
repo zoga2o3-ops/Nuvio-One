@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -293,14 +294,17 @@ private fun Content(
         state.isEmpty -> Message("Nothing here yet", null, null) {}
 
         state.rows.isNotEmpty() -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-            items(state.rows) { row ->
+            itemsIndexed(state.rows) { rowIndex, row ->
                 Column {
                     if (row.title.isNotBlank()) {
                         Text(row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     }
                     LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        items(row.items) { v ->
-                            ItemCard(v, Modifier.width(260.dp), onFocused = { viewModel.prefetch(v) }) {
+                        itemsIndexed(row.items) { i, v ->
+                            ItemCard(v, Modifier.width(260.dp), onFocused = {
+                                viewModel.prefetch(v)
+                                if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
+                            }) {
                                 viewModel.activate(v, row.items, onPlay)
                             }
                         }
