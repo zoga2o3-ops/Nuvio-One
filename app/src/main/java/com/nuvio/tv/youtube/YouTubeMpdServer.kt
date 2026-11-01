@@ -27,7 +27,9 @@ object YouTubeMpdServer {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
     /** How much text goes to the translator in one request. */
-    private const val CHUNK_CHARS = 4000
+    private const val CHUNK_CHARS = 4500
+    /** How many translation requests may run at once. */
+    private const val MAX_PARALLEL = 6
 
     private val manifests = ConcurrentHashMap<String, ByteArray>()
     private val pool = Executors.newCachedThreadPool()
@@ -71,12 +73,14 @@ object YouTubeMpdServer {
         val language = Regex("[?&]tlang=([^&]+)").find(address)?.groupValues?.get(1) ?: return null
         val key = "$videoId/$language"
         translatedCache[key]?.let { return it to typeOf(it) }
+        val began = System.currentTimeMillis()
         // The video's own captions are served without any token. Fetch those and translate them.
         val original = address.replace(Regex("&tlang=[^&]+"), "")
         val source = get(original) ?: return null
         val translated = translateCaptions(source, language) ?: return null
         val bytes = translated.toByteArray(Charsets.UTF_8)
         translatedCache[key] = bytes
+        Log.i(TAG, "captions for $key ready in ${System.currentTimeMillis() - began} ms")
         return bytes to typeOf(bytes)
     }
 
@@ -128,21 +132,36 @@ object YouTubeMpdServer {
         return rebuilt
     }
 
-    /** Translates every text, a few thousand characters per request. */
+    /**
+     * Translates every text. YouTube's automatic captions repeat each line as the words roll in, so only the
+     * different lines are sent, and the requests go out side by side instead of one after another.
+     */
     private fun translateAll(texts: List<String>, language: String): List<String>? {
-        val out = ArrayList<String>(texts.size)
+        val unique = texts.filter { it.isNotBlank() }.distinct()
+        val chunks = ArrayList<List<String>>()
         var start = 0
-        while (start < texts.size) {
+        while (start < unique.size) {
             var end = start
             var chars = 0
-            while (end < texts.size && (chars == 0 || chars + texts[end].length < CHUNK_CHARS)) {
-                chars += texts[end].length + 1
+            while (end < unique.size && (chars == 0 || chars + unique[end].length < CHUNK_CHARS)) {
+                chars += unique[end].length + 1
                 end++
             }
-            out += translateChunk(texts.subList(start, end), language) ?: return null
+            chunks += unique.subList(start, end)
             start = end
         }
-        return out
+        val began = System.currentTimeMillis()
+        val workers = Executors.newFixedThreadPool(minOf(MAX_PARALLEL, maxOf(chunks.size, 1)))
+        val translated = try {
+            chunks.map { chunk -> workers.submit<List<String>?> { translateChunk(chunk, language) } }
+                .map { it.get() ?: return null }
+        } finally {
+            workers.shutdown()
+        }
+        val byText = HashMap<String, String>()
+        chunks.forEachIndexed { i, chunk -> chunk.forEachIndexed { j, text -> byText[text] = translated[i][j] } }
+        Log.i(TAG, "translated ${unique.size} different lines (of ${texts.size}) in ${chunks.size} request(s), ${System.currentTimeMillis() - began} ms")
+        return texts.map { if (it.isBlank()) it else byText[it].orEmpty() }
     }
 
     /** Translates [lines] together; falls back to one at a time if the translator merges or splits lines. */
