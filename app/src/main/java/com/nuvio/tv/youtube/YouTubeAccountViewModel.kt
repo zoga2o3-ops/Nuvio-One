@@ -27,6 +27,8 @@ data class YtAccount(
 
 data class YouTubeAccountState(
     val signedIn: Boolean = false,
+    /** False until the first look at the account has finished, so "Sign in" isn't shown while it's still loading. */
+    val checked: Boolean = false,
     /** The account or profile in use. */
     val accountName: String? = null,
     /** Every account and channel profile on this device. */
@@ -45,7 +47,11 @@ data class YouTubeAccountState(
 class YouTubeAccountViewModel @Inject constructor(
     @ApplicationContext private val context: Context
 ) : ViewModel() {
-    private companion object { const val TAG = "YouTubeAccount" }
+    private companion object {
+        const val TAG = "YouTubeAccount"
+        const val RECHECKS = 2
+        const val RECHECK_DELAY_MS = 700L
+    }
 
     private val _state = MutableStateFlow(YouTubeAccountState())
     val state: StateFlow<YouTubeAccountState> = _state.asStateFlow()
@@ -61,10 +67,20 @@ class YouTubeAccountViewModel @Inject constructor(
     private fun label(a: Account): String =
         a.name?.takeIf(String::isNotBlank) ?: a.email?.takeIf(String::isNotBlank) ?: "Account"
 
-    fun refresh() {
+    fun refresh() = check(attempt = 0)
+
+    /**
+     * Right after the app starts, YouTube's sign-in data can still be loading and report "not signed in" for a
+     * moment. So a "no" is looked at again before it is believed.
+     */
+    private fun check(attempt: Int) {
         // Reading accounts touches storage, so keep it off the main thread.
         Schedulers.io().scheduleDirect {
             val signed = runCatching { signInService.isSigned }.getOrDefault(false)
+            if (!signed && attempt < RECHECKS) {
+                Schedulers.io().scheduleDirect({ check(attempt + 1) }, RECHECK_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                return@scheduleDirect
+            }
             val list = runCatching { signInService.accounts.orEmpty() }.getOrDefault(emptyList())
             rawAccounts = list
             val items = list.map {
@@ -78,7 +94,7 @@ class YouTubeAccountViewModel @Inject constructor(
                 )
             }
             val current = runCatching { signInService.selectedAccount }.getOrNull()
-            _state.update { it.copy(signedIn = signed, accountName = current?.let(::label), accounts = items) }
+            _state.update { it.copy(signedIn = signed, checked = true, accountName = current?.let(::label), accounts = items) }
         }
     }
 

@@ -104,6 +104,10 @@ fun YouTubeScreen(
             viewModel.selectTab(state.tab)
         }
     }
+    // The page can open before the account is known; once it turns out you're signed in, load your feed.
+    LaunchedEffect(account.checked, account.signedIn) {
+        if (account.checked && account.signedIn && !state.signedIn) viewModel.selectTab(state.tab)
+    }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
@@ -117,7 +121,11 @@ fun YouTubeScreen(
             // Who's watching: the account or channel profile in use. Sign in when there's none.
             // First in the row, so pressing up from the first tab lands straight on it.
             TabChip(
-                label = if (account.signedIn) "●  ${account.accountName ?: "Account"}" else "Sign in",
+                label = when {
+                    account.signedIn -> "●  ${account.accountName ?: "Account"}"
+                    !account.checked -> "Account"
+                    else -> "Sign in"
+                },
                 selected = false
             ) {
                 if (account.signedIn) showAccounts = !showAccounts
@@ -258,6 +266,9 @@ private fun Content(
         showAccounts -> AccountsPanel(account, onSelectAccount, onAddAccount, onSignOut)
 
         state.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = YtRed) }
+
+        !account.checked && !state.signedIn && state.subTitle == null && (state.tab.needsSignIn || state.tab == YtTab.HOME) ->
+            Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator(color = YtRed) }
 
         state.tab.needsSignIn && !state.signedIn && state.subTitle == null -> Message(
             "Sign in to see your ${state.tab.title.lowercase()}",
