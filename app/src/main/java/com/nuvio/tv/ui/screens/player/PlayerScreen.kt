@@ -33,11 +33,15 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
@@ -3332,6 +3336,66 @@ private fun PlayerControlsOverlay(
     }
 }
 
+/** The preview picture controller for the stream being played, fed by the scrub position while you hold left or right. */
+@Composable
+private fun rememberScrubPreview(viewModel: PlayerViewModel, durationMs: Long, isLive: Boolean, warmPositionMs: Long? = null): Pair<com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController?, Long?> {
+    val scrubPosition by remember(viewModel) {
+        viewModel.uiState.map { it.pendingPreviewSeekPosition }.distinctUntilChanged()
+    }.collectAsState(initial = null)
+    val streamUrl = viewModel.getCurrentStreamUrl().takeIf { it.isNotBlank() && !isLive }
+    val controller = com.nuvio.tv.ui.screens.player.seekpreview.rememberSeekPreviewController(
+        url = streamUrl,
+        headers = remember(streamUrl) { viewModel.getCurrentHeaders() }
+    )
+    LaunchedEffect(controller, scrubPosition, durationMs) {
+        val target = scrubPosition
+        if (target != null) controller?.request(target, durationMs) else controller?.endScrub()
+    }
+    // Start the hidden player as soon as the bar is on screen, so the first picture is not a long wait.
+    LaunchedEffect(controller) {
+        if (warmPositionMs != null && controller != null) {
+            kotlinx.coroutines.delay(800)
+            controller.warmUp(warmPositionMs, durationMs)
+        }
+    }
+    return controller to scrubPosition
+}
+
+/** The picture above the seek bar, placed along the bar at [fraction]. Draws nothing until a frame is ready. */
+@Composable
+private fun BoxScope.SeekPreviewThumbnail(
+    controller: com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController?,
+    scrubbing: Boolean,
+    fraction: Float,
+    liftDp: Int
+) {
+    val shown = controller?.frame ?: return
+    if (!scrubbing) return
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .align(Alignment.TopStart)
+            // Report no height, so the picture floats over the bar instead of pushing it up.
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity))
+                layout(placeable.width, 0) { placeable.place(0, 0) }
+            }
+    ) {
+        val thumbWidth = 240.dp
+        val thumbHeight = 135.dp
+        androidx.compose.foundation.Image(
+            bitmap = shown.bitmap,
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier
+                .offset(x = (maxWidth - thumbWidth).coerceAtLeast(0.dp) * fraction.coerceIn(0f, 1f), y = -(thumbHeight + liftDp.dp))
+                .size(width = thumbWidth, height = thumbHeight)
+                .clip(RoundedCornerShape(10.dp))
+                .border(2.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
+        )
+    }
+}
+
 @Composable
 private fun PlayerControlsProgressBarHost(
     viewModel: PlayerViewModel,
@@ -3344,26 +3408,37 @@ private fun PlayerControlsProgressBarHost(
     onClick: (() -> Unit)? = null
 ) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
+    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, playbackTimeline.isLive, warmPositionMs = playbackTimeline.currentPosition)
 
-    ChapterTitle(chapters = chapters, positionMs = playbackTimeline.currentPosition)
-    ProgressBar(
-        chapters = chapters,
-        currentPosition = playbackTimeline.currentPosition,
-        duration = playbackTimeline.duration,
-        onSeekPreview = { delta ->
-            viewModel.onEvent(PlayerEvent.OnPreviewSeekBy(delta))
-        },
-        onSeekCommit = {
-            viewModel.onEvent(PlayerEvent.OnCommitPreviewSeek)
-        },
-        focusRequester = focusRequester,
-        upFocusRequester = upFocusRequester,
-        downFocusRequester = downFocusRequester,
-        onUpKey = onUpKey,
-        onFocused = onFocused,
-        onClick = onClick,
-        bufferedPosition = playbackTimeline.bufferedPosition
-    )
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            ChapterTitle(chapters = chapters, positionMs = playbackTimeline.currentPosition)
+            ProgressBar(
+                chapters = chapters,
+                currentPosition = playbackTimeline.currentPosition,
+                duration = playbackTimeline.duration,
+                onSeekPreview = { delta ->
+                    viewModel.onEvent(PlayerEvent.OnPreviewSeekBy(delta))
+                },
+                onSeekCommit = {
+                    viewModel.onEvent(PlayerEvent.OnCommitPreviewSeek)
+                },
+                focusRequester = focusRequester,
+                upFocusRequester = upFocusRequester,
+                downFocusRequester = downFocusRequester,
+                onUpKey = onUpKey,
+                onFocused = onFocused,
+                onClick = onClick,
+                bufferedPosition = playbackTimeline.bufferedPosition
+            )
+        }
+        SeekPreviewThumbnail(
+            controller = previewController,
+            scrubbing = scrubPosition != null,
+            fraction = if (playbackTimeline.duration > 0L) playbackTimeline.currentPosition.toFloat() / playbackTimeline.duration.toFloat() else 0f,
+            liftDp = 36
+        )
+    }
 }
 
 @Composable
@@ -3714,7 +3789,9 @@ private fun SeekOverlay(
     currentPosition: Long,
     duration: Long,
     bufferedPosition: Long = 0L,
-    chapters: List<PlayerChapter> = emptyList()
+    chapters: List<PlayerChapter> = emptyList(),
+    previewController: com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController? = null,
+    scrubbing: Boolean = false
 ) {
     Column(
         modifier = Modifier
@@ -3722,15 +3799,25 @@ private fun SeekOverlay(
             .padding(horizontal = NuvioTheme.spacing.xxl, vertical = NuvioTheme.spacing.xl)
     ) {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            ChapterTitle(chapters = chapters, positionMs = currentPosition)
-            ProgressBar(
-                currentPosition = currentPosition,
-                duration = duration,
-                onSeekPreview = {},
-                onSeekCommit = {},
-                bufferedPosition = bufferedPosition,
-                chapters = chapters
-            )
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    ChapterTitle(chapters = chapters, positionMs = currentPosition)
+                    ProgressBar(
+                        currentPosition = currentPosition,
+                        duration = duration,
+                        onSeekPreview = {},
+                        onSeekCommit = {},
+                        bufferedPosition = bufferedPosition,
+                        chapters = chapters
+                    )
+                }
+                SeekPreviewThumbnail(
+                    controller = previewController,
+                    scrubbing = scrubbing,
+                    fraction = if (duration > 0L) currentPosition.toFloat() / duration.toFloat() else 0f,
+                    liftDp = 36
+                )
+            }
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
@@ -3752,12 +3839,15 @@ private fun SeekOverlay(
 @Composable
 private fun SeekOverlayHost(viewModel: PlayerViewModel, chapters: List<PlayerChapter>) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
+    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, playbackTimeline.isLive)
 
     SeekOverlay(
         currentPosition = playbackTimeline.currentPosition,
         duration = playbackTimeline.duration,
         bufferedPosition = playbackTimeline.bufferedPosition,
-        chapters = chapters
+        chapters = chapters,
+        previewController = previewController,
+        scrubbing = scrubPosition != null
     )
 }
 

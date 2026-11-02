@@ -216,6 +216,7 @@ import com.nuvio.tv.ui.util.rememberDrawerItemFocusRequesters
 import com.nuvio.tv.ui.util.rememberRawSvgPainter
 import com.nuvio.tv.updater.UpdateViewModel
 import com.nuvio.tv.updater.ui.UpdateBannerHost
+import com.nuvio.tv.updater.ui.WhatsNewPopupHost
 import dagger.hilt.android.AndroidEntryPoint
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeInputScale
@@ -1308,6 +1309,8 @@ open class MainActivity : ComponentActivity() {
                         com.nuvio.tv.livetv.home.LiveTvHomeReveal.updateBannerShown.value =
                             updateBannerState.showBanner && updateBannerState.update != null
                     }
+
+                    WhatsNewPopupHost(suppress = currentRoute?.startsWith("player/") == true)
 
                     UpdateBannerHost(
                         state = updateBannerState,
