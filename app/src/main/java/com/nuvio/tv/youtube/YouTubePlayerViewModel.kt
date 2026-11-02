@@ -49,10 +49,20 @@ data class YtComment(
     val text: String,
     val likes: String?,
     val published: String?,
-    /** What opens this comment's replies, if it has any. */
+    /** What opens this comment's replies, if it has any. Also what liking the comment goes by. */
     val replyKey: String?,
-    val replyCount: String?
-)
+    val replyCount: String?,
+    /** You've liked this comment. */
+    val liked: Boolean = false
+) {
+    /** This comment after its like is flipped, with the count moved by one when it's a plain number. */
+    fun withLikeFlipped(): YtComment {
+        val now = !liked
+        val count = likes?.trim()?.toIntOrNull()?.let { (it + if (now) 1 else -1).coerceAtLeast(0).toString() }
+            ?: if (now && likes.isNullOrBlank()) "1" else likes
+        return copy(liked = now, likes = count)
+    }
+}
 
 data class YtChatLine(val id: String, val author: String, val message: String)
 
@@ -256,7 +266,8 @@ class YouTubePlayerViewModel @Inject constructor(
         likes = c.likeCount,
         published = c.publishedDate,
         replyKey = c.nestedCommentsKey?.takeIf { it.isNotBlank() },
-        replyCount = c.replyCount?.takeIf { it.isNotBlank() }
+        replyCount = c.replyCount?.takeIf { it.isNotBlank() },
+        liked = c.isLiked
     )
 
     /** Loads the comments in the chosen order. Does nothing if that order is already showing. */
@@ -275,6 +286,41 @@ class YouTubePlayerViewModel @Inject constructor(
         val gen = ++commentsGen
         _state.update { it.copy(comments = emptyList(), commentsSort = sort, canLoadMoreComments = false, message = null) }
         fetchComments(key, gen)
+    }
+
+    /**
+     * Likes a comment, or takes the like back, from holding OK on it. YouTube is asked first; the row shows the
+     * change once that went through. Signed-out viewers are told how to sign in.
+     */
+    fun toggleCommentLike(comment: YtComment) {
+        if (!_state.value.signedIn) {
+            _state.update { it.copy(message = "Sign in to YouTube first, with the account button on the YouTube page.") }
+            return
+        }
+        val key = comment.replyKey
+        if (key == null) {
+            _state.update { it.copy(message = "This comment can't be liked from here.") }
+            return
+        }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { service.commentsService.toggleLikeObserve(key).ignoreElements().blockingAwait() }
+            }
+            result.fold(
+                onSuccess = {
+                    _state.update { s ->
+                        s.copy(
+                            comments = s.comments.map { if (it.replyKey == key) it.withLikeFlipped() else it },
+                            message = if (comment.liked) "Like removed" else "Liked"
+                        )
+                    }
+                },
+                onFailure = {
+                    Log.e(TAG, "comment like failed", it)
+                    _state.update { s -> s.copy(message = "That didn't go through. Try again.") }
+                }
+            )
+        }
     }
 
     fun loadMoreComments() {

@@ -145,44 +145,89 @@ fun YouTubeScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.width(300.dp)
             )
-            var focused by remember { mutableStateOf(false) }
-            BasicTextField(
-                value = query,
-                onValueChange = {
-                    query = it
-                    viewModel.suggest(it)
-                },
-                singleLine = true,
-                textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
-                cursorBrush = SolidColor(Color.White),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    // Close the keyboard and move on to the results.
-                    keyboard?.hide()
-                    suggestionsOpen = false
-                    focusManager.moveFocus(FocusDirection.Down)
-                    viewModel.search(query)
-                }),
-                modifier = Modifier
+            // The box is selected like any other item on the page (it's just something the arrows land on),
+            // and only starts taking text, with the keyboard, once OK is pressed on it.
+            var boxFocused by remember { mutableStateOf(false) }
+            var editing by remember { mutableStateOf(false) }
+            val boxFocus = remember { FocusRequester() }
+            val textFocus = remember { FocusRequester() }
+            var refocusBox by remember { mutableStateOf(false) }
+            LaunchedEffect(editing) {
+                if (editing) {
+                    runCatching { textFocus.requestFocus() }
+                    keyboard?.show()
+                }
+            }
+            // Back out of typing: the keyboard goes and the highlight returns to the box.
+            LaunchedEffect(refocusBox) {
+                if (refocusBox) {
+                    runCatching { boxFocus.requestFocus() }
+                    refocusBox = false
+                }
+            }
+            BackHandler(enabled = editing) {
+                keyboard?.hide()
+                suggestionsOpen = false
+                editing = false
+                refocusBox = true
+            }
+            Box(
+                Modifier
                     .width(380.dp)
                     .clip(RoundedCornerShape(24.dp))
                     .background(CardBg)
-                    .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
+                    .border(2.dp, if (boxFocused || editing) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
                     // Down from the box goes into the suggestions when they're showing.
                     .focusProperties { if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion }
-                    .onFocusChanged {
-                        focused = it.isFocused
-                        if (it.isFocused) {
-                            suggestionsOpen = true
-                            viewModel.suggest(query)
+                    .focusRequester(boxFocus)
+                    .onFocusChanged { boxFocused = it.isFocused }
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { editing = true }
+                    .padding(horizontal = 20.dp, vertical = 10.dp)
+            ) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = {
+                        query = it
+                        viewModel.suggest(it)
+                    },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
+                    cursorBrush = SolidColor(Color.White),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        // Close the keyboard and move on to the results.
+                        keyboard?.hide()
+                        suggestionsOpen = false
+                        editing = false
+                        focusManager.moveFocus(FocusDirection.Down)
+                        viewModel.search(query)
+                    }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(textFocus)
+                        // Only while typing: the arrows never land inside the text field by themselves.
+                        .focusProperties {
+                            canFocus = editing
+                            if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion
                         }
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                suggestionsOpen = true
+                                viewModel.suggest(query)
+                            } else if (editing) {
+                                // Focus left the box (down into the suggestions, say): done typing.
+                                editing = false
+                            }
+                        },
+                    decorationBox = { inner ->
+                        if (query.isEmpty()) Text("Search YouTube", color = Color.Gray, fontSize = 18.sp)
+                        inner()
                     }
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                decorationBox = { inner ->
-                    if (query.isEmpty()) Text("Search YouTube", color = Color.Gray, fontSize = 18.sp)
-                    inner()
-                }
-            )
+                )
+            }
         }
 
         LazyRow(
@@ -204,6 +249,7 @@ fun YouTubeScreen(
 
         if (suggestionsOpen && suggestions.isNotEmpty()) {
             SuggestionList(
+                modifier = Modifier.weight(1f, fill = false),
                 items = suggestions,
                 recent = query.isBlank(),
                 first = firstSuggestion,
@@ -443,14 +489,23 @@ private fun SuggestionList(
     recent: Boolean,
     first: FocusRequester,
     onPick: (String) -> Unit,
-    onClearHistory: () -> Unit
+    onClearHistory: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(Modifier.width(520.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // A long history (or a long list of suggestions) scrolls instead of running off the bottom of the screen.
+    Column(modifier.width(520.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(if (recent) "Recent searches" else "Suggestions", color = Color.Gray, fontSize = 14.sp)
-        items.forEachIndexed { i, text ->
-            AccountRow(text, null, null, if (i == 0) Modifier.focusRequester(first) else Modifier) { onPick(text) }
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            itemsIndexed(items) { i, text ->
+                AccountRow(text, null, null, if (i == 0) Modifier.focusRequester(first) else Modifier) { onPick(text) }
+            }
+            if (recent) item {
+                AccountRow("Clear search history", null, null, Modifier) { onClearHistory() }
+            }
         }
-        if (recent) AccountRow("Clear search history", null, null, Modifier) { onClearHistory() }
     }
 }
 

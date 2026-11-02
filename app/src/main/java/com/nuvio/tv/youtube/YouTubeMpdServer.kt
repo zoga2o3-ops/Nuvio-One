@@ -57,7 +57,9 @@ object YouTubeMpdServer {
         val urls = ArrayList<String>()
         val rewritten = Regex("<BaseURL>([^<]*timedtext[^<]*)</BaseURL>").replace(String(mpd, Charsets.UTF_8)) { m ->
             val url = m.groupValues[1].replace("&amp;", "&")
-            if ("tlang=" !in url) m.value
+            // Translated captions are fetched and translated here; automatic ones (their lines roll up, the old
+            // one staying above the new) are tidied here. Written-by-people captions go straight to YouTube.
+            if ("tlang=" !in url && !isAutomatic(url)) m.value
             else {
                 urls += url
                 "<BaseURL>http://127.0.0.1:$port/yt/cap/$videoId/${urls.size - 1}</BaseURL>"
@@ -68,17 +70,23 @@ object YouTubeMpdServer {
         return rewritten.toByteArray(Charsets.UTF_8)
     }
 
+    /** YouTube's speech-recognition captions ("kind=asr"). */
+    private fun isAutomatic(address: String) = Regex("[?&]kind=asr(&|$)").containsMatchIn(address)
+
     private fun fetchTranslatedCaption(videoId: String, index: Int): Pair<ByteArray, String>? {
         val address = captionUrls[videoId]?.getOrNull(index) ?: return null
-        val language = Regex("[?&]tlang=([^&]+)").find(address)?.groupValues?.get(1) ?: return null
-        val key = "$videoId/$language"
+        val language = Regex("[?&]tlang=([^&]+)").find(address)?.groupValues?.get(1)
+        val key = "$videoId/${language ?: "original"}/${address.hashCode()}"
         translatedCache[key]?.let { return it to typeOf(it) }
         val began = System.currentTimeMillis()
-        // The video's own captions are served without any token. Fetch those and translate them.
+        // The video's own captions are served without any token. Fetch those, tidy them if they're automatic,
+        // and translate them when a language was asked for.
         val original = address.replace(Regex("&tlang=[^&]+"), "")
         val source = get(original) ?: return null
-        val translated = translateCaptions(source, language) ?: return null
-        val bytes = translated.toByteArray(Charsets.UTF_8)
+        Log.i(TAG, "caption file for $key: ${source.length} chars, starts: ${source.take(1500).replace("\n", "\\n")}")
+        val tidy = if (isAutomatic(original)) YouTubeAutoCaptions.tidy(source) else source
+        val result = if (language == null) tidy else translateCaptions(tidy, language) ?: return null
+        val bytes = result.toByteArray(Charsets.UTF_8)
         translatedCache[key] = bytes
         Log.i(TAG, "captions for $key ready in ${System.currentTimeMillis() - began} ms")
         return bytes to typeOf(bytes)

@@ -56,6 +56,8 @@ private class PanelEntry(
     val title: String,
     val detail: String?,
     val titleLines: Int = 2,
+    /** Holding OK on the row, when it has something to do for that. */
+    val onLongClick: (() -> Unit)? = null,
     val onClick: () -> Unit = {}
 )
 
@@ -157,10 +159,13 @@ fun BoxScope.YouTubePlayerPanel(
                     PanelEntry(
                         title = c.text,
                         detail = listOfNotNull(
+                            "Liked  ✓".takeIf { c.liked },
                             c.author, c.published, c.likes?.let { "$it likes" },
                             c.replyCount?.let { if (c.replyKey == null) null else if (it.any { ch -> ch.isLetter() }) it else "$it replies" }
                         ).joinToString("  ·  "),
                         titleLines = 6,
+                        // Hold OK to like a comment (or take the like back), the way SmartTube does.
+                        onLongClick = { viewModel.toggleCommentLike(c) },
                         onClick = {
                             // A comment with replies opens them; the list keeps its place for the way back.
                             val key = c.replyKey
@@ -226,6 +231,12 @@ fun BoxScope.YouTubePlayerPanel(
             if (mode == PanelMode.MAIN && !state.signedIn && info != null) {
                 Text("Sign in on the YouTube page to like, subscribe or save.", color = Color.Gray, fontSize = 12.sp)
             }
+            if (mode == PanelMode.COMMENTS && entries.isNotEmpty()) {
+                Text(
+                    if (state.signedIn) "Hold OK on a comment to like it." else "Sign in on the YouTube page to like comments.",
+                    color = Color.Gray, fontSize = 12.sp
+                )
+            }
         }
     }
 }
@@ -281,6 +292,9 @@ private fun NavigableList(
     val focus = remember { FocusRequester() }
     var selected by remember { mutableIntStateOf(startAt.coerceAtLeast(0)) }
     var onHeader by remember { mutableStateOf(false) }
+    // OK is held down on a row (and whether that already counted as a long press).
+    var pressed by remember { mutableStateOf(false) }
+    var longFired by remember { mutableStateOf(false) }
 
     // This list keeps the remote for as long as it's showing.
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -304,9 +318,28 @@ private fun NavigableList(
             .focusRequester(focus)
             .focusable()
             .onPreviewKeyEvent { e ->
+                // OK presses the row when it's let go; holding it (long press) does the row's other action, if
+                // it has one. A release with no press seen here (the press opened this list) is ignored.
+                if (e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter) {
+                    if (e.type == KeyEventType.KeyDown) {
+                        if (e.nativeKeyEvent.repeatCount == 0) {
+                            pressed = true
+                            longFired = false
+                        } else if (pressed && !longFired && !onHeader) {
+                            entries.getOrNull(selected)?.onLongClick?.let { onLong ->
+                                longFired = true
+                                onLong()
+                            }
+                        }
+                    } else if (e.type == KeyEventType.KeyUp) {
+                        if (pressed && !longFired && !onHeader) entries.getOrNull(selected)?.onClick?.invoke()
+                        pressed = false
+                        longFired = false
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 val handled = when (e.key) {
-                    Key.DirectionDown, Key.DirectionUp, Key.DirectionLeft, Key.DirectionRight,
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> true
+                    Key.DirectionDown, Key.DirectionUp, Key.DirectionLeft, Key.DirectionRight -> true
                     else -> false
                 }
                 if (handled && e.type == KeyEventType.KeyDown) {
@@ -326,8 +359,6 @@ private fun NavigableList(
                         }
                         Key.DirectionLeft -> if (onHeader) onHeaderStep(-1)
                         Key.DirectionRight -> if (onHeader) onHeaderStep(1)
-                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter ->
-                            if (!onHeader) entries.getOrNull(selected)?.onClick?.invoke()
                         else -> Unit
                     }
                 }

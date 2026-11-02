@@ -3084,6 +3084,18 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
+                    // Playback speed sits up front, next to the subtitles, instead of behind "More".
+                    ControlButton(
+                        icon = Icons.Default.Speed,
+                        contentDescription = stringResource(R.string.cd_playback_speed),
+                        onClick = {
+                            onShowSpeedDialog()
+                        },
+                        upFocusRequester = progressUpTarget,
+                        onDownKey = onHideControls,
+                        onFocused = onResetHideTimer
+                    )
+
                     if (showYouTubeButton) {
                         ControlButton(
                             icon = Icons.Default.PlayCircle,
@@ -3225,16 +3237,6 @@ private fun PlayerControlsOverlay(
                             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ControlButton(
-                                icon = Icons.Default.Speed,
-                                contentDescription = stringResource(R.string.cd_playback_speed),
-                                onClick = {
-                                    onShowSpeedDialog()
-                                },
-                                upFocusRequester = progressUpTarget,
-                                onDownKey = onHideControls,
-                                onFocused = onResetHideTimer
-                            )
                             ControlButton(
                                 icon = Icons.Default.AspectRatio,
                                 iconPainter = customAspectPainter,
