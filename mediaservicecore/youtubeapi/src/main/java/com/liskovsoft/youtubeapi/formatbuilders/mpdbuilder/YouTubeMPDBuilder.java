@@ -332,7 +332,12 @@ public class YouTubeMPDBuilder implements MPDBuilder {
         startTag("", "AdaptationSet");
         attribute("", "id", id);
         attribute("", "mimeType", sub.getMimeType());
-        attribute("", "lang", sub.getName() == null ? sub.getLanguageCode() : sub.getName());
+        attribute("", "lang", sub.getLanguageCode() == null ? sub.getName() : sub.getLanguageCode());
+        if (sub.getName() != null) {
+            startTag("", "Label");
+            text(sub.getName());
+            endTag("", "Label");
+        }
 
         startTag("", "Role");
         attribute("", "schemeIdUri", "urn:mpeg:DASH:role:2011");

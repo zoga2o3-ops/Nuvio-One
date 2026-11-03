@@ -24,6 +24,14 @@ object YouTubeSettings {
     private const val KEY_HIDE_WATCHED = "hide_watched"
     private const val KEY_HIDE_UPCOMING = "hide_upcoming"
     private const val KEY_CODEC = "codec_preference"
+    private const val KEY_AUTO_SUBTITLES = "auto_subtitles"
+    private const val KEY_VIDEO_PREVIEWS = "video_previews"
+
+    fun videoPreviews(context: Context) = prefs(context).getBoolean(KEY_VIDEO_PREVIEWS, true)
+    fun setVideoPreviews(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_VIDEO_PREVIEWS, on).apply()
+
+    fun autoSubtitles(context: Context) = prefs(context).getBoolean(KEY_AUTO_SUBTITLES, true)
+    fun setAutoSubtitles(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_AUTO_SUBTITLES, on).apply()
 
     /** SponsorBlock's segment types, in the order they're listed. */
     val sponsorCategories: List<Pair<String, String>> = listOf(

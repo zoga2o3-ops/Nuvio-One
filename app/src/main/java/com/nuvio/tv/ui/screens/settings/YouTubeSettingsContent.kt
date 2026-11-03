@@ -53,6 +53,8 @@ internal fun YouTubeSettingsContent(
     var quality by remember { mutableStateOf(YouTubeSettings.preferredHeight(context)) }
     var hiddenTabs by remember { mutableStateOf(YouTubeSettings.hiddenTabs(context)) }
     var autoplay by remember { mutableStateOf(YouTubeSettings.autoplayNext(context)) }
+    var autoSubtitles by remember { mutableStateOf(YouTubeSettings.autoSubtitles(context)) }
+    var videoPreviews by remember { mutableStateOf(YouTubeSettings.videoPreviews(context)) }
     var sponsorAsk by remember { mutableStateOf(YouTubeSettings.sponsorAsk(context)) }
     var sponsorNotice by remember { mutableStateOf(YouTubeSettings.sponsorNotice(context)) }
     var deTitles by remember { mutableStateOf(YouTubeSettings.deArrowTitles(context)) }
@@ -129,6 +131,24 @@ internal fun YouTubeSettingsContent(
         }
 
         SettingsGroupCard(title = "Playback") {
+            SettingsToggleRow(
+                title = "Thumbnail previews with sound",
+                subtitle = "Play a preview when you pause on a YouTube video",
+                checked = videoPreviews,
+                onToggle = {
+                    videoPreviews = !videoPreviews
+                    YouTubeSettings.setVideoPreviews(context, videoPreviews)
+                }
+            )
+            SettingsToggleRow(
+                title = "Automatically select subtitles",
+                subtitle = "Start YouTube videos with your preferred subtitles when available",
+                checked = autoSubtitles,
+                onToggle = {
+                    autoSubtitles = !autoSubtitles
+                    YouTubeSettings.setAutoSubtitles(context, autoSubtitles)
+                }
+            )
             SettingsToggleRow(
                 title = "Autoplay next video",
                 subtitle = "When a video ends, play the next one in the list, or YouTube's pick",

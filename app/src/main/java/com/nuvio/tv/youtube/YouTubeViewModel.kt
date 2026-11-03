@@ -628,6 +628,8 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
+    suspend fun previewVideo(item: YtItem): YtPlayable? = lookup(item).await().getOrNull()
+
     /**
      * Starts looking up [item]'s stream while its card is highlighted, so pressing OK is instant.
      * Waits a moment first so scrolling past cards doesn't fire a request for each one.

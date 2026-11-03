@@ -19,6 +19,9 @@ import com.liskovsoft.youtubeapi.videoinfo.models.VideoInfoHls;
 import com.liskovsoft.youtubeapi.videoinfo.models.VideoInfoReel;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 import retrofit2.Call;
 
@@ -277,7 +280,18 @@ public class VideoInfoService extends VideoInfoServiceBase {
             }
 
             if (mCachedTranslationLanguages != null) {
-                result.setTranslationLanguages(mCachedTranslationLanguages);
+                List<TranslationLanguage> merged = new ArrayList<>();
+                Set<String> codes = new HashSet<>();
+                List<TranslationLanguage> original = result.getTranslationLanguages();
+                if (original != null) {
+                    for (TranslationLanguage language : original) {
+                        if (language.getLanguageCode() != null && codes.add(language.getLanguageCode())) merged.add(language);
+                    }
+                }
+                for (TranslationLanguage language : mCachedTranslationLanguages) {
+                    if (language.getLanguageCode() != null && codes.add(language.getLanguageCode())) merged.add(language);
+                }
+                result.setTranslationLanguages(merged);
             }
         }
 

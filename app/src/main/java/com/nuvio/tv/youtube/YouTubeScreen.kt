@@ -348,7 +348,7 @@ private fun Content(
                     }
                     LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         itemsIndexed(row.items) { i, v ->
-                            ItemCard(v, Modifier.width(260.dp), onFocused = {
+                            ItemCard(v, viewModel, Modifier.width(260.dp), onFocused = {
                                 viewModel.prefetch(v)
                                 if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
                             }) {
@@ -379,7 +379,7 @@ private fun Content(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 gridItems(state.grid) { v ->
-                    ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
+                    ItemCard(v, viewModel, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
                 }
             }
         }
@@ -445,7 +445,7 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 gridItems(preview.items) { v ->
-                    ItemCard(v, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, preview.items, onPlay) }
+                    ItemCard(v, viewModel, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, preview.items, onPlay) }
                 }
             }
             if (preview.loading && preview.items.isEmpty()) {
@@ -595,8 +595,9 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ItemCard(item: YtItem, modifier: Modifier, onFocused: () -> Unit, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
+private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifier, onFocused: () -> Unit, onClick: () -> Unit) {
+    var focused by remember(item.videoId) { mutableStateOf(false) }
+    var opened by remember(item.videoId) { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     // What this device has played, or what your account says, whichever is further along.
     val watched = remember(item.videoId) {
@@ -608,9 +609,10 @@ private fun ItemCard(item: YtItem, modifier: Modifier, onFocused: () -> Unit, on
             .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
             .onFocusChanged {
                 focused = it.isFocused
+                if (!it.isFocused) opened = false
                 if (it.isFocused) onFocused()
             }
-            .clickable(onClick = onClick)
+            .clickable { opened = true; onClick() }
             .background(CardBg)
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
@@ -620,6 +622,9 @@ private fun ItemCard(item: YtItem, modifier: Modifier, onFocused: () -> Unit, on
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            if (focused && !opened && item.kind == YtKind.VIDEO && YouTubeSettings.videoPreviews(context)) {
+                YouTubeThumbnailPreview(item, viewModel)
+            }
             if (watched > 0 && item.kind == YtKind.VIDEO && !item.isLive) {
                 Box(
                     Modifier

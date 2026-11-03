@@ -2042,6 +2042,7 @@ internal suspend fun PlayerRuntimeController.prepareStartupSubtitles(): StartupS
 }
 
 internal fun PlayerRuntimeController.resetAddonSubtitleStateForNewStream() {
+    youtubeSubtitleStartApplied = false
     autoSubtitleSelected = subtitleDisabledByPersistedPreference || subtitleAddonRestoredByPersistedPreference
     isUserExplicitSubtitleSelection = false
     hasScannedTextTracksOnce = false

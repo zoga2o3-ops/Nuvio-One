@@ -21,7 +21,19 @@ internal object InnertubeService {
         val playerResult = httpClient.fetch("/player", RequestInit(body = RequestInitBody(videoId, session = session)))
             ?: return null
 
-        val formatInfo = MediaItemFormatInfoImpl(playerResult)
+        val renderer = playerResult.captions?.playerCaptionsTracklistRenderer
+        val languages = renderer?.translationLanguages.orEmpty()
+        val webLanguages = if (!renderer?.captionTracks.isNullOrEmpty() && languages.size < 100) {
+            runCatching { InitialResponseService.getPlayerResult(videoId) }
+                .getOrNull()?.captions?.playerCaptionsTracklistRenderer?.translationLanguages.orEmpty()
+        } else emptyList()
+        val enrichedResult = if (renderer != null && webLanguages.isNotEmpty()) {
+            val merged = (languages + webLanguages).distinctBy { it.languageCode }
+            playerResult.copy(captions = playerResult.captions?.copy(
+                playerCaptionsTracklistRenderer = renderer.copy(translationLanguages = merged)
+            ))
+        } else playerResult
+        val formatInfo = MediaItemFormatInfoImpl(enrichedResult)
         session.player.decipher(formatInfo)
 
         if (formatInfo.isUnplayable) {

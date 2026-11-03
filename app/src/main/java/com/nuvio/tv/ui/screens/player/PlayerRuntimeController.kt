@@ -497,6 +497,7 @@ class PlayerRuntimeController(
     /** YouTube fork: SponsorBlock for the video playing, and whether your default quality is applied yet. */
     internal var sponsorSession: com.nuvio.tv.youtube.SponsorBlockSession? = null
     internal var youtubeQualityApplied = false
+    internal var youtubeSubtitleStartApplied = false
     // Prevent the previous stream's end from completing the new stream.
     internal var endDetectionArmed = false
     // Ignore EOF until MPV has reported a non-EOF state for this stream.

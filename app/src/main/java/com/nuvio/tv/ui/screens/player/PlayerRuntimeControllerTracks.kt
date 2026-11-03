@@ -1056,7 +1056,12 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
         pendingEngineSwitchTrackPreference = null
     }
     val usingSwitchPending = switchPending != null
-    val pendingCandidate = switchPending?.preference ?: persistedTrackPreference
+    val pendingCandidate = (switchPending?.preference ?: persistedTrackPreference)?.let { preference ->
+        if (switchPending == null && !isUserExplicitSubtitleSelection &&
+            com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) &&
+            !com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context)) preference.copy(subtitle = null)
+        else preference
+    }
     logSwitchTrace(
         stage = "restore-enter",
         message = "usingSwitchPending=$usingSwitchPending switchPending=${switchPending != null} persisted=${persistedTrackPreference != null} " +
@@ -1745,6 +1750,18 @@ private fun audioMatchesSubtitleTargetForForced(audioTrack: TrackInfo, target: S
 }
 
 internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailableTracks() {
+    if (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) &&
+        !com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context)) {
+        if (!isUserExplicitSubtitleSelection) {
+            if (!youtubeSubtitleStartApplied && (if (isUsingMpvEngine()) mpvView != null else _exoPlayer != null)) {
+                youtubeSubtitleStartApplied = true
+                disableSubtitles()
+                autoSubtitleSelected = true
+            }
+            return
+        }
+        youtubeSubtitleStartApplied = true
+    }
     if (isUserExplicitSubtitleSelection) {
         Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: user explicitly selected current subtitle")
         return
