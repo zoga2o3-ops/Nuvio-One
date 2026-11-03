@@ -19,8 +19,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.nuvio.tv.youtube.YouTubeContentRegion
 import com.nuvio.tv.youtube.YouTubeSettings
 import com.nuvio.tv.youtube.YtTab
+import java.util.Locale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Logout
@@ -70,6 +72,8 @@ internal fun YouTubeSettingsContent(
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
     var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
     var codec by remember { mutableStateOf(YouTubeSettings.codecPreference(context)) }
+    var contentRegion by remember { mutableStateOf(YouTubeSettings.contentRegion(context)) }
+    var showContentRegion by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -148,6 +152,12 @@ internal fun YouTubeSettingsContent(
                     autoSubtitles = !autoSubtitles
                     YouTubeSettings.setAutoSubtitles(context, autoSubtitles)
                 }
+            )
+            SettingsActionRow(
+                title = "Content region",
+                subtitle = "The country whose videos show in News and Live. Automatic follows this device.",
+                value = contentRegionLabel(contentRegion),
+                onClick = { showContentRegion = true }
             )
             SettingsToggleRow(
                 title = "Autoplay next video",
@@ -414,4 +424,36 @@ internal fun YouTubeSettingsContent(
             }
         }
     }
+
+    if (showContentRegion) {
+        SettingsSingleChoiceDialog(
+            title = "Content region",
+            subtitle = "Which country's videos appear in News and Live",
+            options = contentRegionChoices(),
+            selectedValue = contentRegion,
+            onOptionSelected = { region ->
+                contentRegion = region
+                YouTubeSettings.setContentRegion(context, region)
+                YouTubeContentRegion.apply(context)
+                showContentRegion = false
+            },
+            onDismiss = { showContentRegion = false }
+        )
+    }
 }
+
+private fun contentRegionChoices(): List<SettingsPickerOption<String>> =
+    (listOf(SettingsPickerOption("", "Automatic (device)")) +
+        Locale.getISOCountries()
+            .map { code ->
+                SettingsPickerOption(code, runCatching {
+                    Locale.Builder().setRegion(code).build().getDisplayCountry(Locale.getDefault())
+                }.getOrNull()?.takeIf { it.isNotBlank() } ?: code)
+            })
+        .sortedBy { it.title }
+
+private fun contentRegionLabel(region: String): String =
+    if (region.isBlank()) "Automatic"
+    else runCatching {
+        Locale.Builder().setRegion(region).build().getDisplayCountry(Locale.getDefault())
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: region

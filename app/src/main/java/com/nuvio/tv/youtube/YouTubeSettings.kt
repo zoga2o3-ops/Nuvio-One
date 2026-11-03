@@ -26,12 +26,18 @@ object YouTubeSettings {
     private const val KEY_CODEC = "codec_preference"
     private const val KEY_AUTO_SUBTITLES = "auto_subtitles"
     private const val KEY_VIDEO_PREVIEWS = "video_previews"
+    private const val KEY_CONTENT_REGION = "content_region"
 
     fun videoPreviews(context: Context) = prefs(context).getBoolean(KEY_VIDEO_PREVIEWS, true)
     fun setVideoPreviews(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_VIDEO_PREVIEWS, on).apply()
 
     fun autoSubtitles(context: Context) = prefs(context).getBoolean(KEY_AUTO_SUBTITLES, true)
     fun setAutoSubtitles(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_AUTO_SUBTITLES, on).apply()
+
+    /** The country whose videos show in News and Live; blank follows the device region. */
+    fun contentRegion(context: Context): String = prefs(context).getString(KEY_CONTENT_REGION, "") ?: ""
+    fun setContentRegion(context: Context, region: String) =
+        prefs(context).edit().putString(KEY_CONTENT_REGION, region.trim().uppercase()).apply()
 
     /** SponsorBlock's segment types, in the order they're listed. */
     val sponsorCategories: List<Pair<String, String>> = listOf(

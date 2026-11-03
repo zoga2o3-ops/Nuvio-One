@@ -114,6 +114,7 @@ class OnDemandRepository @Inject constructor(
         .build()
 
     private val _hasContent = MutableStateFlow(false)
+    private val contentCheckReady = kotlinx.coroutines.CompletableDeferred<Unit>()
     /** True when at least one provider's movies or series are imported (shows the menu item). */
     val hasContent: StateFlow<Boolean> = _hasContent.asStateFlow()
 
@@ -161,6 +162,7 @@ class OnDemandRepository @Inject constructor(
         scope.launch(com.nuvio.tv.livetv.data.BackgroundWork.quiet) {
             // A failed check (database busy) keeps the current answer instead of hiding On Demand.
             _hasContent.value = runCatching { db.hasAny() }.getOrDefault(_hasContent.value)
+            contentCheckReady.complete(Unit)
             // The heavier work below waits a little, so it never competes with Nuvio's own
             // start-up (Continue watching looks up each title's details with a short time limit;
             // a busy box made those lookups miss, leaving the home hero without year, genres
@@ -191,6 +193,11 @@ class OnDemandRepository @Inject constructor(
                 .drop(1)
                 .collect { refreshSoon() }
         }
+    }
+
+    suspend fun awaitContentCheck() {
+        start()
+        contentCheckReady.await()
     }
 
     /** Imports new providers and drops ones that were turned off (no re-download of the rest). */

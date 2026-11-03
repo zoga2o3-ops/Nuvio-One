@@ -26,6 +26,8 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -112,8 +114,11 @@ fun YouTubeScreen(
     }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
+    val openSidebar = com.nuvio.tv.LocalOpenSidebar.current
 
     // Back goes up from a channel, playlist or search before it leaves the page.
+    BackHandler(enabled = state.subTitle == null && !showAccounts && !suggestionsOpen && !sidebarExpanded) { openSidebar() }
     BackHandler(enabled = state.subTitle != null) { viewModel.back() }
     BackHandler(enabled = showAccounts) { showAccounts = false }
     BackHandler(enabled = suggestionsOpen) { suggestionsOpen = false }
@@ -308,6 +313,18 @@ private fun Content(
     onAddAccount: () -> Unit,
     onSignOut: () -> Unit
 ) {
+    var needsInitialFocus by remember { mutableStateOf(true) }
+    val canRequestInitialFocus = needsInitialFocus && !com.nuvio.tv.LocalSidebarExpanded.current
+    val restoreId = viewModel.lastPlayedVideoId
+    val firstRowWithVideo = state.rows.indexOfFirst { row -> row.items.any { it.kind == YtKind.VIDEO } }
+    val restoredRow = state.rows.indexOfFirst { row -> row.items.any { it.kind == YtKind.VIDEO && it.videoId == restoreId } }
+    val targetRow = if (restoredRow >= 0) restoredRow else firstRowWithVideo
+    val targetRowVideo = state.rows.getOrNull(targetRow)?.items?.let { items ->
+        items.indexOfFirst { it.kind == YtKind.VIDEO && it.videoId == restoreId }.takeIf { it >= 0 }
+            ?: items.indexOfFirst { it.kind == YtKind.VIDEO }
+    } ?: -1
+    val restoredGridIndex = state.grid.indexOfFirst { it.kind == YtKind.VIDEO && it.videoId == restoreId }
+    val targetGridIndex = if (restoredGridIndex >= 0) restoredGridIndex else state.grid.indexOfFirst { it.kind == YtKind.VIDEO }
     when {
         account.code != null -> SignInPanel(account, onCancelSignIn)
 
@@ -340,15 +357,24 @@ private fun Content(
 
         state.isEmpty -> Message("Nothing here yet", null, null) {}
 
-        state.rows.isNotEmpty() -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        state.rows.isNotEmpty() -> {
+          val rowsState = rememberLazyListState()
+          LaunchedEffect(needsInitialFocus, targetRow) {
+              if (needsInitialFocus && targetRow >= 0) rowsState.scrollToItem(targetRow)
+          }
+          LazyColumn(Modifier.fillMaxSize(), state = rowsState, verticalArrangement = Arrangement.spacedBy(20.dp)) {
             itemsIndexed(state.rows) { rowIndex, row ->
+                val rowState = rememberLazyListState()
+                LaunchedEffect(needsInitialFocus, targetRow, targetRowVideo) {
+                    if (needsInitialFocus && rowIndex == targetRow && targetRowVideo >= 0) rowState.scrollToItem(targetRowVideo)
+                }
                 Column {
                     if (row.title.isNotBlank()) {
                         Text(row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                     }
-                    LazyRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    LazyRow(Modifier.padding(top = 8.dp), state = rowState, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         itemsIndexed(row.items) { i, v ->
-                            ItemCard(v, viewModel, Modifier.width(260.dp), onFocused = {
+                            ItemCard(v, viewModel, Modifier.width(260.dp), requestInitialFocus = canRequestInitialFocus && rowIndex == targetRow && i == targetRowVideo, onInitialFocus = { needsInitialFocus = false }, onFocused = {
                                 viewModel.prefetch(v)
                                 if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
                             }) {
@@ -358,12 +384,16 @@ private fun Content(
                     }
                 }
             }
+          }
         }
 
-        state.tab == YtTab.CHANNELS && state.subTitle == null -> ChannelsSplit(state, viewModel, onPlay)
+        state.tab == YtTab.CHANNELS && state.subTitle == null -> ChannelsSplit(state, viewModel, onPlay, canRequestInitialFocus) { needsInitialFocus = false }
 
         else -> {
             val gridState = rememberLazyGridState()
+            LaunchedEffect(needsInitialFocus, targetGridIndex) {
+                if (needsInitialFocus && targetGridIndex >= 0) gridState.scrollToItem(targetGridIndex)
+            }
             // Keep loading as you near the end, like an endless feed.
             LaunchedEffect(gridState, state.canLoadMore) {
                 snapshotFlow {
@@ -378,8 +408,8 @@ private fun Content(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                gridItems(state.grid) { v ->
-                    ItemCard(v, viewModel, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
+                gridItemsIndexed(state.grid) { index, v ->
+                    ItemCard(v, viewModel, Modifier, requestInitialFocus = canRequestInitialFocus && index == targetGridIndex, onInitialFocus = { needsInitialFocus = false }, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, state.grid, onPlay) }
                 }
             }
         }
@@ -388,9 +418,11 @@ private fun Content(
 
 /** Your subscribed channels as a list; the highlighted one's videos show beside it, like SmartTube. */
 @Composable
-private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay: (YtPlayable) -> Unit) {
+private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay: (YtPlayable) -> Unit, needsInitialFocus: Boolean, onInitialFocus: () -> Unit) {
     val preview by viewModel.preview.collectAsState()
-    LaunchedEffect(state.grid.firstOrNull()?.title) { state.grid.firstOrNull()?.let(viewModel::previewChannel) }
+    LaunchedEffect(state.grid.firstOrNull()?.title) {
+        if (preview.items.isEmpty()) state.grid.firstOrNull()?.let(viewModel::previewChannel)
+    }
     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         LazyColumn(Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(state.grid) { i, channel ->
@@ -431,6 +463,11 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
         }
         Box(Modifier.weight(1f).fillMaxHeight()) {
             val gridState = rememberLazyGridState()
+            val restoredIndex = preview.items.indexOfFirst { it.kind == YtKind.VIDEO && it.videoId == viewModel.lastPlayedVideoId }
+            val initialIndex = if (restoredIndex >= 0) restoredIndex else preview.items.indexOfFirst { it.kind == YtKind.VIDEO }
+            LaunchedEffect(needsInitialFocus, initialIndex) {
+                if (needsInitialFocus && initialIndex >= 0) gridState.scrollToItem(initialIndex)
+            }
             LaunchedEffect(gridState, preview.canLoadMore, preview.title) {
                 snapshotFlow {
                     val info = gridState.layoutInfo
@@ -444,8 +481,8 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                gridItems(preview.items) { v ->
-                    ItemCard(v, viewModel, Modifier, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, preview.items, onPlay) }
+                gridItemsIndexed(preview.items) { index, v ->
+                    ItemCard(v, viewModel, Modifier, requestInitialFocus = needsInitialFocus && index == initialIndex, onInitialFocus = onInitialFocus, onFocused = { viewModel.prefetch(v) }) { viewModel.activate(v, preview.items, onPlay) }
                 }
             }
             if (preview.loading && preview.items.isEmpty()) {
@@ -595,9 +632,18 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifier, onFocused: () -> Unit, onClick: () -> Unit) {
+private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifier, requestInitialFocus: Boolean = false, onInitialFocus: () -> Unit = {}, onFocused: () -> Unit, onClick: () -> Unit) {
     var focused by remember(item.videoId) { mutableStateOf(false) }
     var opened by remember(item.videoId) { mutableStateOf(false) }
+    // The side menu covers the page, so a preview should not keep playing behind it.
+    val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(requestInitialFocus) {
+        if (requestInitialFocus) {
+            kotlinx.coroutines.yield()
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     // What this device has played, or what your account says, whichever is further along.
     val watched = remember(item.videoId) {
@@ -605,11 +651,13 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
     }
     Column(
         modifier
+            .focusRequester(focusRequester)
             .clip(RoundedCornerShape(10.dp))
             .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
             .onFocusChanged {
                 focused = it.isFocused
                 if (!it.isFocused) opened = false
+                if (it.isFocused && requestInitialFocus) onInitialFocus()
                 if (it.isFocused) onFocused()
             }
             .clickable { opened = true; onClick() }
@@ -622,7 +670,7 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
-            if (focused && !opened && item.kind == YtKind.VIDEO && YouTubeSettings.videoPreviews(context)) {
+            if (focused && !opened && !sidebarExpanded && item.kind == YtKind.VIDEO && YouTubeSettings.videoPreviews(context)) {
                 YouTubeThumbnailPreview(item, viewModel)
             }
             if (watched > 0 && item.kind == YtKind.VIDEO && !item.isLive) {

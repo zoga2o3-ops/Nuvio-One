@@ -13,8 +13,23 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
+
+internal fun <T> onDemandLookup(waitForProvider: Boolean, lookup: suspend () -> List<T>): Flow<List<T>> = flow {
+    if (!waitForProvider) emit(emptyList())
+    val found = try {
+        withTimeoutOrNull(8_000) { lookup() }.orEmpty()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        emptyList()
+    }
+    if (waitForProvider || found.isNotEmpty()) emit(found)
+}
 
 @EntryPoint
 @InstallIn(SingletonComponent::class)
@@ -80,10 +95,17 @@ object OnDemandStreams {
         // Your provider's copies, and where they go in the list (their tab, left to right): set
         // in Live TV settings, last by default.
         val onDemand = flow {
-            emit(emptyList<Stream>() to "LAST")
-            val position = runCatching { entry.liveTvPreferences().settings.first().onDemandStreamsPosition }.getOrDefault("LAST")
-            val found = runCatching { lookup(entry, type, videoId, season, episode, title, year) }.getOrDefault(emptyList())
-            if (found.isNotEmpty()) emit(found to position)
+            val settings = runCatching { entry.liveTvPreferences().settings.first() }.getOrNull()
+            val position = settings?.onDemandStreamsPosition ?: "LAST"
+            if (settings != null) {
+                autoPlayAllowed = settings.onDemandAutoPlay && position == "FIRST"
+                tabPosition = position
+            }
+            val waitForProvider = settings?.onDemandAutoPlay == true && position == "FIRST" &&
+                settings.onDemandInStreams && settings.onDemandInSidebar
+            onDemandLookup(waitForProvider) {
+                lookup(entry, type, videoId, season, episode, title, year)
+            }.collect { emit(it to position) }
         }
         return combine(source, onDemand) { result, (extra, position) ->
             when {
@@ -109,7 +131,7 @@ object OnDemandStreams {
         val show = runCatching { entry.liveTvPreferences().settings.first().let { it.onDemandInStreams && it.onDemandInSidebar } }.getOrDefault(true)
         if (!show) return emptyList()
         val repo = entry.onDemandRepository()
-        repo.start()
+        repo.awaitContentCheck()
         if (!repo.hasContent.value) return emptyList()
         val base = videoId.substringBefore(':')
         val tmdbId = when {

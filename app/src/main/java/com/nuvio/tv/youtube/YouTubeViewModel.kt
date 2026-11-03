@@ -134,11 +134,15 @@ class YouTubeViewModel @Inject constructor(
 
     val canGoBack: Boolean get() = backStack.isNotEmpty()
 
-    init { selectTab(YouTubeSettings.lastTab(context)) }
+    init {
+        selectTab(YouTubeSettings.lastTab(context))
+        YouTubeMpdServer.attach(context.cacheDir)
+    }
 
     // ---- feeds ----
 
     fun selectTab(tab: YtTab) {
+        YouTubeContentRegion.apply(context)
         backStack.clear()
         filtersOn = tab != YtTab.HISTORY && tab != YtTab.SHORTS
         channelBlockOn = true
@@ -719,6 +723,9 @@ class YouTubeViewModel @Inject constructor(
     }
 
     /** Plays a video, or opens a channel or playlist. [onReady] runs on the main thread. */
+    var lastPlayedVideoId: String? = null
+        private set
+
     fun activate(item: YtItem, from: List<YtItem>, onReady: (YtPlayable) -> Unit) {
         if (item.kind != YtKind.VIDEO) {
             open(item)
@@ -731,7 +738,7 @@ class YouTubeViewModel @Inject constructor(
         prefetchJob?.cancel()
         viewModelScope.launch {
             lookup(item).await().fold(
-                onSuccess = onReady,
+                onSuccess = { lastPlayedVideoId = item.videoId; onReady(it) },
                 onFailure = { _error.value = it.message ?: "Couldn't play this video" }
             )
         }

@@ -1166,6 +1166,29 @@ fun PlayerScreen(
                 val previewConfiguredSubtitlePosition = uiState.showSubtitleOverlay || uiState.showSubtitleStylePanel
                 val subtitleCueState by viewModel.controller.subtitleCueTracker.state.collectAsState()
                 val prescannedSubtitleTexts by viewModel.controller.subtitleCueTracker.prescannedTexts.collectAsState()
+                // YouTube's translated captions reach this app as a segmented track the player fetches
+                // but never turns into cues, so the line showing right now is read and shown here. Only
+                // YouTube takes this path; every other kind of playback keeps the normal subtitles.
+                val youtubeCaptionVideo = viewModel.controller.contentId
+                    ?.takeIf { viewModel.isYouTubePlayback() }
+                    ?.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
+                val youtubeCaptionLanguage = uiState.subtitleTracks
+                    .getOrNull(uiState.selectedSubtitleTrackIndex)
+                    ?.takeIf { "*" in (it.name.orEmpty()) }
+                    ?.language
+                LaunchedEffect(youtubeCaptionVideo, youtubeCaptionLanguage) {
+                    val videoId = youtubeCaptionVideo ?: return@LaunchedEffect
+                    val language = youtubeCaptionLanguage ?: return@LaunchedEffect
+                    if (!com.nuvio.tv.youtube.YouTubeMpdServer.hasTranslatedTrack(videoId, language)) {
+                        return@LaunchedEffect
+                    }
+                    val captions = com.nuvio.tv.youtube.YouTubeTranslatedCaptions(videoId, language)
+                    while (true) {
+                        val position = viewModel.controller.exoPlayer?.currentPosition ?: 0L
+                        viewModel.controller.subtitleCueTracker.updateText(captions.lineAt(position))
+                        delay(250)
+                    }
+                }
                 val subtitleWidthKey = listOf(uiState.selectedSubtitleTrackIndex, uiState.selectedAddonSubtitle, subtitleTextMetrics)
                 var widestSubtitleBlockPx by remember(subtitleWidthKey) { mutableStateOf<Float?>(null) }
                 val subtitleMeasurePaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
@@ -3343,9 +3366,11 @@ private fun rememberScrubPreview(viewModel: PlayerViewModel, durationMs: Long, i
         viewModel.uiState.map { it.pendingPreviewSeekPosition }.distinctUntilChanged()
     }.collectAsState(initial = null)
     val streamUrl = viewModel.getCurrentStreamUrl().takeIf { it.isNotBlank() && !isLive }
+    val isYouTube = viewModel.isYouTubePlayback()
     val controller = com.nuvio.tv.ui.screens.player.seekpreview.rememberSeekPreviewController(
         url = streamUrl,
-        headers = remember(streamUrl) { viewModel.getCurrentHeaders() }
+        headers = remember(streamUrl) { viewModel.getCurrentHeaders() },
+        releaseAfterScrub = isYouTube
     )
     LaunchedEffect(controller, scrubPosition, durationMs) {
         val target = scrubPosition
@@ -3353,7 +3378,7 @@ private fun rememberScrubPreview(viewModel: PlayerViewModel, durationMs: Long, i
     }
     // Start the hidden player as soon as the bar is on screen, so the first picture is not a long wait.
     LaunchedEffect(controller) {
-        if (warmPositionMs != null && controller != null) {
+        if (!isYouTube && warmPositionMs != null && controller != null) {
             kotlinx.coroutines.delay(800)
             controller.warmUp(warmPositionMs, durationMs)
         }

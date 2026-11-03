@@ -224,6 +224,7 @@ class PlayerViewModel @Inject constructor(
         get() = controller.exoPlayer
 
     fun getCurrentStreamUrl(): String = controller.getCurrentStreamUrl()
+    fun isYouTubePlayback(): Boolean = com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(controller.contentId)
 
     fun getCurrentHeaders(): Map<String, String> = controller.getCurrentHeaders()
 

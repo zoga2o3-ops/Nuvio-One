@@ -45,6 +45,7 @@ class SeekPreviewController(
     private val context: Context,
     private val url: String,
     private val headers: Map<String, String>,
+    private val releaseAfterScrub: Boolean = false,
 ) {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val decodeDispatcher = Dispatchers.IO.limitedParallelism(1)
@@ -93,7 +94,10 @@ class SeekPreviewController(
     fun endScrub() {
         frame = null
         requests.value = null
-        scheduleRelease()
+        if (releaseAfterScrub) {
+            releaseJob?.cancel()
+            releaseConnection()
+        } else scheduleRelease()
     }
 
     private fun scheduleRelease() {
@@ -196,13 +200,13 @@ private fun bucketFor(positionMs: Long, durationMs: Long): Long {
 /** The one controller for the stream being played, kept between the control bar and the quick seek bar so the hidden player stays warm. */
 private object SharedSeekPreview {
     private var controller: SeekPreviewController? = null
-    private var key: Pair<String, Map<String, String>>? = null
+    private var key: Triple<String, Map<String, String>, Boolean>? = null
 
-    fun obtain(context: Context, url: String, headers: Map<String, String>): SeekPreviewController {
-        val wanted = url to headers
+    fun obtain(context: Context, url: String, headers: Map<String, String>, releaseAfterScrub: Boolean): SeekPreviewController {
+        val wanted = Triple(url, headers, releaseAfterScrub)
         controller?.takeIf { key == wanted }?.let { return it }
         controller?.dispose()
-        return SeekPreviewController(context, url, headers).also {
+        return SeekPreviewController(context, url, headers, releaseAfterScrub).also {
             controller = it
             key = wanted
         }
@@ -211,7 +215,7 @@ private object SharedSeekPreview {
 
 /** A preview controller for [url], or null when there is none to make. */
 @Composable
-fun rememberSeekPreviewController(url: String?, headers: Map<String, String>): SeekPreviewController? {
+fun rememberSeekPreviewController(url: String?, headers: Map<String, String>, releaseAfterScrub: Boolean = false): SeekPreviewController? {
     val context = LocalContext.current
-    return remember(url, headers) { url?.let { SharedSeekPreview.obtain(context.applicationContext, it, headers) } }
+    return remember(url, headers, releaseAfterScrub) { url?.let { SharedSeekPreview.obtain(context.applicationContext, it, headers, releaseAfterScrub) } }
 }

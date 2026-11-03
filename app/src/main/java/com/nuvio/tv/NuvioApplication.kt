@@ -91,6 +91,8 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
         val tag = getSharedPreferences("app_locale", Context.MODE_PRIVATE)
             .getString("locale_tag", null)
         LocaleCache.localeTag = tag ?: ""
+        // Keep the chosen YouTube content region ready before the first feed request.
+        com.nuvio.tv.youtube.YouTubeContentRegion.apply(this)
     }
 
     override fun newImageLoader(context: android.content.Context): ImageLoader {
