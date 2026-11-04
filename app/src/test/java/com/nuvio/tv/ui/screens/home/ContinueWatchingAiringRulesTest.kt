@@ -164,7 +164,9 @@ class ContinueWatchingAiringRulesTest {
     @Test
     fun `watchableEpisodes excludes future mid-season episodes so checkmark can apply`() {
         // Documents a58809 behavior: only aired eps count → caught-up checkmark possible.
-        val tomorrow = LocalDate.now(ZoneId.systemDefault()).plusDays(1).toString()
+        // A week out, so the date cannot already have passed: a release date is read as
+        // midnight UTC, which can still be "yesterday" for a local date only a day ahead.
+        val nextWeek = LocalDate.now(ZoneId.systemDefault()).plusDays(7).toString()
         val yesterday = LocalDate.now(ZoneId.systemDefault()).minusDays(1).toString()
         val meta = CwMetaSummary(
             id = "tt-airing",
@@ -181,7 +183,7 @@ class ContinueWatchingAiringRulesTest {
             videos = listOf(
                 episode(1, 1, yesterday),
                 episode(1, 2, yesterday),
-                episode(1, 3, tomorrow),
+                episode(1, 3, nextWeek),
             ),
         )
         val watchable = meta.watchableEpisodes().map { it.season to it.episode }
