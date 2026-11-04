@@ -34,9 +34,15 @@ data class YtItem(
     val videoId: String?,
     val title: String,
     val author: String?,
+    /** Views and upload time, as YouTube words them. */
+    val meta: String? = null,
+    /** The engine's published-time text, used when the second line leaves it out. */
+    val postTime: String? = null,
     val thumbnail: String?,
     val badge: String?,
     val isLive: Boolean,
+    /** A vertical Short: its card keeps the tall shape instead of a 16:9 crop. */
+    val isShorts: Boolean = false,
     val channelId: String?,
     /** How much YouTube says you've watched (0-100), from your account. */
     val percentWatched: Int,
@@ -82,6 +88,20 @@ data class YtUiState(
     val isEmpty get() = rows.isEmpty() && grid.isEmpty()
 }
 
+/** A card's long-press menu: what it is, and what the menu has found out about it. */
+data class YtItemMenu(
+    val item: YtItem,
+    val signedIn: Boolean = false,
+    /** Whether the video's channel is subscribed, once it's known. */
+    val subscribed: Boolean? = null,
+    val playlists: List<YtPlaylistRow>? = null,
+    val loadingPlaylists: Boolean = false,
+    val busy: Boolean = false,
+    /** A playlist card that is already in the pinned row on the YouTube page. */
+    val pinned: Boolean = false,
+    val message: String? = null
+)
+
 /** What the player needs to start a video. */
 data class YtPlayable(
     val url: String,
@@ -106,11 +126,22 @@ class YouTubeViewModel @Inject constructor(
 ) : ViewModel() {
     private companion object {
         const val TAG = "YouTubeVM"
-        const val MAX_CLIENT_SWITCHES = 8
-        const val PREFETCH_DELAY_MS = 250L
+        const val MAX_CLIENT_SWITCHES = 5
+        const val PREFETCH_DELAY_MS = 600L
         const val MAX_CACHED = 24
+        const val MAX_HISTORY = 50
         /** How much of a video counts as watched for hiding it. */
         const val WATCHED_PERCENT = 90
+
+        /**
+         * Clients the engine marks as needing a proof-of-origin token. Their plain stream URLs come
+         * back HTTP 403 in the player often enough that they are not worth trying for finished
+         * videos. Live HLS from them is still used, since that path works.
+         */
+        val BROKEN_CLIENTS = setOf(
+            "WEB", "WEB_CREATOR", "WEB_REMIX", "WEB_EMBEDDED_PLAYER", "MWEB",
+            "ANDROID_VR", "iOS", "TVHTML5_SIMPLY_EMBEDDED_PLAYER"
+        )
     }
 
     private val _state = MutableStateFlow(YtUiState())
@@ -118,6 +149,14 @@ class YouTubeViewModel @Inject constructor(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    /** The video whose stream is being looked up right now, so the card can show a spinner. */
+    private val _resolving = MutableStateFlow<String?>(null)
+    val resolving: StateFlow<String?> = _resolving.asStateFlow()
+
+    /** The card whose long-press menu is open. */
+    private val _menu = MutableStateFlow<YtItemMenu?>(null)
+    val menu: StateFlow<YtItemMenu?> = _menu.asStateFlow()
 
     private val service by lazy {
         // MediaServiceCore reads its prefs through this singleton, so it must exist first.
@@ -142,6 +181,7 @@ class YouTubeViewModel @Inject constructor(
     // ---- feeds ----
 
     fun selectTab(tab: YtTab) {
+        _error.value = null
         YouTubeContentRegion.apply(context)
         backStack.clear()
         filtersOn = tab != YtTab.HISTORY && tab != YtTab.SHORTS
@@ -197,6 +237,31 @@ class YouTubeViewModel @Inject constructor(
 
     /** Opens a channel or playlist on top of the current page. */
     fun open(item: YtItem) {
+        _error.value = null
+        // A channel card with nothing behind it would make the engine return null ("fromNullable
+        // result is null"), so say it plainly instead of trying to open it.
+        if (item.kind == YtKind.CHANNEL && item.source.reloadPageKey == null && item.channelId == null) {
+            _error.value = "This channel can't be opened."
+            return
+        }
+        // Cards from the feeds often carry only a playlist id, with no continuation key.
+        // Open those by id instead.
+        if (item.kind == YtKind.PLAYLIST && item.source.reloadPageKey == null) {
+            val playlistId = item.source.playlistId
+            if (playlistId.isNullOrBlank()) {
+                _error.value = "This playlist can't be opened."
+                return
+            }
+            filtersOn = true
+            channelBlockOn = true
+            pushPage()
+            _state.update {
+                it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
+                    subTitle = item.title)
+            }
+            load(item.title) { grid(content.getPlaylist(playlistId)) }
+            return
+        }
         filtersOn = true
         channelBlockOn = item.kind != YtKind.CHANNEL
         pushPage()
@@ -226,6 +291,18 @@ class YouTubeViewModel @Inject constructor(
         loadRows(name) { content.getChannelObserve(channelId) }
     }
 
+    /** Opens a pinned playlist straight from its id. */
+    fun openPlaylistById(playlistId: String, title: String) {
+        _error.value = null
+        filtersOn = true
+        channelBlockOn = true
+        pushPage()
+        _state.update {
+            it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false, subTitle = title)
+        }
+        load(title) { grid(content.getPlaylist(playlistId)) }
+    }
+
     private fun pushPage() {
         // A page that's still loading has nothing to come back to.
         if (!_state.value.loading) backStack.addLast(Page(_state.value, currentGroup, channelBlockOn))
@@ -233,6 +310,7 @@ class YouTubeViewModel @Inject constructor(
 
     /** Takes the top page off. Returns false when there's nothing to go back to. */
     fun back(): Boolean {
+        _error.value = null
         val page = backStack.removeLastOrNull() ?: return false
         loadJob?.cancel()
         currentGroup = page.group
@@ -256,7 +334,7 @@ class YouTubeViewModel @Inject constructor(
             _state.update { s ->
                 s.copy(rows = s.rows.map { r ->
                     if (r.group === group) r.copy(
-                        items = r.items + more,
+                        items = (r.items + more).distinctBy { item -> item.uniqueKey() },
                         group = next ?: group,
                         canLoadMore = next?.nextPageKey != null && more.isNotEmpty()
                     ) else r
@@ -314,7 +392,7 @@ class YouTubeViewModel @Inject constructor(
             }
             val more = next?.let(::toItems).orEmpty()
             val merged = cur.copy(
-                items = cur.items + more,
+                items = (cur.items + more).distinctBy { item -> item.uniqueKey() },
                 loading = false,
                 canLoadMore = next?.nextPageKey != null && more.isNotEmpty(),
                 group = next ?: group
@@ -338,7 +416,7 @@ class YouTubeViewModel @Inject constructor(
             currentGroup = next ?: group
             _state.update {
                 it.copy(
-                    grid = it.grid + more,
+                    grid = (it.grid + more).distinctBy { item -> item.uniqueKey() },
                     loadingMore = false,
                     canLoadMore = next?.nextPageKey != null && more.isNotEmpty()
                 )
@@ -527,13 +605,220 @@ class YouTubeViewModel @Inject constructor(
         hiddenChannelIds = YouTubeSettings.hiddenChannels(context).map { it.first }.toSet()
     }
 
+    // ---- card menu ----
+
+    /** Opens the long-press menu for [item] and starts looking up its channel and playlist state. */
+    fun openMenu(item: YtItem) {
+        val playlistId = item.source.playlistId
+        val pinned = item.kind == YtKind.PLAYLIST && playlistId != null &&
+            YouTubeSettings.pinnedPlaylists(context).any { it.first == playlistId }
+        _menu.value = YtItemMenu(item = item, signedIn = _state.value.signedIn, pinned = pinned)
+        val videoId = item.videoId ?: return
+        if (item.kind != YtKind.VIDEO) return
+
+        if (item.channelId != null) {
+            viewModelScope.launch {
+                val meta = withContext(Dispatchers.IO) {
+                    runCatching { service.mediaItemService.getMetadata(videoId) }.getOrNull()
+                }
+                _menu.update { menu ->
+                    if (menu?.item?.videoId == videoId) menu.copy(subscribed = meta?.isSubscribed) else menu
+                }
+            }
+        }
+
+        if (!_state.value.signedIn) return
+        loadMenuPlaylists(videoId)
+    }
+
+    private fun loadMenuPlaylists(videoId: String) {
+        if (!_state.value.signedIn) return
+        _menu.update { it?.copy(loadingPlaylists = true) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { service.mediaItemService.getPlaylistsInfoObserve(videoId).blockingFirst() }
+            }
+            _menu.update { menu ->
+                if (menu?.item?.videoId != videoId) {
+                    menu
+                } else {
+                    menu.copy(
+                        loadingPlaylists = false,
+                        playlists = result.getOrNull().orEmpty()
+                            .withoutDuplicatePlaylists()
+                            .map {
+                                YtPlaylistRow(it.playlistId.orEmpty(), it.title.orEmpty(), it.isSelected)
+                            },
+                        message = if (result.isFailure) "Couldn't load your playlists." else null
+                    )
+                }
+            }
+        }
+    }
+
+    /** Creates a playlist named [name] and puts the open card's video in it. */
+    fun menuCreatePlaylist(name: String) {
+        val menu = _menu.value ?: return
+        val videoId = menu.item.videoId ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        _menu.update { it?.copy(busy = true) }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    service.mediaItemService.createPlaylistObserve(trimmed, videoId)
+                        .ignoreElements().blockingAwait()
+                }.isSuccess
+            }
+            _menu.update { current ->
+                if (current?.item?.videoId != videoId) {
+                    current
+                } else {
+                    current.copy(
+                        busy = false,
+                        message = if (ok) "Saved to $trimmed" else "Couldn't create the playlist."
+                    )
+                }
+            }
+            if (ok) loadMenuPlaylists(videoId)
+        }
+    }
+
+    fun closeMenu() {
+        _menu.value = null
+    }
+
+    /** Subscribe to, or leave, the channel of the card whose menu is open. */
+    fun menuToggleSubscribe() {
+        val menu = _menu.value ?: return
+        val channelId = menu.item.channelId ?: return
+        val wasSubscribed = menu.subscribed ?: return
+        _menu.update { it?.copy(busy = true) }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val call = if (wasSubscribed) {
+                        service.mediaItemService.unsubscribeObserve(channelId)
+                    } else {
+                        service.mediaItemService.subscribeObserve(channelId)
+                    }
+                    call.ignoreElements().blockingAwait()
+                }.isSuccess
+            }
+            _menu.update { current ->
+                if (current?.item?.channelId != channelId) {
+                    current
+                } else {
+                    current.copy(
+                        busy = false,
+                        subscribed = if (ok) !wasSubscribed else current.subscribed,
+                        message = if (ok) {
+                            if (wasSubscribed) "Unsubscribed" else "Subscribed"
+                        } else {
+                            "That didn't go through. Try again."
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /** Adds the open card's video to a playlist, or takes it out again. */
+    fun menuTogglePlaylist(row: YtPlaylistRow) {
+        val menu = _menu.value ?: return
+        val videoId = menu.item.videoId ?: return
+        _menu.update { it?.copy(busy = true) }
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val call = if (row.contains) {
+                        service.mediaItemService.removeFromPlaylistObserve(row.id, videoId)
+                    } else {
+                        service.mediaItemService.addToPlaylistObserve(row.id, videoId)
+                    }
+                    call.ignoreElements().blockingAwait()
+                }.isSuccess
+            }
+            _menu.update { current ->
+                if (current?.item?.videoId != videoId) {
+                    current
+                } else {
+                    current.copy(
+                        busy = false,
+                        playlists = if (ok) {
+                            current.playlists?.map {
+                                if (it.id == row.id) it.copy(contains = !row.contains) else it
+                            }
+                        } else {
+                            current.playlists
+                        },
+                        message = if (ok) {
+                            if (row.contains) "Removed from ${row.title}" else "Saved to ${row.title}"
+                        } else {
+                            "That didn't go through. Try again."
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /** Pins a playlist card to the row at the top of the YouTube page, or takes it off. */
+    fun menuTogglePinned() {
+        val menu = _menu.value ?: return
+        if (menu.item.kind != YtKind.PLAYLIST) return
+        val playlistId = menu.item.source.playlistId ?: return
+        if (menu.pinned) {
+            YouTubeSettings.unpinPlaylist(context, playlistId)
+        } else {
+            YouTubeSettings.pinPlaylist(context, playlistId, menu.item.title)
+        }
+        _menu.update { current ->
+            current?.copy(
+                pinned = !menu.pinned,
+                message = if (menu.pinned) "Removed from the YouTube page" else "Pinned to the YouTube page"
+            )
+        }
+    }
+
+    /** Hides the open card's channel everywhere on the YouTube page. */
+    fun menuBlockChannel() {
+        val item = _menu.value?.item ?: return
+        val channelId = item.channelId ?: return
+        val name = item.author?.takeIf { it.isNotBlank() } ?: item.title
+        YouTubeSettings.hideChannel(context, channelId, name)
+        refreshHidden()
+        closeMenu()
+        // Take the channel's cards off what's on screen right away.
+        _state.update { st ->
+            st.copy(
+                rows = st.rows
+                    .map { row -> row.copy(items = row.items.filter { it.channelId != channelId }) }
+                    .filter { it.items.isNotEmpty() },
+                grid = st.grid.filter { it.channelId != channelId }
+            )
+        }
+    }
+
     private fun toItems(g: MediaGroup): List<YtItem> = g.mediaItems.orEmpty().filter(::allowed).mapNotNull(::toItem)
+        // The engine can list a playlist twice (for example, once from the account and once from a
+        // local group); keep the first card for each id.
+        .distinctBy { it.uniqueKey() }
+
+    /** A card's identity for de-duplication. Playlists go by title: the engine's two copies can differ in id. */
+    private fun YtItem.uniqueKey(): String = when (kind) {
+        YtKind.PLAYLIST -> "p:" + title.trim().lowercase()
+        YtKind.CHANNEL -> "c:" + (channelId ?: source.reloadPageKey ?: title)
+        YtKind.VIDEO -> "v:" + (videoId ?: title)
+    }
 
     /** Whether your filters in Settings let [i] through. Channels and playlists always do. */
     private fun allowed(i: MediaItem): Boolean {
         if (!filtersOn) return true
         if (i.type == MediaItem.TYPE_CHANNEL || i.type == MediaItem.TYPE_PLAYLIST) return true
         if (i.isShorts && YouTubeSettings.hideShorts(context)) return false
+        // The Sports shelves come with Shorts in them; they aren't sports fixtures.
+        if (i.isShorts && _state.value.tab == YtTab.SPORTS) return false
         if (i.isUpcoming && YouTubeSettings.hideUpcoming(context)) return false
         if (hiddenWords.isNotEmpty()) {
             val text = "${i.title.orEmpty()} ${i.author.orEmpty()}".lowercase()
@@ -560,10 +845,13 @@ class YouTubeViewModel @Inject constructor(
             kind = kind,
             videoId = i.videoId,
             title = i.title.orEmpty(),
-            author = i.author ?: i.secondTitle?.toString(),
+            author = i.author,
+            meta = i.secondTitle?.toString()?.takeIf { it.isNotBlank() && it != i.author },
+            postTime = i.productionDate?.takeIf { it.isNotBlank() && it != i.title },
             thumbnail = i.cardImageUrl,
             badge = i.badgeText,
             isLive = i.isLive,
+            isShorts = i.isShorts,
             channelId = i.channelId,
             percentWatched = i.percentWatched.coerceIn(0, 100),
             source = i
@@ -575,6 +863,8 @@ class YouTubeViewModel @Inject constructor(
 
     private val resolved = java.util.concurrent.ConcurrentHashMap<String, YtPlayable>()
     private var prefetchJob: Job? = null
+    private var prefetchLookup: Deferred<Result<YtPlayable>>? = null
+    private var prefetchLookupId: String? = null
     private val inflight = java.util.concurrent.ConcurrentHashMap<String, Deferred<Result<YtPlayable>>>()
 
     /** Looks up the stream details for [video]; slow (several requests), so call off the main thread. */
@@ -600,7 +890,8 @@ class YouTubeViewModel @Inject constructor(
             "adaptive=${info.adaptiveFormats?.size} live=${info.isLive} client=${info.clientInfo?.clientName}")
         // Live streams come as HLS. Everything else is separate video and audio streams, which we
         // describe in a DASH manifest so the player can offer every quality. A single combined
-        // stream (one low quality) is the last resort.
+        // stream (one low quality) is the last resort. dashUrl() refuses a live manifest, so a
+        // stream YouTube labels live only in its formats still falls through to HLS or its own DASH.
         val url = info.hlsManifestUrl?.takeIf { info.isLive }
             ?: dashUrl(videoId, info)
             ?: info.hlsManifestUrl
@@ -636,16 +927,38 @@ class YouTubeViewModel @Inject constructor(
 
     /**
      * Starts looking up [item]'s stream while its card is highlighted, so pressing OK is instant.
-     * Waits a moment first so scrolling past cards doesn't fire a request for each one.
+     * Waits a moment first so scrolling past cards doesn't fire a request for each one, and drops
+     * the previous card's lookup so a few quick moves can't queue up behind each other.
      */
     fun prefetch(item: YtItem) {
         val id = item.videoId ?: return
         if (item.kind != YtKind.VIDEO || resolved[id]?.isFresh == true) return
+        cancelPrefetchLookup()
         prefetchJob?.cancel()
         prefetchJob = viewModelScope.launch {
             delay(PREFETCH_DELAY_MS)
-            lookup(item)
+            val lookup = lookup(item)
+            prefetchLookup = lookup
+            prefetchLookupId = id
+            lookup.await()
         }
+    }
+
+    /** Stops the lookup started for a card that is no longer highlighted, unless it was opened. */
+    private fun cancelPrefetchLookup() {
+        val lookup = prefetchLookup ?: return
+        val id = prefetchLookupId
+        prefetchLookup = null
+        prefetchLookupId = null
+        if (id == null || _resolving.value != id) lookup.cancel()
+    }
+
+    /** A preview left the screen before its stream was found: stop waiting on it. */
+    fun cancelPreview(item: YtItem) {
+        val id = item.videoId ?: return
+        if (item.kind != YtKind.VIDEO) return
+        if (_resolving.value == id || prefetchLookupId == id || resolved[id]?.isFresh == true) return
+        inflight.remove(id)?.cancel()
     }
 
     /** What plays after the video that's on now: the rest of the list it was picked from, then YouTube's pick. */
@@ -672,11 +985,17 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
-    /** The video after [currentVideoId]: the rest of the list it came from, then YouTube's pick. */
+    /** The video after [currentVideoId]: on the feeds YouTube's related pick, else the list's next. */
     private suspend fun pickNext(currentVideoId: String): YtItem? {
         played += currentVideoId
         val fromList = queue.dropWhile { it.videoId != currentVideoId }.drop(1)
             .firstOrNull { it.kind == YtKind.VIDEO && !it.isLive && it.videoId !in played }
+        // On the feeds, follow YouTube's related video (SmartTube's behaviour) rather than whatever
+        // card happens to be next on the page. Channel, playlist and search pages keep their order.
+        if (_state.value.subTitle == null) {
+            withContext(Dispatchers.IO) { runCatching { upNext(currentVideoId) }.getOrNull() }
+                ?.let { return it }
+        }
         return fromList ?: withContext(Dispatchers.IO) { runCatching { upNext(currentVideoId) }.getOrNull() }
     }
 
@@ -693,6 +1012,46 @@ class YouTubeViewModel @Inject constructor(
                 return@launch
             }
             lookup(next).await().fold(
+                onSuccess = {
+                    rememberPlayed(next)
+                    onReady(it)
+                },
+                onFailure = { onNone() }
+            )
+        }
+    }
+
+    /** Videos played in this session, most recent last, so Previous can walk back. */
+    private val history = ArrayDeque<YtItem>()
+
+    private fun rememberPlayed(item: YtItem) {
+        val id = item.videoId ?: return
+        history.removeAll { it.videoId == id }
+        history.addLast(item)
+        while (history.size > MAX_HISTORY) history.removeFirst()
+    }
+
+    /**
+     * Plays the video before [currentVideoId] in this session. Going back drops the current video
+     * from the history, so repeated presses keep walking back instead of bouncing between two.
+     */
+    fun playPrevious(currentVideoId: String, onReady: (YtPlayable) -> Unit, onNone: () -> Unit) {
+        history.removeAll { it.videoId == currentVideoId }
+        var previous: YtItem? = null
+        while (history.isNotEmpty()) {
+            val candidate = history.removeLast()
+            if (candidate.kind == YtKind.VIDEO && !candidate.isLive && candidate.videoId != null) {
+                previous = candidate
+                break
+            }
+        }
+        val target = previous
+        if (target == null) {
+            onNone()
+            return
+        }
+        viewModelScope.launch {
+            lookup(target).await().fold(
                 onSuccess = { onReady(it) },
                 onFailure = { onNone() }
             )
@@ -731,16 +1090,34 @@ class YouTubeViewModel @Inject constructor(
             open(item)
             return
         }
+        val id = item.videoId ?: return
+        // A second press while this video is already being looked up is the same request, not a new one.
+        // Checking the marker rather than the cache also covers the gap before the lookup is launched.
+        if (_resolving.value == id) return
+        // Drop a lookahead started for another card so this video isn't stuck behind it.
+        if (prefetchLookupId != id) cancelPrefetchLookup()
         seedResume(item)
         // What was on screen with it becomes the list that plays on from here.
         queue = from.filter { it.kind == YtKind.VIDEO }
         played.clear()
         prefetchJob?.cancel()
+        _resolving.value = id
         viewModelScope.launch {
-            lookup(item).await().fold(
-                onSuccess = { lastPlayedVideoId = item.videoId; onReady(it) },
-                onFailure = { _error.value = it.message ?: "Couldn't play this video" }
-            )
+            try {
+                val result = lookup(item).await()
+                // Another card was picked while this one was still looking up, so this one is stale.
+                if (_resolving.value != id) return@launch
+                result.fold(
+                    onSuccess = {
+                        lastPlayedVideoId = item.videoId
+                        rememberPlayed(item)
+                        onReady(it)
+                    },
+                    onFailure = { _error.value = it.message ?: "Couldn't play this video" }
+                )
+            } finally {
+                if (_resolving.value == id) _resolving.value = null
+            }
         }
     }
 
@@ -765,14 +1142,26 @@ class YouTubeViewModel @Inject constructor(
         }
     }
 
-    private fun playable(info: MediaItemFormatInfo): Boolean =
-        !info.isUnplayable && (info.containsDashFormats() || (info.isLive && info.containsHlsUrl()))
+    private fun playable(info: MediaItemFormatInfo): Boolean {
+        if (info.isUnplayable) return false
+        // Live HLS works from these clients; their URLs for finished videos usually give a 403.
+        if (!info.isLive && info.clientInfo?.clientName in BROKEN_CLIENTS) return false
+        return info.containsDashFormats() || (info.isLive && info.containsHlsUrl())
+    }
 
     private fun dashUrl(videoId: String, info: MediaItemFormatInfo): String? {
         if (!info.containsDashFormats()) return null
         val mpd = runCatching { info.createMpdStream()?.use { it.readBytes() } }.getOrNull()
         Log.i(TAG, "mpd bytes=${mpd?.size}")
-        return mpd?.takeIf { it.isNotEmpty() }?.let { YouTubeMpdServer.publish(videoId, it) }
+        if (mpd == null || mpd.isEmpty()) return null
+        // The engine writes a live manifest as dynamic, without the availability time the player's
+        // DASH engine requires, so it would fail with "Unexpected IllegalStateException". Leave those
+        // to HLS or YouTube's own manifest.
+        if (mpd.toString(Charsets.UTF_8).contains("type=\"dynamic\"")) {
+            Log.i(TAG, "mpd is dynamic; not using it")
+            return null
+        }
+        return YouTubeMpdServer.publish(videoId, mpd)
     }
 
     // ---- search suggestions and recent searches ----

@@ -347,6 +347,10 @@ class PlayerRuntimeController(
     internal var livePlaybackLatched: Boolean = false
     internal var mpvDurationGrowth = LivePlaybackUiPolicy.DurationGrowth()
 
+    /** YouTube live streams carry a DVR window, so they can be rewound; other live sources may not. */
+    internal val isYouTubeLive: Boolean
+        get() = contentType.equals("youtube", ignoreCase = true)
+
     internal fun updatePlaybackTimeline(
         currentPosition: Long = _playbackTimeline.value.currentPosition,
         duration: Long = _playbackTimeline.value.duration,

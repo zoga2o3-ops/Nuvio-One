@@ -27,6 +27,14 @@ object YouTubeSettings {
     private const val KEY_AUTO_SUBTITLES = "auto_subtitles"
     private const val KEY_VIDEO_PREVIEWS = "video_previews"
     private const val KEY_CONTENT_REGION = "content_region"
+    private const val KEY_POSTER_COLUMNS = "poster_columns"
+    private const val KEY_SHOW_CLOCK = "show_clock"
+    private const val KEY_CHAT_POSITION = "chat_position"
+    private const val KEY_CHAT_SIZE = "chat_size"
+    private const val KEY_CHAT_TEXT_COLOR = "chat_text_color"
+    private const val KEY_CHAT_NAME_COLOR = "chat_name_color"
+    private const val KEY_CHAT_BACKGROUND = "chat_background_opacity"
+    private const val KEY_PINNED_PLAYLISTS = "pinned_playlists"
 
     fun videoPreviews(context: Context) = prefs(context).getBoolean(KEY_VIDEO_PREVIEWS, true)
     fun setVideoPreviews(context: Context, on: Boolean) = prefs(context).edit().putBoolean(KEY_VIDEO_PREVIEWS, on).apply()
@@ -38,6 +46,46 @@ object YouTubeSettings {
     fun contentRegion(context: Context): String = prefs(context).getString(KEY_CONTENT_REGION, "") ?: ""
     fun setContentRegion(context: Context, region: String) =
         prefs(context).edit().putString(KEY_CONTENT_REGION, region.trim().uppercase()).apply()
+
+    /** How many posters fit across a row in the YouTube grids (3 to 5). */
+    fun posterColumns(context: Context): Int =
+        prefs(context).getInt(KEY_POSTER_COLUMNS, 5).coerceIn(3, 5)
+    fun setPosterColumns(context: Context, columns: Int) =
+        prefs(context).edit().putInt(KEY_POSTER_COLUMNS, columns.coerceIn(3, 5)).apply()
+
+    /** The time in the middle of the YouTube header. */
+    fun showClock(context: Context) = prefs(context).getBoolean(KEY_SHOW_CLOCK, true)
+    fun setShowClock(context: Context, on: Boolean) =
+        prefs(context).edit().putBoolean(KEY_SHOW_CLOCK, on).apply()
+
+    /** Where the live chat sits: top/center/bottom combined with start/center/end. */
+    fun chatPosition(context: Context): String =
+        prefs(context).getString(KEY_CHAT_POSITION, "center_end") ?: "center_end"
+    fun setChatPosition(context: Context, value: String) =
+        prefs(context).edit().putString(KEY_CHAT_POSITION, value).apply()
+
+    /** small, medium or large. */
+    fun chatSize(context: Context): String =
+        prefs(context).getString(KEY_CHAT_SIZE, "medium") ?: "medium"
+    fun setChatSize(context: Context, value: String) =
+        prefs(context).edit().putString(KEY_CHAT_SIZE, value).apply()
+
+    fun chatTextColor(context: Context): Int =
+        prefs(context).getInt(KEY_CHAT_TEXT_COLOR, 0xFFFFFFFF.toInt())
+    fun setChatTextColor(context: Context, color: Int) =
+        prefs(context).edit().putInt(KEY_CHAT_TEXT_COLOR, color).apply()
+
+    /** Names keep their own colour so they stay distinct from the message text. */
+    fun chatNameColor(context: Context): Int =
+        prefs(context).getInt(KEY_CHAT_NAME_COLOR, 0xFF9BB8FF.toInt())
+    fun setChatNameColor(context: Context, color: Int) =
+        prefs(context).edit().putInt(KEY_CHAT_NAME_COLOR, color).apply()
+
+    /** 0 to 100: how much of the chat window's background is drawn. */
+    fun chatBackgroundOpacity(context: Context): Int =
+        prefs(context).getInt(KEY_CHAT_BACKGROUND, 60)
+    fun setChatBackgroundOpacity(context: Context, percent: Int) =
+        prefs(context).edit().putInt(KEY_CHAT_BACKGROUND, percent.coerceIn(0, 100)).apply()
 
     /** SponsorBlock's segment types, in the order they're listed. */
     val sponsorCategories: List<Pair<String, String>> = listOf(
@@ -161,6 +209,28 @@ object YouTubeSettings {
     fun unhideChannel(context: Context, id: String) {
         val kept = hiddenChannels(context).filter { it.first != id }
         prefs(context).edit().putStringSet(KEY_HIDDEN_CHANNELS, kept.map { "${it.first}|${it.second}" }.toSet()).apply()
+    }
+
+    /** Playlists you've pinned to the top of the YouTube page, as id to title. */
+    fun pinnedPlaylists(context: Context): List<Pair<String, String>> =
+        (prefs(context).getStringSet(KEY_PINNED_PLAYLISTS, null) ?: emptySet())
+            .mapNotNull { entry ->
+                entry.split('|', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] }
+            }
+            .sortedBy { it.second.lowercase() }
+
+    fun pinPlaylist(context: Context, id: String, title: String) {
+        val kept = pinnedPlaylists(context).filter { it.first != id } + (id to title)
+        prefs(context).edit()
+            .putStringSet(KEY_PINNED_PLAYLISTS, kept.map { "${it.first}|${it.second}" }.toSet())
+            .apply()
+    }
+
+    fun unpinPlaylist(context: Context, id: String) {
+        val kept = pinnedPlaylists(context).filter { it.first != id }
+        prefs(context).edit()
+            .putStringSet(KEY_PINNED_PLAYLISTS, kept.map { "${it.first}|${it.second}" }.toSet())
+            .apply()
     }
 
     /** Feed filters. Upcoming premieres can't be played yet, so they're hidden unless you say otherwise. */

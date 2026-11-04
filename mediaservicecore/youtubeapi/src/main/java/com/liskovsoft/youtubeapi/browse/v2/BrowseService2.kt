@@ -174,6 +174,18 @@ internal open class BrowseService2 {
         return getLikedMusicTV() ?: getLikedMusicWeb()
     }
 
+    /** Opens a playlist by its id, for cards that carry no continuation key of their own. */
+    fun getPlaylist(playlistId: String): MediaGroup? {
+        val options = MediaGroupOptions.create(MediaGroup.TYPE_CHANNEL_UPLOADS)
+        // The web page shape doesn't always parse into items; try it, then the TV page shape.
+        val webResult = mBrowseApi.getBrowseResult(BrowseApiHelper.getPlaylistQuery(AppClient.WEB, playlistId))
+        val webGroup = RetrofitHelper.get(webResult)?.let { BrowseMediaGroup(it, options) }
+        if (webGroup?.mediaItems?.isNotEmpty() == true) return webGroup
+
+        val tvResult = mBrowseApi.getBrowseResultTV(BrowseApiHelper.getPlaylistQuery(options.clientTV, playlistId))
+        return RetrofitHelper.get(tvResult)?.let { BrowseMediaGroupTV(it, options) } ?: webGroup
+    }
+
     fun getNews(): Pair<List<MediaGroup?>?, String?>? {
         return getBrowseRowsTV(BrowseApiHelper::getNewsQuery, MediaGroup.TYPE_NEWS)
     }

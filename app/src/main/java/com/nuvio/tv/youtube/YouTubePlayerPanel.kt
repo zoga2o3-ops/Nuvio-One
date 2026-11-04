@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private enum class PanelMode { MAIN, PLAYLISTS, COMMENTS, REPLIES }
+private enum class PanelMode { MAIN, PLAYLISTS, COMMENTS, REPLIES, RELATED }
 
 private val PanelBg = Color(0xF2111114)
 private val RowBg = Color(0xFF1C1C1E)
@@ -70,7 +70,8 @@ fun BoxScope.YouTubePlayerPanel(
     videoId: String,
     viewModel: YouTubePlayerViewModel,
     onClose: () -> Unit,
-    onOpenChannel: (channelId: String, name: String) -> Unit
+    onOpenChannel: (channelId: String, name: String) -> Unit,
+    onPlayVideo: (YtItem) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     var mode by remember { mutableStateOf(PanelMode.MAIN) }
@@ -79,17 +80,35 @@ fun BoxScope.YouTubePlayerPanel(
     var replyingTo by remember { mutableStateOf<YtComment?>(null) }
 
     LaunchedEffect(videoId) { viewModel.load(videoId) }
-    BackHandler(enabled = mode != PanelMode.MAIN) {
-        mode = when (mode) {
+    // One Back press moves one level: replies → comments → the panel's main page → closed.
+    val goBack: () -> Unit = {
+        when (mode) {
             PanelMode.REPLIES -> {
                 viewModel.clearReplies()
-                PanelMode.COMMENTS
+                mode = PanelMode.COMMENTS
             }
-            else -> PanelMode.MAIN
+            PanelMode.COMMENTS, PanelMode.PLAYLISTS, PanelMode.RELATED -> mode = PanelMode.MAIN
+            PanelMode.MAIN -> onClose()
         }
     }
+    BackHandler { goBack() }
 
-    Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(440.dp).background(PanelBg)) {
+    Box(
+        Modifier
+            .align(Alignment.CenterEnd)
+            .fillMaxHeight()
+            .width(440.dp)
+            .background(PanelBg)
+            // Taking Back on the panel itself, before the activity's back dispatcher, is what makes
+            // one press move one level while the panel has the remote.
+            .onPreviewKeyEvent { e ->
+                if (e.key != Key.Back && e.key != Key.Escape) return@onPreviewKeyEvent false
+                // Move one level on the press, and swallow the release too so the activity's back
+                // callback can't count the same press a second time.
+                if (e.type == KeyEventType.KeyDown) goBack()
+                true
+            }
+    ) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val info = state.info
 
@@ -110,6 +129,7 @@ fun BoxScope.YouTubePlayerPanel(
                 }
                 PanelMode.PLAYLISTS -> Text("Save to playlist", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 PanelMode.COMMENTS -> Text("Comments", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                PanelMode.RELATED -> Text("Related videos", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 PanelMode.REPLIES -> {
                     Text("Replies", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     replyingTo?.let {
@@ -126,6 +146,7 @@ fun BoxScope.YouTubePlayerPanel(
                 PanelMode.PLAYLISTS -> state.playlists == null
                 PanelMode.COMMENTS -> state.commentsLoading && state.comments.isEmpty()
                 PanelMode.REPLIES -> state.repliesLoading && state.replies.isEmpty()
+                PanelMode.RELATED -> state.relatedLoading && state.related.isEmpty()
             }
             if (busy) {
                 Box(Modifier.fillMaxWidth().padding(16.dp), Alignment.Center) { CircularProgressIndicator(color = Accent) }
@@ -146,6 +167,10 @@ fun BoxScope.YouTubePlayerPanel(
                         commentsIndex = 0
                         mode = PanelMode.COMMENTS
                         viewModel.loadComments()
+                    })
+                    add(PanelEntry("Related videos", null) {
+                        mode = PanelMode.RELATED
+                        viewModel.loadRelated()
                     })
                     info.channelId?.let { channel ->
                         add(PanelEntry("Open channel", info.author.takeIf(String::isNotBlank)) { onOpenChannel(channel, info.author) })
@@ -184,6 +209,14 @@ fun BoxScope.YouTubePlayerPanel(
                         titleLines = 6
                     )
                 }
+                PanelMode.RELATED -> state.related.map { item ->
+                    PanelEntry(
+                        title = item.title,
+                        detail = listOfNotNull(item.author, item.badge).joinToString("  ·  "),
+                        titleLines = 2,
+                        onClick = { onPlayVideo(item) }
+                    )
+                }
             }
 
             if (!busy && entries.isEmpty()) {
@@ -193,6 +226,7 @@ fun BoxScope.YouTubePlayerPanel(
                         PanelMode.PLAYLISTS -> "You have no playlists."
                         PanelMode.COMMENTS -> "No comments to show."
                         PanelMode.REPLIES -> "No replies to show."
+                        PanelMode.RELATED -> "No related videos to show."
                     },
                     color = Color.Gray, fontSize = 14.sp
                 )

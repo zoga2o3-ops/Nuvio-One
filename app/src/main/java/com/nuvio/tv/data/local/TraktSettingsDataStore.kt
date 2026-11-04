@@ -70,6 +70,7 @@ class TraktSettingsDataStore @Inject constructor(
     private val showUnairedNextUpKey = booleanPreferencesKey("show_unaired_next_up")
     private val nextUpFromFurthestEpisodeKey = booleanPreferencesKey("next_up_from_furthest_episode")
     private val showMetaCommentsKey = booleanPreferencesKey("show_meta_comments")
+    private val promptToRateAfterWatchingKey = booleanPreferencesKey("prompt_to_rate_after_watching")
     private val watchProgressSourceKey = stringPreferencesKey("watch_progress_source")
     private val librarySourceModeKey = stringPreferencesKey("library_source_mode")
     private val rememberedWatchProgressSourceKey = stringPreferencesKey("remembered_watch_progress_source")
@@ -112,6 +113,13 @@ class TraktSettingsDataStore @Inject constructor(
         }
     }
 
+    /** Ask to rate a movie once it has been watched to the end. Off unless the user turns it on. */
+    val promptToRateAfterWatching: Flow<Boolean> = profileManager.activeProfileId.flatMapLatest { pid ->
+        factory.get(pid, FEATURE).data.map { prefs ->
+            prefs[promptToRateAfterWatchingKey] ?: false
+        }
+    }
+
     val watchProgressSource: StateFlow<WatchProgressSource> = profileManager.activeProfileId.flatMapLatest { pid ->
         factory.get(pid, FEATURE).data.map { prefs ->
             WatchProgressSource.fromStorage(prefs[watchProgressSourceKey])
@@ -143,6 +151,12 @@ class TraktSettingsDataStore @Inject constructor(
     suspend fun setNextUpFromFurthestEpisode(enabled: Boolean) {
         store().edit { prefs ->
             prefs[nextUpFromFurthestEpisodeKey] = enabled
+        }
+    }
+
+    suspend fun setPromptToRateAfterWatching(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[promptToRateAfterWatchingKey] = enabled
         }
     }
 

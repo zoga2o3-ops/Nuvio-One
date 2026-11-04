@@ -57,6 +57,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -83,6 +84,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.rounded.Groups
@@ -224,6 +226,8 @@ fun PlayerScreen(
     extraOverlay: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {},
     /** YouTube fork: show the YouTube button in the controls. */
     showYouTubeButton: Boolean = false,
+    /** YouTube fork: the video is live, even when the player doesn't flag the stream as live. */
+    youtubeLive: Boolean = false,
     /** YouTube fork: whether you're subscribed to this video's channel, and the Subscribe and Channel buttons' actions. */
     youtubeSubscribed: Boolean = false,
     onYouTubeSubscribe: (() -> Unit)? = null,
@@ -235,6 +239,9 @@ fun PlayerScreen(
     /** YouTube fork: the loop button, and whether the video is repeating. */
     onYouTubeLoop: (() -> Unit)? = null,
     youtubeLoopOn: Boolean = false,
+    /** YouTube fork: previous and next videos of this session (null while a live stream is on). */
+    onYouTubePrevious: (() -> Unit)? = null,
+    onYouTubeNext: (() -> Unit)? = null,
     /** YouTube fork: sees every key first; returns true to keep the player from acting on it. */
     previewKeyHook: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     onPlayRecommendation: (PostPlayRecommendation, manualSelection: Boolean) -> Unit = { _, _ -> },
@@ -715,6 +722,13 @@ fun PlayerScreen(
                 val postPlayHandlesBack = postPlayRecommendationState.isVisible ||
                     postPlayRecommendationState.isLoadingRecommendation ||
                     postPlayRecommendationState.isTrailerPlaying
+                // With the YouTube panel open, Back belongs to the panel: replies → comments → closed.
+                if (uiState.showYouTubePanel &&
+                    (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK ||
+                        keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE)
+                ) {
+                    return@onPreviewKeyEvent false
+                }
                 if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE ||
                     (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_BACK && !postPlayHandlesBack)
                 ) {
@@ -1287,7 +1301,7 @@ fun PlayerScreen(
                         viewModel = viewModel,
                         isPlaying = uiState.isPlaying,
                         isBuffering = uiState.isBuffering,
-                        aspectMode = uiState.aspectMode,
+                        aspectMode = uiState.effectiveAspectMode,
                         subtitleStyle = uiState.effectiveSubtitleStyle,
                         subtitleLiftPx = subtitleLiftPx,
                         subtitleTrackKey = subtitleWidthKey.take(2),
@@ -1301,7 +1315,7 @@ fun PlayerScreen(
                             controller = viewModel.controller,
                             isPlaying = uiState.isPlaying,
                             isBuffering = uiState.isBuffering,
-                            aspectMode = uiState.aspectMode,
+                            aspectMode = uiState.effectiveAspectMode,
                             tunnelingEnabled = uiState.tunnelingEnabled,
                             tunneledSurfaceFill = uiState.tunneledSurfaceFill,
                             useLibass = uiState.useLibass,
@@ -1683,6 +1697,7 @@ fun PlayerScreen(
                 onShowQualityDialog = { viewModel.onEvent(PlayerEvent.OnShowQualityOverlay) },
                 onShowYouTubePanel = { viewModel.onEvent(PlayerEvent.OnShowYouTubePanel) },
                 showYouTubeButton = showYouTubeButton,
+                youtubeLive = youtubeLive,
                 youtubeSubscribed = youtubeSubscribed,
                 onYouTubeSubscribe = onYouTubeSubscribe,
                 onYouTubeChannel = onYouTubeChannel,
@@ -1691,6 +1706,8 @@ fun PlayerScreen(
                 youtubeChatOn = youtubeChatOn,
                 onYouTubeLoop = onYouTubeLoop,
                 youtubeLoopOn = youtubeLoopOn,
+                onYouTubePrevious = onYouTubePrevious,
+                onYouTubeNext = onYouTubeNext,
                 onShowSubtitleDialog = { viewModel.onEvent(PlayerEvent.OnShowSubtitleOverlay) },
                 onShowSpeedDialog = { viewModel.onEvent(PlayerEvent.OnShowSpeedDialog) },
                 onToggleAspectRatio = {
@@ -1867,7 +1884,7 @@ fun PlayerScreen(
                 .reportSubtitleClearance(subtitleClearanceGapPx) { seekClearancePx = it }
                 .then(playerControlsDim)
         ) {
-            SeekOverlayHost(viewModel = viewModel, chapters = uiState.chapters)
+            SeekOverlayHost(viewModel = viewModel, chapters = uiState.chapters, forceLive = youtubeLive)
         }
 
         // Chapters side panel (slides in from right, over a scrim)
@@ -2850,6 +2867,7 @@ private fun PlayerControlsOverlay(
     onShowQualityDialog: () -> Unit,
     onShowYouTubePanel: () -> Unit,
     showYouTubeButton: Boolean,
+    youtubeLive: Boolean,
     youtubeSubscribed: Boolean,
     onYouTubeSubscribe: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
@@ -2858,6 +2876,8 @@ private fun PlayerControlsOverlay(
     youtubeChatOn: Boolean,
     onYouTubeLoop: (() -> Unit)?,
     youtubeLoopOn: Boolean,
+    onYouTubePrevious: (() -> Unit)?,
+    onYouTubeNext: (() -> Unit)?,
     onShowSubtitleDialog: () -> Unit,
     onShowSpeedDialog: () -> Unit,
     onToggleAspectRatio: () -> Unit,
@@ -2899,7 +2919,7 @@ private fun PlayerControlsOverlay(
     val customEpisodesPainter = rememberRawSvgPainter(R.raw.ic_player_episodes)
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
-    val isLivePlayback = playbackTimeline.isLive
+    val isLivePlayback = playbackTimeline.isLive || youtubeLive
     val progressUpTarget = if (isLivePlayback) {
         progressBarUpFocusRequester ?: playPauseFocusRequester
     } else {
@@ -3022,7 +3042,7 @@ private fun PlayerControlsOverlay(
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
 
-            if (!isLivePlayback) {
+            if (!isLivePlayback || youtubeLive) {
                 // Progress bar — always LTR regardless of locale
                 DisposableEffect(Unit) {
                     onDispose { progressBarClearancePx = 0f }
@@ -3048,7 +3068,8 @@ private fun PlayerControlsOverlay(
                             downFocusRequester = playPauseFocusRequester,
                             onUpKey = onHideControls,
                             onFocused = onResetHideTimer,
-                            onClick = onPlayPause
+                            onClick = onPlayPause,
+                            forceLive = youtubeLive
                         )
                     }
                 }
@@ -3087,6 +3108,28 @@ private fun PlayerControlsOverlay(
                         onDownKey = onHideControls,
                         onFocused = onResetHideTimer
                     )
+
+                    // YouTube: walk back and forth through this session's videos, next to play.
+                    onYouTubePrevious?.let { previous ->
+                        ControlButton(
+                            icon = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous video",
+                            onClick = previous,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onHideControls,
+                            onFocused = onResetHideTimer
+                        )
+                    }
+                    onYouTubeNext?.let { next ->
+                        ControlButton(
+                            icon = Icons.Default.SkipNext,
+                            contentDescription = "Next video",
+                            onClick = next,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onHideControls,
+                            onFocused = onResetHideTimer
+                        )
+                    }
 
                     if (showNextEpisodeButton) {
                         ControlButton(
@@ -3264,17 +3307,20 @@ private fun PlayerControlsOverlay(
                             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ControlButton(
-                                icon = Icons.Default.AspectRatio,
-                                iconPainter = customAspectPainter,
-                                contentDescription = stringResource(R.string.cd_aspect_ratio),
-                                onClick = {
-                                    onToggleAspectRatio()
-                                },
-                                upFocusRequester = progressUpTarget,
-                                onDownKey = onHideControls,
-                                onFocused = onResetHideTimer
-                            )
+                            // A vertical video (a Short) keeps its own shape; there is nothing to cycle.
+                            if (!uiState.isPortraitVideo) {
+                                ControlButton(
+                                    icon = Icons.Default.AspectRatio,
+                                    iconPainter = customAspectPainter,
+                                    contentDescription = stringResource(R.string.cd_aspect_ratio),
+                                    onClick = {
+                                        onToggleAspectRatio()
+                                    },
+                                    upFocusRequester = progressUpTarget,
+                                    onDownKey = onHideControls,
+                                    onFocused = onResetHideTimer
+                                )
+                            }
                             ControlButton(
                                 icon = Icons.Default.SwapHoriz,
                                 contentDescription = stringResource(R.string.cd_switch_player_engine),
@@ -3334,7 +3380,7 @@ private fun PlayerControlsOverlay(
                 }
 
                 // Right side - Time display only
-                PlayerControlsTimeTextHost(viewModel = viewModel)
+                PlayerControlsTimeTextHost(viewModel = viewModel, forceLive = youtubeLive)
             }
             }
         }
@@ -3430,7 +3476,9 @@ private fun PlayerControlsProgressBarHost(
     downFocusRequester: FocusRequester? = null,
     onUpKey: (() -> Unit)? = null,
     onFocused: (() -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    /** YouTube live: show the live bar even when the player doesn't report the stream as live. */
+    forceLive: Boolean = false
 ) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, playbackTimeline.isLive, warmPositionMs = playbackTimeline.currentPosition)
@@ -3454,7 +3502,8 @@ private fun PlayerControlsProgressBarHost(
                 onUpKey = onUpKey,
                 onFocused = onFocused,
                 onClick = onClick,
-                bufferedPosition = playbackTimeline.bufferedPosition
+                bufferedPosition = playbackTimeline.bufferedPosition,
+                isLive = playbackTimeline.isLive || forceLive
             )
         }
         SeekPreviewThumbnail(
@@ -3467,10 +3516,11 @@ private fun PlayerControlsProgressBarHost(
 }
 
 @Composable
-private fun PlayerControlsTimeTextHost(viewModel: PlayerViewModel) {
+private fun PlayerControlsTimeTextHost(viewModel: PlayerViewModel, forceLive: Boolean = false) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
-    val timeText = if (playbackTimeline.isLive) {
-        stringResource(R.string.player_live_watched, formatTime(playbackTimeline.watchedDurationMs))
+    val timeText = if (playbackTimeline.isLive || forceLive) {
+        // Live has no end time, just the marker, the way YouTube shows it.
+        "LIVE"
     } else {
         "${formatTime(playbackTimeline.currentPosition)} / ${formatTime(playbackTimeline.duration)}"
     }
@@ -3626,6 +3676,8 @@ private fun ProgressBar(
     onClick: (() -> Unit)? = null,
     /** Position (ms) up to which content is buffered. Pass 0 to skip the overlay. */
     bufferedPosition: Long = 0L,
+    /** A live window: red rail with a round knob, no chapter marks. */
+    isLive: Boolean = false,
     /** Each chapter after the first gets a mark where it starts. */
     chapters: List<PlayerChapter> = emptyList()
 ) {
@@ -3760,37 +3812,70 @@ private fun ProgressBar(
             },
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (isFocused) NuvioTheme.spacing.md else NuvioTheme.spacing.sm)
-                .clip(RoundedCornerShape(3.dp))
-                .background(
-                    if (isFocused) Color.White.copy(alpha = 0.45f)
-                    else Color.White.copy(alpha = 0.3f)
+        val barHeight = if (isFocused) NuvioTheme.spacing.md else NuvioTheme.spacing.sm
+        if (isLive) {
+            // YouTube's live bar: a red rail with a round knob at the live edge (or where you are
+            // in the window when you've rewound).
+            Box(Modifier.fillMaxWidth().height(barHeight)) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.28f))
                 )
-                .playerProgressFill(
-                    progress = { animatedProgress },
-                    bufferedProgress = { animatedBufferedProgress },
-                    bufferedColor = NuvioTheme.colors.Secondary,
-                    playedBrush = accentBrush
-                )
-                // Chapter marks, drawn over the fill.
-                .drawBehind {
-                    if (chapters.isNotEmpty() && duration > 0) {
-                        val markWidth = 2.dp.toPx()
-                        chapters.forEach { chapter ->
-                            val fraction = chapter.startMs.toFloat() / duration.toFloat()
-                            if (fraction <= 0f || fraction >= 1f) return@forEach
-                            drawRect(
-                                color = Color.Black.copy(alpha = 0.6f),
-                                topLeft = Offset(size.width * fraction - markWidth / 2f, 0f),
-                                size = Size(markWidth, size.height)
-                            )
+                Box(
+                    Modifier
+                        .fillMaxWidth(if (duration > 0) animatedProgress else 1f)
+                        .fillMaxHeight()
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(0xFFE53935))
+                    )
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(12.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(barHeight)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(
+                        if (isFocused) Color.White.copy(alpha = 0.45f)
+                        else Color.White.copy(alpha = 0.3f)
+                    )
+                    .playerProgressFill(
+                        progress = { animatedProgress },
+                        bufferedProgress = { animatedBufferedProgress },
+                        bufferedColor = NuvioTheme.colors.Secondary,
+                        playedBrush = accentBrush
+                    )
+                    // Chapter marks, drawn over the fill.
+                    .drawBehind {
+                        if (chapters.isNotEmpty() && duration > 0) {
+                            val markWidth = 2.dp.toPx()
+                            chapters.forEach { chapter ->
+                                val fraction = chapter.startMs.toFloat() / duration.toFloat()
+                                if (fraction <= 0f || fraction >= 1f) return@forEach
+                                drawRect(
+                                    color = Color.Black.copy(alpha = 0.6f),
+                                    topLeft = Offset(size.width * fraction - markWidth / 2f, 0f),
+                                    size = Size(markWidth, size.height)
+                                )
+                            }
                         }
                     }
-                }
-        )
+            )
+        }
     }
 }
 
@@ -3814,6 +3899,7 @@ private fun SeekOverlay(
     currentPosition: Long,
     duration: Long,
     bufferedPosition: Long = 0L,
+    isLive: Boolean = false,
     chapters: List<PlayerChapter> = emptyList(),
     previewController: com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController? = null,
     scrubbing: Boolean = false
@@ -3833,6 +3919,7 @@ private fun SeekOverlay(
                         onSeekPreview = {},
                         onSeekCommit = {},
                         bufferedPosition = bufferedPosition,
+                        isLive = isLive,
                         chapters = chapters
                     )
                 }
@@ -3852,7 +3939,11 @@ private fun SeekOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${formatTime(currentPosition)} / ${formatTime(duration)}",
+                    text = if (isLive) {
+                        "LIVE"
+                    } else {
+                        "${formatTime(currentPosition)} / ${formatTime(duration)}"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.9f)
                 )
@@ -3862,14 +3953,16 @@ private fun SeekOverlay(
 }
 
 @Composable
-private fun SeekOverlayHost(viewModel: PlayerViewModel, chapters: List<PlayerChapter>) {
+private fun SeekOverlayHost(viewModel: PlayerViewModel, chapters: List<PlayerChapter>, forceLive: Boolean = false) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
-    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, playbackTimeline.isLive)
+    val live = playbackTimeline.isLive || forceLive
+    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, live)
 
     SeekOverlay(
         currentPosition = playbackTimeline.currentPosition,
         duration = playbackTimeline.duration,
         bufferedPosition = playbackTimeline.bufferedPosition,
+        isLive = live,
         chapters = chapters,
         previewController = previewController,
         scrubbing = scrubPosition != null

@@ -49,5 +49,8 @@ internal data class CommentItemImpl(val commentItemWrapper: CommentItemWrapper):
 
     override fun getReplyCount(): String? = replyCountItem
 
-    override fun isEmpty(): Boolean = replyCountItem == null || nestedCommentKeyItem == null // empty replies fix
+    // YouTube leaves placeholder rows in a reply list; a real comment always has text. Checking the
+    // text first keeps real replies, which have no reply count or continuation key of their own.
+    override fun isEmpty(): Boolean =
+        messageIem.isNullOrBlank() && replyCountItem == null && nestedCommentKeyItem == null
 }

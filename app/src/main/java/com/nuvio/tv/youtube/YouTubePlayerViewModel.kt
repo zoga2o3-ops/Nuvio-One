@@ -5,7 +5,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.liskovsoft.mediaserviceinterfaces.data.CommentItem
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemMetadata
+import com.liskovsoft.mediaserviceinterfaces.data.PlaylistInfo
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import com.liskovsoft.youtubeapi.service.data.YouTubeMediaItem
@@ -39,10 +41,28 @@ data class YtVideoInfo(
     val newestCommentsKey: String?,
     val liveChatKey: String?,
     /** The video's chapters, as (title, start in ms). */
-    val chapters: List<Pair<String, Long>>
+    val chapters: List<Pair<String, Long>>,
+    /** A live broadcast. */
+    val isLive: Boolean = false
 )
 
 data class YtPlaylistRow(val id: String, val title: String, val contains: Boolean)
+
+/**
+ * The engine can return the same playlist twice: once from a local group (with a synthetic id)
+ * and once from the account (with the real one). Titles are the reliable identity here.
+ */
+internal fun List<PlaylistInfo>.withoutDuplicatePlaylists(): List<PlaylistInfo> {
+    val byTitle = LinkedHashMap<String, PlaylistInfo>()
+    for (item in this) {
+        val key = item.title.orEmpty().trim().lowercase()
+        val existing = byTitle[key]
+        if (existing == null || (!existing.isSelected && item.isSelected)) {
+            byTitle[key] = item
+        }
+    }
+    return byTitle.values.toList()
+}
 
 data class YtComment(
     val author: String,
@@ -80,7 +100,10 @@ data class YtPlayerState(
     val commentsSort: Int = 0,
     val replies: List<YtComment> = emptyList(),
     val repliesLoading: Boolean = false,
-    val canLoadMoreReplies: Boolean = false
+    val canLoadMoreReplies: Boolean = false,
+    /** YouTube's suggestions for the video on now, for the panel's Related list. */
+    val related: List<YtItem> = emptyList(),
+    val relatedLoading: Boolean = false
 )
 
 /**
@@ -120,6 +143,7 @@ class YouTubePlayerViewModel @Inject constructor(
         videoId = id
         nextCommentsKey = null
         nextRepliesKey = null
+        clearRelated()
         stopChat()
         _chat.value = emptyList()
         _state.value = YtPlayerState(loading = true)
@@ -127,7 +151,16 @@ class YouTubePlayerViewModel @Inject constructor(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val signed = service.signInService.isSigned
-                    media.getMetadataObserve(id).blockingFirst() to signed
+                    // The synchronous call returns null instead of going through the Rx wrapper,
+                    // which turns a null into a "fromNullable result is null" error.
+                    // Some clients answer with no details at all (live streams especially), so try
+                    // the next client once rather than leaving the panel empty.
+                    val first = runCatching { media.getMetadata(id) }.getOrNull()
+                    val meta = first ?: run {
+                        service.switchNextClientNow()
+                        runCatching { media.getMetadata(id) }.getOrNull()
+                    }
+                    requireNotNull(meta) to signed
                 }
             }
             result.fold(
@@ -154,7 +187,8 @@ class YouTubePlayerViewModel @Inject constructor(
         commentsKey = m.commentsKey,
         newestCommentsKey = m.newestCommentsKey,
         liveChatKey = m.liveChatKey?.takeIf { it.isNotBlank() },
-        chapters = m.chapters.orEmpty().mapNotNull { c -> c.title?.takeIf { it.isNotBlank() }?.let { it to c.startTimeMs } }
+        chapters = m.chapters.orEmpty().mapNotNull { c -> c.title?.takeIf { it.isNotBlank() }?.let { it to c.startTimeMs } },
+        isLive = m.isLive
     )
 
     private fun item(info: YtVideoInfo) = YouTubeMediaItem.fromIds(info.videoId, info.channelId)
@@ -178,18 +212,35 @@ class YouTubePlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The like count moved by [by] when YouTube wrote it as a plain number. Short forms such as
+     * "1.2K" can't be moved reliably, so those are left as they are.
+     */
+    private fun YtVideoInfo.moveLikeCount(by: Int): YtVideoInfo {
+        if (by == 0) return this
+        val plain = likeCount?.trim()
+            ?.replace(",", "")?.replace(".", "")?.replace(" ", "")?.replace("\u00A0", "")
+            ?: return this
+        val count = plain.toIntOrNull() ?: return this
+        return copy(likeCount = (count + by).coerceAtLeast(0).toString())
+    }
+
     fun toggleLike() {
         val liked = _state.value.info?.liked == true
         act(if (liked) "Like removed" else "Liked",
             { if (liked) media.removeLikeObserve(item(it)) else media.setLikeObserve(item(it)) },
-            { it.copy(liked = !liked, disliked = false) })
+            { it.copy(liked = !liked, disliked = false).moveLikeCount(if (liked) -1 else 1) })
     }
 
     fun toggleDislike() {
         val disliked = _state.value.info?.disliked == true
         act(if (disliked) "Dislike removed" else "Disliked",
             { if (disliked) media.removeDislikeObserve(item(it)) else media.setDislikeObserve(item(it)) },
-            { it.copy(disliked = !disliked, liked = false) })
+            {
+                // Disliking a video you liked takes that like away.
+                val removedLike = !disliked && it.liked
+                it.copy(disliked = !disliked, liked = false).moveLikeCount(if (removedLike) -1 else 0)
+            })
     }
 
     fun toggleSubscribe() {
@@ -230,7 +281,9 @@ class YouTubePlayerViewModel @Inject constructor(
             _state.update { s ->
                 s.copy(
                     loading = false,
-                    playlists = result.getOrNull().orEmpty().map { YtPlaylistRow(it.playlistId.orEmpty(), it.title.orEmpty(), it.isSelected) },
+                    playlists = result.getOrNull().orEmpty()
+                        .withoutDuplicatePlaylists()
+                        .map { YtPlaylistRow(it.playlistId.orEmpty(), it.title.orEmpty(), it.isSelected) },
                     message = if (result.isFailure) "Couldn't load your playlists." else null
                 )
             }
@@ -346,6 +399,59 @@ class YouTubePlayerViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    // ---- related ----
+
+    private var relatedGen = 0
+
+    /** Loads YouTube's suggestions for the video on now. */
+    fun loadRelated() {
+        val id = videoId ?: return
+        if (_state.value.related.isNotEmpty()) return
+        val gen = ++relatedGen
+        _state.update { it.copy(relatedLoading = true, message = null) }
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    media.getMetadata(id)?.suggestions.orEmpty()
+                        .flatMap { it.mediaItems.orEmpty() }
+                        .mapNotNull { it.toRelated() }
+                        .filter { it.videoId != id }
+                }
+            }
+            if (gen != relatedGen) return@launch
+            _state.update { s ->
+                s.copy(
+                    relatedLoading = false,
+                    related = result.getOrNull().orEmpty().distinctBy { it.videoId },
+                    message = if (result.isFailure) "Couldn't load related videos." else null
+                )
+            }
+        }
+    }
+
+    fun clearRelated() {
+        relatedGen++
+        _state.update { it.copy(related = emptyList(), relatedLoading = false) }
+    }
+
+    private fun MediaItem.toRelated(): YtItem? {
+        val id = videoId ?: return null
+        if (isLive) return null
+        return YtItem(
+            kind = YtKind.VIDEO,
+            videoId = id,
+            title = title.orEmpty(),
+            author = author,
+            thumbnail = cardImageUrl,
+            badge = badgeText,
+            isLive = isLive,
+            isShorts = isShorts,
+            channelId = channelId,
+            percentWatched = percentWatched.coerceIn(0, 100),
+            source = this
+        )
     }
 
     // ---- replies ----

@@ -40,13 +40,15 @@ fun BoxScope.YouTubeUpNext(
     videoId: String,
     viewModel: YouTubeViewModel,
     timeline: PlaybackTimelineState,
+    /** The video playing right now is a live stream: nothing is "up next". */
+    isLiveStream: Boolean = false,
     /** While the video is repeating, nothing is coming up next. */
     looping: Boolean = false
 ) {
     val context = LocalContext.current
     val next by viewModel.upNext.collectAsState()
     val remaining = timeline.duration - timeline.currentPosition
-    val inRange = !timeline.isLive && timeline.duration > 0 && remaining in 1..PICK_WITHIN_MS
+    val inRange = !isLiveStream && !timeline.isLive && timeline.duration > 0 && remaining in 1..PICK_WITHIN_MS
 
     // Pick the next video early enough that it's ready, and its stream is looked up.
     LaunchedEffect(videoId, inRange) {

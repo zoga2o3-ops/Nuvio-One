@@ -228,6 +228,8 @@ data class PlayerUiState(
     // Aspect ratio / resize mode
     val resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
     val aspectMode: AspectMode = AspectMode.ORIGINAL,
+    /** A vertical video (such as a Short): its aspect is fixed to the video's own shape. */
+    val isPortraitVideo: Boolean = false,
     val tunneledSurfaceFill: Boolean = false,
     val tunnelingEnabled: Boolean = false,
     val showAspectRatioIndicator: Boolean = false,
@@ -298,6 +300,10 @@ data class TrackInfo(
     val isSelected: Boolean = false,
     val sampleRate: Int? = null
 )
+
+/** The aspect the picture uses: a vertical video keeps its own shape, whatever the setting says. */
+internal val PlayerUiState.effectiveAspectMode: AspectMode
+    get() = if (isPortraitVideo) AspectMode.ORIGINAL else aspectMode
 
 data class NextEpisodeInfo(
     val videoId: String,

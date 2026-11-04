@@ -22,35 +22,62 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private const val VISIBLE_LINES = 12
-
 /**
- * The live chat of a live stream, drawn over the right side of the picture as messages arrive, newest at the
- * bottom. Read-only: it has no focus, so the remote keeps working on the player.
+ * The live chat of a live stream, drawn over the picture as messages arrive, newest at the bottom.
+ * Read-only: it has no focus, so the remote keeps working on the player.
+ *
+ * [appearance] is passed in rather than read here, so the chat settings panel can change position,
+ * size, colour and background and have the window update at once.
  */
 @Composable
-fun BoxScope.YouTubeChatOverlay(viewModel: YouTubePlayerViewModel) {
+fun BoxScope.YouTubeChatOverlay(viewModel: YouTubePlayerViewModel, appearance: ChatAppearance) {
     val lines by viewModel.chat.collectAsState()
+
+    val alignment = when (appearance.position) {
+        "top_start" -> Alignment.TopStart
+        "top_center" -> Alignment.TopCenter
+        "top_end" -> Alignment.TopEnd
+        "center_start" -> Alignment.CenterStart
+        "center" -> Alignment.Center
+        "center_end" -> Alignment.CenterEnd
+        "bottom_start" -> Alignment.BottomStart
+        "bottom_center" -> Alignment.BottomCenter
+        "bottom_end" -> Alignment.BottomEnd
+        else -> Alignment.CenterEnd
+    }
+    val width: androidx.compose.ui.unit.Dp
+    val fontSize: androidx.compose.ui.unit.TextUnit
+    val visibleLines: Int
+    when (appearance.size) {
+        "small" -> { width = 250.dp; fontSize = 11.sp; visibleLines = 8 }
+        "large" -> { width = 420.dp; fontSize = 14.sp; visibleLines = 16 }
+        else -> { width = 320.dp; fontSize = 12.sp; visibleLines = 12 }
+    }
+    val textColor = Color(appearance.textColor)
+    val background = Color.Black.copy(alpha = appearance.backgroundOpacity / 100f)
+
     Column(
         Modifier
-            .align(Alignment.CenterEnd)
-            .padding(end = 24.dp)
-            .width(320.dp)
+            .align(alignment)
+            .padding(24.dp)
+            .width(width)
             .clip(RoundedCornerShape(10.dp))
-            .background(Color(0x99000000))
+            .background(background)
             .padding(10.dp)
     ) {
         if (lines.isEmpty()) {
-            Text("Waiting for chat…", color = Color(0xFFBBBBBB), fontSize = 12.sp)
+            Text("Waiting for chat…", color = textColor.copy(alpha = 0.6f), fontSize = fontSize)
         }
-        lines.takeLast(VISIBLE_LINES).forEach { line ->
+        lines.takeLast(visibleLines).forEach { line ->
             Text(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = Color(0xFF9BB8FF), fontWeight = FontWeight.SemiBold)) { append(line.author) }
+                    withStyle(SpanStyle(color = Color(appearance.nameColor), fontWeight = FontWeight.SemiBold)) {
+                        append(line.author)
+                    }
                     append("  ")
-                    withStyle(SpanStyle(color = Color.White)) { append(line.message) }
+                    withStyle(SpanStyle(color = textColor)) { append(line.message) }
                 },
-                fontSize = 12.sp,
+                fontSize = fontSize,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(vertical = 2.dp)

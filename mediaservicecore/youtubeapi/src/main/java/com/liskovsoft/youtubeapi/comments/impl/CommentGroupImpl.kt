@@ -6,16 +6,24 @@ import com.liskovsoft.youtubeapi.comments.gen.CommentsResult
 import com.liskovsoft.youtubeapi.next.v2.gen.getContinuationToken
 
 internal data class CommentGroupImpl(val commentsResult: CommentsResult): CommentGroup {
-    private val itemSectionContinuation by lazy {
-        commentsResult.continuationContents?.itemSectionContinuation
+    /**
+     * A top-level page and a comment's replies use different continuation objects
+     * (`itemSectionContinuation` and `commentThreadContinuation`), so take whichever one came back.
+     */
+    private val contentsAndContinuation by lazy {
+        commentsResult.continuationContents?.let { contents ->
+            contents.itemSectionContinuation?.let { it.contents to it.continuations }
+                ?: contents.commentThreadContinuation?.let { it.contents to it.continuations }
+                ?: contents.commentRepliesContinuation?.let { it.contents to it.continuations }
+        }
     }
 
     private val commentItemWrappers by lazy {
-        itemSectionContinuation?.contents
+        contentsAndContinuation?.first
     }
 
     private val nextCommentsKeyItem by lazy {
-        itemSectionContinuation?.continuations?.getContinuationToken()
+        contentsAndContinuation?.second?.getContinuationToken()
     }
 
     private val commentItems by lazy {

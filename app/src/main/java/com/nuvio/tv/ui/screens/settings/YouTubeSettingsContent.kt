@@ -74,6 +74,8 @@ internal fun YouTubeSettingsContent(
     var codec by remember { mutableStateOf(YouTubeSettings.codecPreference(context)) }
     var contentRegion by remember { mutableStateOf(YouTubeSettings.contentRegion(context)) }
     var showContentRegion by remember { mutableStateOf(false) }
+    var posterColumns by remember { mutableStateOf(YouTubeSettings.posterColumns(context)) }
+    var clockOn by remember { mutableStateOf(YouTubeSettings.showClock(context)) }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -134,6 +136,18 @@ internal fun YouTubeSettingsContent(
             }
         }
 
+        SettingsGroupCard(title = "Header") {
+            SettingsToggleRow(
+                title = "Clock",
+                subtitle = "Show the time in the middle of the YouTube header",
+                checked = clockOn,
+                onToggle = {
+                    clockOn = !clockOn
+                    YouTubeSettings.setShowClock(context, clockOn)
+                }
+            )
+        }
+
         SettingsGroupCard(title = "Playback") {
             SettingsToggleRow(
                 title = "Thumbnail previews with sound",
@@ -159,9 +173,18 @@ internal fun YouTubeSettingsContent(
                 value = contentRegionLabel(contentRegion),
                 onClick = { showContentRegion = true }
             )
+            SettingsActionRow(
+                title = "Posters per row",
+                subtitle = "How many videos fit across the YouTube grids",
+                value = "$posterColumns",
+                onClick = {
+                    posterColumns = if (posterColumns >= 5) 3 else posterColumns + 1
+                    YouTubeSettings.setPosterColumns(context, posterColumns)
+                }
+            )
             SettingsToggleRow(
                 title = "Autoplay next video",
-                subtitle = "When a video ends, play the next one in the list, or YouTube's pick",
+                subtitle = "When a video ends, play YouTube's related video, or the next one in the list",
                 checked = autoplay,
                 onToggle = {
                     autoplay = !autoplay

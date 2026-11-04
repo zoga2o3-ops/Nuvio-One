@@ -180,6 +180,14 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     SettingsCategory.EXPERIENCE -> SettingsSectionSpec(category, stringResource(R.string.settings_experience), Icons.Default.Tune, destination = SettingsSectionDestination.Inline)
 }
 
+/**
+ * A category to open Settings on, for shortcuts such as the YouTube page's gear. Set it right
+ * before navigating; the next Settings screen uses it once and clears it.
+ */
+internal object SettingsLaunch {
+    var pendingCategory: SettingsCategory? = null
+}
+
 @Composable
 fun SettingsScreen(
     showBuiltInHeader: Boolean = true,
@@ -231,9 +239,13 @@ fun SettingsScreen(
     val isHorizonStyle = NuvioTheme.settingsUiStyle == SettingsUiStyle.HORIZON
     var selectedCategory by rememberSaveable {
         mutableStateOf(
-            visibleSections.firstOrNull()?.category ?: SettingsCategory.APPEARANCE
+            SettingsLaunch.pendingCategory
+                ?: visibleSections.firstOrNull()?.category
+                ?: SettingsCategory.APPEARANCE
         )
     }
+    // A shortcut only chooses the first screen; the next visit starts normally.
+    LaunchedEffect(Unit) { SettingsLaunch.pendingCategory = null }
     val railFocusRequesters = remember(visibleSections) {
         visibleSections.associate { it.category to FocusRequester() }
     }

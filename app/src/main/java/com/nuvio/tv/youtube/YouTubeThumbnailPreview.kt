@@ -55,6 +55,10 @@ internal fun YouTubeThumbnailPreview(item: YtItem, viewModel: YouTubeViewModel) 
             playable = viewModel.previewVideo(item)
         }
     }
+    // Leaving the card stops a lookup it started, so it can't hold up the next video.
+    DisposableEffect(item.videoId) {
+        onDispose { viewModel.cancelPreview(item) }
+    }
     val video = playable ?: return
     if (!resumed) return
     var ready by remember(video.url) { mutableStateOf(false) }

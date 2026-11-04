@@ -1062,6 +1062,11 @@ private fun PlaybackNavHost(
             // Live chat on or off, and the OK press that has just answered the "skip?" card.
             val chatOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
             val loopOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            // The chat's look, and the settings panel that changes it while the chat is on screen.
+            val chatAppearance = androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(com.nuvio.tv.youtube.loadChatAppearance(playerContext))
+            }
+            val chatSettingsOn = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
             val consumeConfirmUp = androidx.compose.runtime.remember { booleanArrayOf(false) }
             androidx.compose.runtime.DisposableEffect(upNextVideoId) {
                 onDispose {
@@ -1095,12 +1100,51 @@ private fun PlaybackNavHost(
                     loopOn.value = !loopOn.value
                     upNextPlayerVm.setRepeatOne(loopOn.value)
                 }) else null,
+                onYouTubePrevious = if (upNextVideoId != null && ytState.info?.isLive != true && youtubeVm != null) ({
+                    youtubeVm.playPrevious(
+                        currentVideoId = upNextVideoId,
+                        onReady = { v ->
+                            navController.navigate(youtubePlayerRoute(v)) {
+                                popUpTo(backStackEntry.destination.id) { inclusive = true }
+                            }
+                        },
+                        onNone = {
+                            android.widget.Toast.makeText(
+                                playerContext, "No previous video", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }) else null,
+                onYouTubeNext = if (upNextVideoId != null && ytState.info?.isLive != true && youtubeVm != null) ({
+                    youtubeVm.playNext(
+                        currentVideoId = upNextVideoId,
+                        onReady = { v ->
+                            navController.navigate(youtubePlayerRoute(v)) {
+                                popUpTo(backStackEntry.destination.id) { inclusive = true }
+                            }
+                        },
+                        onNone = {
+                            android.widget.Toast.makeText(
+                                playerContext, "No next video", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    )
+                }) else null,
                 onYouTubeChat = if (ytState.info?.liveChatKey != null) ({
-                    chatOn.value = !chatOn.value
-                    if (chatOn.value) ytPlayerVm.startChat() else ytPlayerVm.stopChat()
+                    if (!chatOn.value) {
+                        // First press: show the chat and its settings together, so changes are visible.
+                        chatOn.value = true
+                        chatSettingsOn.value = true
+                        ytPlayerVm.startChat()
+                    } else {
+                        chatOn.value = false
+                        chatSettingsOn.value = false
+                        ytPlayerVm.stopChat()
+                    }
                 }) else null,
                 // The YouTube page has to be underneath for the panel and buttons to work.
                 showYouTubeButton = upNextVideoId != null && youtubeVm != null,
+                youtubeLive = ytState.info?.isLive == true,
                 youtubeSubscribed = ytState.info?.subscribed == true,
                 youtubeChannelImage = ytState.info?.authorImage,
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
@@ -1125,9 +1169,30 @@ private fun PlaybackNavHost(
                                 )
                             }
                         }
-                        YouTubeUpNext(upNextVideoId, youtubeVm, timeline, looping = loopOn.value)
+                        YouTubeUpNext(
+                            upNextVideoId,
+                            youtubeVm,
+                            timeline,
+                            isLiveStream = ytState.info?.isLive == true,
+                            looping = loopOn.value
+                        )
+                        if (ytState.info?.isLive == true && (playerUi.showControls || !playerUi.isPlaying)) {
+                            com.nuvio.tv.youtube.YouTubeLiveBadge(
+                                androidx.compose.ui.Modifier.align(androidx.compose.ui.Alignment.TopStart)
+                            )
+                        }
                         SponsorSkipCard()
-                        if (chatOn.value) YouTubeChatOverlay(ytPlayerVm)
+                        if (chatOn.value) YouTubeChatOverlay(ytPlayerVm, chatAppearance.value)
+                        if (chatSettingsOn.value) {
+                            com.nuvio.tv.youtube.YouTubeChatSettingsPanel(
+                                appearance = chatAppearance.value,
+                                onChange = { updated ->
+                                    chatAppearance.value = updated
+                                    com.nuvio.tv.youtube.saveChatAppearance(updated, playerContext)
+                                },
+                                onClose = { chatSettingsOn.value = false }
+                            )
+                        }
                         if (playerUi.showYouTubePanel) {
                             YouTubePlayerPanel(
                                 videoId = upNextVideoId,
@@ -1138,6 +1203,17 @@ private fun PlaybackNavHost(
                                 onOpenChannel = { channelId, name ->
                                     youtubeVm.openChannel(channelId, name)
                                     navController.popBackStack()
+                                },
+                                onPlayVideo = { item ->
+                                    youtubeVm.activate(
+                                        item = item,
+                                        from = ytPlayerVm.state.value.related,
+                                        onReady = { v ->
+                                            navController.navigate(youtubePlayerRoute(v)) {
+                                                popUpTo(backStackEntry.destination.id) { inclusive = true }
+                                            }
+                                        }
+                                    )
                                 }
                             )
                         }
@@ -1591,6 +1667,9 @@ private fun PlaybackNavHost(
             // YouTube fork: browse and search, played in Nuvio's own player.
             com.nuvio.tv.youtube.YouTubeScreen(
                 onOpenSettings = {
+                    // The gear goes straight to the YouTube section, not the top of Settings.
+                    com.nuvio.tv.ui.screens.settings.SettingsLaunch.pendingCategory =
+                        com.nuvio.tv.ui.screens.settings.SettingsCategory.YOUTUBE
                     navController.navigate(Screen.Settings.route) { launchSingleTop = true }
                 },
                 onPlay = { v -> navController.navigate(youtubePlayerRoute(v)) }

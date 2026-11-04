@@ -28,6 +28,8 @@ public interface ContentService {
      * NOTE: returns unnamed group
      */
     MediaGroup getGroup(String reloadPageKey);
+    /** Opens a playlist by its id, for cards that carry no continuation key. */
+    MediaGroup getPlaylist(String playlistId);
     MediaGroup continueGroup(MediaGroup mediaGroup);
     void enableHistory(boolean enable);
     void clearHistory();

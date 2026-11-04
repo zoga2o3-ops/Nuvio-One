@@ -126,6 +126,11 @@ internal object BrowseApiHelper {
         return PostDataHelper.createQuery(client.browseTemplate, LIKED_MUSIC)
     }
 
+    /** A playlist page is a browse of `VL` + its id, the same way liked music uses `VLLM`. */
+    fun getPlaylistQuery(client: AppClient, playlistId: String): String {
+        return PostDataHelper.createQuery(client.browseTemplate, "\"browseId\":\"VL$playlistId\"")
+    }
+
     fun getLikedMusicContinuation(client: AppClient): String {
         return getContinuationQuery(client, LIKED_MUSIC_CONTINUATION)
     }

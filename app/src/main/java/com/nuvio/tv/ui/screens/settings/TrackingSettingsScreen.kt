@@ -210,6 +210,7 @@ fun TrackingSettingsContent(
             showDaysCapDialog = true
         },
         onCommentsChanged = traktViewModel::onShowMetaCommentsChanged,
+        onPromptToRateChanged = traktViewModel::onPromptToRateAfterWatchingChanged,
         onMoreLikeThisClick = {
             restoreFocusTarget = TrackingFocusTarget.MORE_LIKE_THIS
             showMoreLikeThisSourceDialog = true
@@ -488,6 +489,7 @@ internal fun TrackingSettingsOverview(
     onWatchProgressClick: () -> Unit,
     onContinueWatchingWindowClick: () -> Unit,
     onCommentsChanged: (Boolean) -> Unit,
+    onPromptToRateChanged: (Boolean) -> Unit,
     onMoreLikeThisClick: () -> Unit,
     onAnimeIdClick: () -> Unit,
     mdbListLibraryLists: MdbListLibraryListsUiState = MdbListLibraryListsUiState(),
@@ -595,6 +597,21 @@ internal fun TrackingSettingsOverview(
                                 modifier = Modifier
                                     .focusRequester(moreLikeThisFocusRequester)
                                     .testTag(TrackingSettingsTestTags.MORE_LIKE_THIS)
+                            )
+                        }
+                    }
+                }
+                if (traktConnected || simklState.mode == SimklConnectionMode.CONNECTED || mdbListState.isConnected) {
+                    item(key = "tracking_rating_prompt") {
+                        SettingsGroupCard(title = "Ratings") {
+                            SettingsToggleRow(
+                                title = "Prompt to rate after watching",
+                                subtitle = "Ask for a rating when a movie finishes. Uses your connected trackers.",
+                                checked = traktState.promptToRateAfterWatching,
+                                enabled = true,
+                                onToggle = {
+                                    onPromptToRateChanged(!traktState.promptToRateAfterWatching)
+                                }
                             )
                         }
                     }

@@ -78,6 +78,7 @@ import com.nuvio.tv.ui.components.SynopsisDescription
 import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Visibility
@@ -129,7 +130,9 @@ fun HeroContentSection(
     onHeroActionFocused: () -> Unit = {},
     onPlayFocusRestored: () -> Unit = {},
     onShowFullDescription: () -> Unit = {},
-    onTruncationChanged: (Boolean) -> Unit = {}
+    onTruncationChanged: (Boolean) -> Unit = {},
+    ratingAvailable: Boolean = false,
+    onRateClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isSeriesApi = remember(meta.apiType) {
@@ -325,6 +328,15 @@ fun HeroContentSection(
                                 painter = trailerPainter,
                                 contentDescription = stringResource(R.string.hero_play_trailer),
                                 onClick = onTrailerClick,
+                                onFocused = onHeroActionFocused
+                            )
+                        }
+
+                        if (ratingAvailable && onRateClick != null) {
+                            ActionIconButton(
+                                icon = Icons.Default.Star,
+                                contentDescription = "Rate",
+                                onClick = onRateClick,
                                 onFocused = onHeroActionFocused
                             )
                         }

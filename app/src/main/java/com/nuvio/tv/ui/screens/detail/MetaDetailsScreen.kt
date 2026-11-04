@@ -145,6 +145,7 @@ import com.nuvio.tv.ui.components.NuvioDialog
 import com.nuvio.tv.ui.components.PlayManualOverrideDialog
 import com.nuvio.tv.ui.components.SynopsisOverlay
 import com.nuvio.tv.ui.components.TrailerPlayer
+import com.nuvio.tv.ui.screens.player.MovieRatingPromptBus
 import com.nuvio.tv.ui.components.posteroptions.TrackingRemovalConfirmationDialog
 import com.nuvio.tv.core.tracking.LOCAL_LIBRARY_LIST_KEY
 import com.nuvio.tv.core.tracking.supportsMembershipFor
@@ -2476,6 +2477,20 @@ private fun MetaDetailsContent(
             // Hero as first item in the lazy column
             item(key = "hero", contentType = "hero") {
                 Box(modifier = Modifier.bringIntoViewResponder(heroNoScrollResponder)) {
+                    val ratingViewModel: PersonalRatingsViewModel = hiltViewModel()
+                    val ratingTarget = remember(meta.id, meta.imdbId) { personalRatingTarget(meta) }
+                    val ratingConnected = ratingViewModel.connected()
+                    // A finished movie asks for a rating here, once, if the setting is on.
+                    val promptRequest by MovieRatingPromptBus.request.collectAsStateWithLifecycle()
+                    val promptEnabled by ratingViewModel.promptEnabled.collectAsStateWithLifecycle()
+                    LaunchedEffect(promptRequest, promptEnabled, ratingTarget) {
+                        val request = promptRequest ?: return@LaunchedEffect
+                        val target = ratingTarget
+                        if (request.contentId == meta.id && promptEnabled && target != null) {
+                            ratingViewModel.open(target)
+                        }
+                        MovieRatingPromptBus.consume()
+                    }
                     HeroContentSection(
                         meta = meta,
                         nextEpisode = nextEpisode,
@@ -2540,7 +2555,16 @@ private fun MetaDetailsContent(
                             clearPendingRestore()
                         },
                         onShowFullDescription = { showSynopsisOverlay = true },
-                        onTruncationChanged = { synopsisTruncated = it }
+                        onTruncationChanged = { synopsisTruncated = it },
+                        ratingAvailable = ratingTarget != null && ratingConnected.isNotEmpty(),
+                        onRateClick = { ratingTarget?.let(ratingViewModel::open) }
+                    )
+                    PersonalRatingDialog(
+                        title = meta.name,
+                        state = ratingViewModel.state.collectAsStateWithLifecycle().value,
+                        connected = ratingConnected,
+                        onSubmit = ratingViewModel::submit,
+                        onClose = ratingViewModel::close
                     )
                 }
             }

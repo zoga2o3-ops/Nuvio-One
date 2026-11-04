@@ -182,7 +182,6 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
                     // Skip addon subtitle tracks — they are managed separately
                     if (format.id?.contains(PlayerRuntimeController.ADDON_SUBTITLE_TRACK_ID_PREFIX) == true) continue
                     val isSelected = trackGroup.isTrackSelected(i)
-                    if (isSelected) selectedSubtitleIndex = subtitleTracks.size
 
                     val hasForcedFlag = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0
                     val trackTexts = listOfNotNull(format.label, format.language, format.id)
@@ -190,15 +189,33 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
                     val isSongsAndSigns = trackTexts.any {
                         it.contains("songs", ignoreCase = true) && it.contains("sign", ignoreCase = true)
                     }
+                    val name = format.label ?: format.language
+                        ?: context.getString(com.nuvio.tv.R.string.player_track_subtitle_fallback, subtitleTracks.size + 1)
+                    val forced = hasForcedFlag || nameHintForced || isSongsAndSigns
+                    // YouTube can expose the same language twice (written and automatic captions).
+                    // Keep the first, and let it carry the selection if the later one was selected.
+                    val duplicate = subtitleTracks.indexOfFirst {
+                        it.name.equals(name, ignoreCase = true) &&
+                            it.language.equals(format.language, ignoreCase = true) &&
+                            it.isForced == forced
+                    }
+                    if (duplicate >= 0) {
+                        if (isSelected) {
+                            subtitleTracks[duplicate] = subtitleTracks[duplicate].copy(isSelected = true)
+                            selectedSubtitleIndex = duplicate
+                        }
+                        continue
+                    }
 
+                    if (isSelected) selectedSubtitleIndex = subtitleTracks.size
                     subtitleTracks.add(
                         TrackInfo(
                             index = subtitleTracks.size,
-                            name = format.label ?: format.language ?: context.getString(com.nuvio.tv.R.string.player_track_subtitle_fallback, subtitleTracks.size + 1),
+                            name = name,
                             language = format.language,
                             trackId = format.id,
                             codec = CustomDefaultTrackNameProvider.formatNameFromMime(format.sampleMimeType),
-                            isForced = hasForcedFlag || nameHintForced || isSongsAndSigns,
+                            isForced = forced,
                             isSelected = isSelected
                         )
                     )
@@ -353,7 +370,13 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
             subtitleTracks = subtitleTracks,
             selectedAudioTrackIndex = selectedAudioIndex,
             selectedSubtitleTrackIndex = finalSubtitleIndex,
-            isHdrVideo = isHdrVideo
+            isHdrVideo = isHdrVideo,
+            // A vertical picture (a Short, for instance) keeps its own aspect; the toggle is hidden.
+            isPortraitVideo = if (effectiveVideoFormat != null && effectiveVideoFormat.width > 0) {
+                effectiveVideoFormat.height > effectiveVideoFormat.width
+            } else {
+                state.isPortraitVideo
+            }
         )
     }
     updateAudioControlAvailability(audioTracks, selectedAudioIndex)

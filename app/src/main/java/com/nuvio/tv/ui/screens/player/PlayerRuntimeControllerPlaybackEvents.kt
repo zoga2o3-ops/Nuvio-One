@@ -898,6 +898,10 @@ internal fun PlayerRuntimeController.handleNaturalPlaybackEnded() {
     } else {
         saveWatchProgress()
     }
+    // A finished movie can ask for a rating once the user is back on its detail page.
+    if (contentType.equals("movie", ignoreCase = true)) {
+        contentId?.let(MovieRatingPromptBus::request)
+    }
     resetPostPlayStateAfterPlaybackEnded()
 }
 
@@ -1485,8 +1489,14 @@ fun PlayerRuntimeController.onEvent(
             }
         }
         is PlayerEvent.OnPreviewSeekBy -> {
-            if (_playbackTimeline.value.isLive) return
-            val maxDuration = currentPlaybackDurationMs().takeIf { it >= 0 } ?: Long.MAX_VALUE
+            if (_playbackTimeline.value.isLive && !isYouTubeLive) return
+            // A live window can report no duration; leave the upper bound to the player, which
+            // clamps to the live edge, instead of clamping every step to zero.
+            val maxDuration = if (_playbackTimeline.value.isLive) {
+                currentPlaybackDurationMs().takeIf { it > 0 } ?: Long.MAX_VALUE
+            } else {
+                currentPlaybackDurationMs().takeIf { it >= 0 } ?: Long.MAX_VALUE
+            }
             val basePosition = pendingPreviewSeekPosition ?: currentPlaybackPositionMs()?.coerceAtLeast(0L) ?: 0L
             val target = (basePosition + event.deltaMs)
                 .coerceAtLeast(0L)
@@ -1500,7 +1510,7 @@ fun PlayerRuntimeController.onEvent(
             }
         }
         PlayerEvent.OnCommitPreviewSeek -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !isYouTubeLive) return
             val requested = pendingPreviewSeekPosition
             if (requested != null) {
                 val target = if (isPartyControlLocked) ownSeekTarget(requested) else requested
@@ -1522,7 +1532,7 @@ fun PlayerRuntimeController.onEvent(
             }
         }
         is PlayerEvent.OnSeekTo -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !isYouTubeLive) return
             pendingPreviewSeekPosition = null
             val target = if (isPartyControlLocked) ownSeekTarget(event.position) ?: return else event.position
             seekPlaybackTo(target, SeekParameters.CLOSEST_SYNC)
@@ -2091,6 +2101,8 @@ fun PlayerRuntimeController.onEvent(
         }
         PlayerEvent.OnToggleAspectRatio -> {
             val state = _uiState.value
+            // A vertical video (a Short) is fixed to its own shape.
+            if (state.isPortraitVideo) return
             if (state.tunnelingEnabled) {
                 val fill = !state.tunneledSurfaceFill
                 val label = PlayerDisplayModeUtils.resizeModeLabel(
