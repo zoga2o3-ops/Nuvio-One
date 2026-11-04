@@ -98,6 +98,12 @@ public class YouTubeSignInService implements SignInService {
         mCacheUpdateTime = 0;
     }
 
+    @Override
+    public void refreshAccounts() {
+        updateAuthHeadersIfNeeded();
+        mAccountManager.syncStorage(true);
+    }
+
     // Fix empty content when quickly switch accounts???
     @Override
     public synchronized void selectAccount(Account account) {

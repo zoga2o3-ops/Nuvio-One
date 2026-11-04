@@ -18,7 +18,10 @@ public class AuthService {
     private static AuthService sInstance;
     private final AuthApi mAuthApi;
     private static final int REFRESH_TOKEN_ATTEMPTS = 200;
-    private static final long REFRESH_TOKEN_ATTEMPT_INTERVAL_MS = 3_000;
+    private static final long REFRESH_TOKEN_ATTEMPT_INTERVAL_MS = 5_000;
+    /** Added to the interval when YouTube asks us to slow down (or keeps failing). */
+    private static final long SLOW_DOWN_EXTRA_MS = 5_000;
+    private static final long MAX_INTERVAL_MS = 15_000;
     private final AppService mAppService;
 
     private AuthService() {
@@ -82,29 +85,69 @@ public class AuthService {
     }
 
     public AccessToken getAccessTokenWait(String deviceCode) throws InterruptedException {
+        return getAccessTokenWait(deviceCode, 0, null);
+    }
+
+    /**
+     * Polls until the code is approved. Uses the interval YouTube returned with the code (never
+     * faster than 5 s), backs off when YouTube says {@code slow_down} or keeps failing, and stops
+     * as soon as the caller is no longer interested (Cancel).
+     *
+     * @return the token, or {@code null} when the caller cancelled
+     */
+    public AccessToken getAccessTokenWait(String deviceCode, int intervalSeconds,
+                                          java.util.function.BooleanSupplier isCancelled) throws InterruptedException {
         AccessToken tokenResult = null;
+        long intervalMs = Math.max(intervalSeconds, 5) * 1_000L;
+        int consecutiveFailures = 0;
 
         for (int i = 0; i < REFRESH_TOKEN_ATTEMPTS; i++) {
-            Thread.sleep(REFRESH_TOKEN_ATTEMPT_INTERVAL_MS);
+            if (isCancelled != null && isCancelled.getAsBoolean()) {
+                return null;
+            }
+
+            Thread.sleep(intervalMs);
+
+            if (isCancelled != null && isCancelled.getAsBoolean()) {
+                return null;
+            }
 
             tokenResult = getAccessToken(deviceCode);
 
             if (tokenResult != null && tokenResult.getRefreshToken() != null) {
+                return tokenResult;
+            }
+
+            String error = tokenResult != null ? tokenResult.getError() : null;
+
+            if ("slow_down".equals(error)) {
+                intervalMs = Math.min(intervalMs + SLOW_DOWN_EXTRA_MS, MAX_INTERVAL_MS);
+            } else if ("access_denied".equals(error) || "expired_token".equals(error)) {
                 break;
+            } else if (tokenResult == null) {
+                // Network problem or YouTube's "automated queries" page. Ease off instead of
+                // hammering the endpoint, which only makes the block last longer.
+                consecutiveFailures++;
+                if (consecutiveFailures >= 3) {
+                    intervalMs = Math.min(intervalMs + SLOW_DOWN_EXTRA_MS, MAX_INTERVAL_MS);
+                    consecutiveFailures = 0;
+                }
+            } else {
+                consecutiveFailures = 0;
             }
         }
 
         if (tokenResult != null && tokenResult.getRefreshToken() != null) {
             return tokenResult;
         } else {
-            String msg = String.format("Error. Refresh token is empty!\nDebug data: device code: %s, client id: %s, client secret: %s\nError msg: %s",
+            String debug = String.format("Error. Refresh token is empty!\nDebug data: device code: %s, client id: %s, client secret: %s\nError msg: %s",
                     deviceCode,
                     mAppService.getClientId(),
                     mAppService.getClientSecret(),
                     tokenResult != null ? tokenResult.getError() : "");
 
-            Log.e(TAG, msg);
-            throw new IllegalStateException(msg);
+            Log.e(TAG, debug);
+            throw new IllegalStateException("YouTube didn't finish signing in. Please try again.");
         }
     }
 

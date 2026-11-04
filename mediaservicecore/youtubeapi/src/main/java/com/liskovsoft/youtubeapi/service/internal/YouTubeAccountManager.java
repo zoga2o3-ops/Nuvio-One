@@ -25,6 +25,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public class YouTubeAccountManager {
     private static final String TAG = YouTubeAccountManager.class.getSimpleName();
+    private static final int ACCOUNTS_LIST_ATTEMPTS = 2;
+    private static final long ACCOUNTS_LIST_RETRY_DELAY_MS = 1_500;
     private static YouTubeAccountManager sInstance;
     private boolean mStorageSynced;
     private final YouTubeSignInService mSignInService;
@@ -85,9 +87,26 @@ public class YouTubeAccountManager {
             emitter.onNext(userCodeResult.getUserCode());
 
             try {
-                AccessToken token = getAuthService().getAccessTokenWait(userCodeResult.getDeviceCode());
+                AccessToken token = getAuthService().getAccessTokenWait(
+                        userCodeResult.getDeviceCode(),
+                        userCodeResult.getInterval(),
+                        emitter::isDisposed);
 
-                persistRefreshToken(token.getRefreshToken());
+                // Cancelled while waiting.
+                if (token == null || emitter.isDisposed()) {
+                    return;
+                }
+
+                boolean saved = persistRefreshToken(token.getRefreshToken());
+
+                if (emitter.isDisposed()) {
+                    return;
+                }
+
+                if (!saved) {
+                    RxHelper.onError(emitter, "Couldn't finish signing in. Try again.");
+                    return;
+                }
 
                 emitter.onComplete();
             } catch (InterruptedException e) {
@@ -102,12 +121,14 @@ public class YouTubeAccountManager {
     }
 
     /**
-     * Set selected account token
+     * Set selected account token.
+     *
+     * @return true when an account is selected afterwards
      */
-    private void persistRefreshToken(String refreshToken) {
+    private boolean persistRefreshToken(String refreshToken) {
         if (refreshToken == null) {
             Log.e(TAG, "Refresh token is null");
-            return;
+            return false;
         }
 
         // Create initial account (with only refresh key)
@@ -115,20 +136,56 @@ public class YouTubeAccountManager {
         addAccount(tempAccount);
 
         // Use initial account to create auth header and fetch the accounts below
+        mStorageSynced = true; // the account list is fetched below, with retries
         mSignInService.invalidateCache();
         mSignInService.checkAuth();
 
         // Remove initial account (with only refresh key)
         mAccounts.remove(tempAccount); // multi thread fix
 
-        List<AccountInt> accountsInt = getAuthService().getAccounts(); // runs under auth header from above
+        // The account list is a separate request and YouTube occasionally answers it with the
+        // "automated queries" page right after a sign-in. Give it a few tries.
+        List<AccountInt> accountsInt = null;
 
-        if (accountsInt != null) {
+        for (int attempt = 0; attempt < ACCOUNTS_LIST_ATTEMPTS; attempt++) {
+            try {
+                accountsInt = getAuthService().getAccounts(); // runs under auth header from above
+            } catch (Exception e) {
+                Log.e(TAG, "Couldn't read the account list: %s", e.getMessage());
+            }
+
+            if (accountsInt != null && !accountsInt.isEmpty()) {
+                break;
+            }
+
+            if (attempt < ACCOUNTS_LIST_ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(ACCOUNTS_LIST_RETRY_DELAY_MS * (attempt + 1));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        if (accountsInt != null && !accountsInt.isEmpty()) {
             for (AccountInt accountInt : accountsInt) {
                 YouTubeAccount account = YouTubeAccount.from(accountInt);
                 account.setRefreshToken(refreshToken);
                 addAccount(account);
             }
+        } else {
+            // The sign-in itself worked even though the account list didn't come back. Keep the
+            // token so the user is signed in; the name and avatar fill in on a later sync.
+            Log.e(TAG, "Account list is empty; signing in with the token only");
+
+            for (Account account : mAccounts) {
+                if (account instanceof YouTubeAccount && ((YouTubeAccount) account).getRefreshToken() == null) {
+                    mAccounts.remove(account);
+                }
+            }
+
+            addAccount(YouTubeAccount.fromToken(refreshToken));
         }
 
         fixSelectedAccount();
@@ -138,6 +195,8 @@ public class YouTubeAccountManager {
 
         persistAccounts();
         onAccountChanged();
+
+        return getSelectedAccount() != null;
     }
 
     private void addAccount(Account newAccount) {
@@ -264,27 +323,60 @@ public class YouTubeAccountManager {
      * Sync avatars, names and emails
      */
     public void syncStorage() {
-        if (mStorageSynced)
+        syncStorage(false);
+    }
+
+    /**
+     * @param force also tries when an earlier sync finished without updating anything
+     */
+    public void syncStorage(boolean force) {
+        if (mStorageSynced && !force)
             return;
 
         List<Account> storedAccounts = getAccounts();
 
-        if (storedAccounts != null && !storedAccounts.isEmpty()) {
-            List<AccountInt> newAccounts = getAuthService().getAccounts();
+        if (storedAccounts == null || storedAccounts.isEmpty()) {
+            mStorageSynced = true;
+            return;
+        }
 
-            Account selectedAccount = getSelectedAccount();
+        // A token-only account is kept when the account list wasn't available during sign-in.
+        // Use its token so the first successful sync can fill in the name and avatar.
+        String tokenOnly = null;
 
-            if (newAccounts != null) {
-                for (AccountInt newAccount : newAccounts) {
-                    YouTubeAccount account = YouTubeAccount.from(newAccount);
-                    account.setSelected(account.equals(selectedAccount));
-                    addAccount(account);
-                }
-                persistAccounts();
+        if (storedAccounts.size() == 1) {
+            Account only = storedAccounts.get(0);
+
+            if (only instanceof YouTubeAccount && only.getName() == null && only.getEmail() == null) {
+                tokenOnly = ((YouTubeAccount) only).getRefreshToken();
             }
         }
 
-        mStorageSynced = true;
+        List<AccountInt> newAccounts = null;
+
+        try {
+            newAccounts = getAuthService().getAccounts();
+        } catch (Exception e) {
+            Log.e(TAG, "Couldn't sync the account list: %s", e.getMessage());
+        }
+
+        Account selectedAccount = getSelectedAccount();
+
+        if (newAccounts != null && !newAccounts.isEmpty()) {
+            for (AccountInt newAccount : newAccounts) {
+                YouTubeAccount account = YouTubeAccount.from(newAccount);
+
+                if (account.getRefreshToken() == null && tokenOnly != null) {
+                    account.setRefreshToken(tokenOnly);
+                }
+
+                account.setSelected(account.equals(selectedAccount));
+                addAccount(account);
+            }
+            persistAccounts();
+            mStorageSynced = true;
+        }
+        // On failure leave mStorageSynced false so a later check tries again.
     }
 
     private void notifyListeners() {

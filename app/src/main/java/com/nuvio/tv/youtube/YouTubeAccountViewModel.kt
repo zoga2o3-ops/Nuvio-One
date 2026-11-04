@@ -39,7 +39,7 @@ data class YouTubeAccountState(
     val error: String? = null
 ) {
     /** What a phone should open to enter the code; the code is filled in when YouTube allows it. */
-    val activateLink: String? get() = code?.let { "https://www.$url?user_code=$it" }
+    val activateLink: String? get() = code?.let { "https://www.$url?user_code=${it.replace(" ", "-")}" }
 }
 
 /** Signs in to YouTube with the TV device-code flow, switches between accounts and profiles, and signs out. */
@@ -94,7 +94,9 @@ class YouTubeAccountViewModel @Inject constructor(
                 )
             }
             val current = runCatching { signInService.selectedAccount }.getOrNull()
-            _state.update { it.copy(signedIn = signed, checked = true, accountName = current?.let(::label), accounts = items) }
+            val currentName = current?.name?.takeIf(String::isNotBlank)
+                ?: current?.email?.takeIf(String::isNotBlank)
+            _state.update { it.copy(signedIn = signed, checked = true, accountName = currentName, accounts = items) }
         }
     }
 
@@ -120,6 +122,17 @@ class YouTubeAccountViewModel @Inject constructor(
     fun cancelSignIn() {
         signIn?.dispose()
         _state.update { it.copy(code = null) }
+    }
+
+    /**
+     * A sign-in can finish before YouTube returns the account list (the name and avatar). Ask
+     * once more for them, then refresh the account state.
+     */
+    fun refreshAccountInfo() {
+        Schedulers.io().scheduleDirect {
+            runCatching { signInService.refreshAccounts() }
+            check(attempt = RECHECKS)
+        }
     }
 
     /** Switches to another account or profile. [onDone] runs once it has taken effect. */

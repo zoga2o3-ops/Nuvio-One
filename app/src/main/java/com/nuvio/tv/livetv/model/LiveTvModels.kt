@@ -342,6 +342,8 @@ data class LiveTvSettings(
     val calendarUpcomingRow: Boolean = true,
     /** Calendar: a "new episode" card in Continue Watching for shows you rang the bell on. */
     val calendarNewEpisodeCards: Boolean = true,
+    /** The Live TV options button under the buttons on a show or movie page. */
+    val pageLiveTvOptions: Boolean = true,
     /** Calendar: hide titles and pictures of episodes you haven't reached yet. */
     val calendarHideSpoilers: Boolean = true,
     /** Calendar: the country for Airing Today and movie release dates (two letters). */

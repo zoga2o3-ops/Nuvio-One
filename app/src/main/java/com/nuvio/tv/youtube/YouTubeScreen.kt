@@ -140,6 +140,14 @@ fun YouTubeScreen(
     LaunchedEffect(account.checked, account.signedIn) {
         if (account.checked && account.signedIn && !state.signedIn) viewModel.selectTab(state.tab)
     }
+    // A sign-in that YouTube's account list didn't answer keeps the token but not the name yet.
+    var nameRefreshTried by remember { mutableStateOf(false) }
+    LaunchedEffect(account.checked, account.signedIn, account.accountName) {
+        if (account.checked && account.signedIn && account.accountName == null && !nameRefreshTried) {
+            nameRefreshTried = true
+            accountViewModel.refreshAccountInfo()
+        }
+    }
     // An error from a card action is useful for a moment, then it should get out of the way.
     LaunchedEffect(error) {
         if (error != null) {
@@ -336,6 +344,11 @@ fun YouTubeScreen(
             Text(it, color = YtRed, modifier = Modifier.padding(bottom = 8.dp).clickable { viewModel.clearError() })
         }
 
+        // A failed sign-in used to be silent: the code screen closed and nothing said why.
+        account.error?.let {
+            Text(it, color = YtRed, modifier = Modifier.padding(bottom = 8.dp))
+        }
+
         if (suggestionsOpen && suggestions.isNotEmpty()) {
             SuggestionList(
                 modifier = Modifier.weight(1f, fill = false),
@@ -472,7 +485,14 @@ private fun Content(
             onSignIn
         )
 
-        state.isEmpty -> Message("Nothing here yet", null, null) {}
+        state.isEmpty -> Message(
+            "Nothing here yet",
+            "YouTube didn't send this page. It can be busy for a moment.",
+            "Try again"
+        ) {
+            needsInitialFocus = true
+            viewModel.selectTab(state.tab)
+        }
 
         state.rows.isNotEmpty() -> {
           val rowsState = rememberLazyListState()

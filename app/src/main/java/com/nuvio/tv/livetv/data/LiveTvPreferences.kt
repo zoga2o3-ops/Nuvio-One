@@ -124,6 +124,7 @@ class LiveTvPreferences @Inject constructor(
         val sideMenuFit = booleanPreferencesKey("side_menu_fit")
         val calendarUpcomingRow = booleanPreferencesKey("calendar_upcoming_row")
         val calendarNewEpisodeCards = booleanPreferencesKey("calendar_new_episode_cards")
+        val pageLiveTvOptions = booleanPreferencesKey("page_live_tv_options")
         val calendarHideSpoilers = booleanPreferencesKey("calendar_hide_spoilers")
         val calendarCountry = stringPreferencesKey("calendar_country")
         val calendarSkipNewsTalk = booleanPreferencesKey("calendar_skip_news_talk")
@@ -402,6 +403,7 @@ class LiveTvPreferences @Inject constructor(
             sideMenuFit = p[Keys.sideMenuFit] ?: d.sideMenuFit,
             calendarUpcomingRow = p[Keys.calendarUpcomingRow] ?: d.calendarUpcomingRow,
             calendarNewEpisodeCards = p[Keys.calendarNewEpisodeCards] ?: d.calendarNewEpisodeCards,
+            pageLiveTvOptions = p[Keys.pageLiveTvOptions] ?: d.pageLiveTvOptions,
             calendarHideSpoilers = p[Keys.calendarHideSpoilers] ?: d.calendarHideSpoilers,
             calendarCountry = p[Keys.calendarCountry] ?: d.calendarCountry,
             calendarSkipNewsTalk = p[Keys.calendarSkipNewsTalk] ?: d.calendarSkipNewsTalk,
@@ -691,6 +693,7 @@ class LiveTvPreferences @Inject constructor(
         p[Keys.sideMenuFit] = s.sideMenuFit
         p[Keys.calendarUpcomingRow] = s.calendarUpcomingRow
         p[Keys.calendarNewEpisodeCards] = s.calendarNewEpisodeCards
+        p[Keys.pageLiveTvOptions] = s.pageLiveTvOptions
         p[Keys.calendarHideSpoilers] = s.calendarHideSpoilers
         p[Keys.calendarCountry] = s.calendarCountry
         p[Keys.calendarSkipNewsTalk] = s.calendarSkipNewsTalk

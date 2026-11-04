@@ -381,6 +381,16 @@ fun CalendarSettingsContent(initialFocusRequester: FocusRequester? = null) {
                     )
                 }
             }
+            item(key = "detail_pages") {
+                SettingsGroupCard(title = "Show and Movie Pages") {
+                    SettingsToggleRow(
+                        "Live TV Options Button",
+                        "The Live TV button under the buttons on a show or movie page (record, remind, channel). Off hides it; recordings and reminders you already set stay.",
+                        s.pageLiveTvOptions,
+                        { update { it.copy(pageLiveTvOptions = !it.pageLiveTvOptions) } }
+                    )
+                }
+            }
             item(key = "page") {
                 SettingsGroupCard(title = "The Calendar") {
                     SettingsToggleRow(

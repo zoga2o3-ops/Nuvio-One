@@ -17,6 +17,12 @@ public interface SignInService {
     void removeAccount(Account account);
     String printDebugInfo();
 
+    /**
+     * Re-reads the account names and avatars. Used when a sign-in kept the token but YouTube's
+     * account list wasn't available yet.
+     */
+    void refreshAccounts();
+
     // RxJava interfaces
     /**
      * Trying to login using 2-factor authentication
