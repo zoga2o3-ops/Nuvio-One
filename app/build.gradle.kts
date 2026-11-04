@@ -393,6 +393,32 @@ android.defaultConfig.versionCode = (android.defaultConfig.versionCode ?: 1) * 1
     android.defaultConfig.versionName = it
 }
 
+// Test builds (-PlivetvTestBuild=true) are their own app ("Nuvio + IPTV Test") on their own update track.
+// Version code: 200000000 + minutes since 2026, so every new test build is newer than the last.
+// Version name: "1.1.0-test.<minutes>+beta.9" (the Nuvio base after the "+"), which the updater compares
+// by the build number even when the Nuvio base changes.
+// They update from the tester-only service, using the key in the LIVETV_TESTER_KEY secret (never in the code),
+// and show a TEST band on their icon and banner (src/livetvTest/res).
+val livetvIsTestBuild = (findProperty("livetvTestBuild") as String?)?.toBoolean() == true
+val livetvTesterKey = if (livetvIsTestBuild) {
+    (System.getenv("LIVETV_TESTER_KEY") ?: localProperties.getProperty("LIVETV_TESTER_KEY", "")).trim()
+} else ""
+android.defaultConfig.buildConfigField("String", "NUVIO_CHANNEL", "\"${if (livetvIsTestBuild) "test" else "stable"}\"")
+android.defaultConfig.buildConfigField("String", "TEST_UPDATES_URL", "\"https://livetv-cloud.nuvioplusiptv.workers.dev\"")
+android.defaultConfig.buildConfigField("String", "TESTER_KEY", buildConfigString(livetvTesterKey))
+if (livetvIsTestBuild) {
+    // 1767225600 = 2026-01-01 00:00 UTC, in seconds.
+    val minutesSince2026: Int = ((System.currentTimeMillis() / 1000L - 1767225600L) / 60L).toInt()
+    android.defaultConfig.versionCode = 200_000_000 + minutesSince2026
+    if ((findProperty("livetvVersionName") as String?).isNullOrBlank()) {
+        val base = android.defaultConfig.versionName ?: "0.0.0"
+        val core = base.substringBefore('-').substringBefore('+')
+        val nuvioPart = base.substringAfter('-', "").substringBefore('+')
+        android.defaultConfig.versionName = "$core-test.$minutesSince2026" + if (nuvioPart.isNotEmpty()) "+$nuvioPart" else ""
+    }
+    android.sourceSets.getByName("release").res.srcDir("src/livetvTest/res")
+}
+
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
         val isPlaystore = variant.productFlavors.any { it.second == "playstore" }

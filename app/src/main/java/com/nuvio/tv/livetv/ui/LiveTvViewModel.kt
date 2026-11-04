@@ -36,11 +36,21 @@ import javax.inject.Singleton
 /** Matches Nuvio's side-menu setting: classic drawer, modern floating panel, or modern with blur. */
 enum class LiveMenuStyle { CLASSIC, MODERN, MODERN_BLUR }
 
+/**
+ * Counts each time the app is opened (MainActivity created fresh). Android TV usually keeps the
+ * app running in the background after Back or Home, so "once per app launch" has to mean once
+ * per open, not once per process.
+ */
+object LiveTvAppOpens {
+    @Volatile var count = 0
+}
+
 /** In-memory session shared by the guide and the full-screen player (current group, etc). */
 @Singleton
 class LiveTvSession @Inject constructor() {
     val currentGroupId = MutableStateFlow<String?>(null)
-    var autoPlayedThisLaunch = false
+    /** The [LiveTvAppOpens.count] that "Start in Full Screen" last ran for. */
+    var autoPlayedForOpen = -1
     /** Set when full screen opens, so Back to the guide returns to the channel, not the groups. */
     var returningFromFullscreen = false
     /** Overlay mode off: Left in full screen returns to the guide with the groups open. */
@@ -208,6 +218,21 @@ class LiveTvViewModel @Inject constructor(
                 prefs.updatePlaylists { l -> l.map { if (it.id == sourceId) it.copy(catchupNoHlsSince = now) else it } }
             }
         }
+        playback.onCatchupStalled = {
+            val s = _catchup.value
+            val pos = catchupPositionMs()
+            if (s == null || pos == null) false else {
+                val absolute = s.program.startMs + pos
+                val at = programs.value[s.channel.key].orEmpty().firstOrNull { absolute >= it.startMs && absolute < it.stopMs } ?: s.program
+                playCatchup(s.channel, at, absolute - at.startMs)
+            }
+        }
+        playback.onCatchupLinkWorked = { sourceId, form ->
+            // The "other clock" link can play (an earlier show) even when it's wrong: never put it first.
+            if ("+clock" !in form && catchupForms.put(sourceId, form) != form && form != "hls" && form != "ts") {
+                com.nuvio.tv.livetv.model.LiveTvLoadReport.add("Catch-up: this provider answers the \"$form\" kind of link; trying it first from now on")
+            }
+        }
         playback.onCatchupHlsWorks = { sourceId ->
             if ((playlistNoHls.value[sourceId] ?: 0L) > 0L) viewModelScope.launch {
                 com.nuvio.tv.livetv.model.LiveTvLoadReport.add("Catch-up: HLS replays work on this provider again")
@@ -272,10 +297,13 @@ class LiveTvViewModel @Inject constructor(
          */
         exactGroup: Boolean = false
     ): LiveTvUiState {
-        val shown = channels.filter { it.key !in user.hiddenChannels && it.groupId !in user.hiddenGroups }
+        // Channels you hid one by one stay out everywhere. Hiding a playlist group only hides that
+        // group: its channels still show in your own groups (customPool below).
+        val notHidden = channels.filter { it.key !in user.hiddenChannels }
+        val shown = notHidden.filter { it.groupId !in user.hiddenGroups }
         // Parental controls: channels in locked groups stay out of every list until unlocked.
         val lockedIds = HashSet<String>()
-        shown.distinctBy { it.groupId }.forEach { c ->
+        notHidden.distinctBy { it.groupId }.forEach { c ->
             if (com.nuvio.tv.livetv.parental.ParentalControls.isLocked(c.groupId, c.group, s, user.lockedGroups)) lockedIds += c.groupId
         }
         user.customGroups.forEach { g ->
@@ -283,6 +311,8 @@ class LiveTvViewModel @Inject constructor(
         }
         val visible = shown.filter { it.groupId !in lockedIds }
         val byKey = visible.associateBy { it.key }
+        // What your own groups can show: also channels whose playlist group is hidden.
+        val customPool = notHidden.filter { it.groupId !in lockedIds }.associateBy { it.key }
         val favorites = user.favorites.mapNotNull { byKey[it] }
         val recent = user.recent.mapNotNull { byKey[it] }
 
@@ -319,7 +349,7 @@ class LiveTvViewModel @Inject constructor(
         val regular = mutableListOf<ChannelGroup>()
         val custom = user.customGroups
             .filter { it.id !in user.hiddenGroups }
-            .map { g -> ChannelGroup(g.id, g.name, g.channelKeys.count { it in byKey }, locked = g.id in lockedIds) }
+            .map { g -> ChannelGroup(g.id, g.name, g.channelKeys.count { it in customPool }, locked = g.id in lockedIds) }
         regular += custom
         val playlistGroups = LinkedHashMap<String, Pair<String, Int>>()
         shown.forEach { c ->
@@ -346,10 +376,18 @@ class LiveTvViewModel @Inject constructor(
                     { g -> g.title.lowercase() }
                 )
             )
-            // Your order (Reorder groups), playlist order for anything not moved.
-            else -> regular.withIndex()
-                .sortedWith(compareBy<IndexedValue<ChannelGroup>>({ orderIndex[it.value.id] ?: Int.MAX_VALUE }, { it.index }))
-                .map { it.value }
+            // Your order (Reorder groups). A group you haven't placed yet (e.g. one just added in
+            // the playlist) goes right after the group above it in the playlist.
+            else -> if (orderIndex.isEmpty()) regular else {
+                val result = regular.filter { it.id in orderIndex }.sortedBy { orderIndex[it.id] }.toMutableList()
+                regular.forEachIndexed { i, g ->
+                    if (g.id !in orderIndex) {
+                        val above = if (i > 0) result.indexOfFirst { it.id == regular[i - 1].id } else -1
+                        result.add(above + 1, g)
+                    }
+                }
+                result
+            }
         }
         groups += orderedRegular
 
@@ -373,7 +411,7 @@ class LiveTvViewModel @Inject constructor(
             }
             groupId in lockedIds -> emptyList()
             groupId.startsWith(ChannelGroup.CUSTOM_PREFIX) ->
-                sorted(user.customGroups.firstOrNull { it.id == groupId }?.channelKeys?.mapNotNull { byKey[it] }.orEmpty())
+                sorted(user.customGroups.firstOrNull { it.id == groupId }?.channelKeys?.mapNotNull { customPool[it] }.orEmpty())
             else -> ordered(groupId, groupChannels(groupId)).distinctBy { it.key }
         }
         // TiviMate's number override: 1, 2, 3… in the order the group shows them.
@@ -496,12 +534,19 @@ class LiveTvViewModel @Inject constructor(
             }
         }
         playback.play(channel)
-        // Remember the group you watched in, so Live TV reopens there.
-        val group = session.currentGroupId.value?.takeIf { it != ChannelGroup.SEARCH }
-            ?: uiState.value.selectedGroupId
+        // Remember the group you watched in, so Live TV reopens there (Favorites and your own
+        // groups included). Only a group you were really looking at is saved: starting straight
+        // in full screen, or playing from Sports / the Calendar / a launcher row, no longer
+        // replaces it with the channel's own group or the default one.
+        val shown = session.currentGroupId.value?.takeIf { it != ChannelGroup.SEARCH }
         viewModelScope.launch {
             prefs.recordWatched(channel.key, addToRecent = !isAdultChannel(channel))
-            prefs.setLastGroup(group)
+            val user = prefs.userState.first()
+            if (shown != null) {
+                if (channelInGroup(channel, shown, user)) prefs.setLastGroup(shown)
+            } else if (user.lastGroupId == null) {
+                prefs.setLastGroup(uiState.value.selectedGroupId)
+            }
         }
     }
 
@@ -675,20 +720,39 @@ class LiveTvViewModel @Inject constructor(
                 now - (playlistNoHls.value[channel.sourceId] ?: 0L) > HLS_RETRY_MS,
             serverTimezone = zone
         ) ?: return false
-        playback.play(
-            channel, overrideUrl = url, catchupTitle = program.title,
-            fallbacks = CatchupUrlBuilder.alternatives(
+        // Xtream links only name whole minutes, so the replay begins up to a minute before the
+        // point asked for. The player skips that bit once the replay is in, and the seek bar goes
+        // by where the replay really begins (before, a 30 s skip could land 20 s further back
+        // while the bar said it had gone forward).
+        val correctionMs = (catchup.correctionHours * 3_600_000).toLong()
+        val lead = if (CatchupUrlBuilder.wholeMinutes(url)) Math.floorMod(start - shift + correctionMs, 60_000L) else 0L
+        val from = start - lead
+        // The kind of link that worked last time on this provider goes first, so a skip doesn't
+        // wait on links the provider never answers (each one that sends nothing costs 15 s).
+        val links = CatchupUrlBuilder.preferForm(
+            url,
+            CatchupUrlBuilder.alternatives(
                 url, zone,
-                showMinutes = (program.stopMs - start) / 60_000,
-                airedMinutes = if (now < program.stopMs) (now - start) / 60_000 else null
+                showMinutes = (program.stopMs - from) / 60_000,
+                airedMinutes = if (now < program.stopMs) (now - from) / 60_000 else null
             ),
-            catchupStartMs = start
+            catchupForms[channel.sourceId]
         )
-        _catchup.value = CatchupSession(channel, program, offsetMs.coerceAtLeast(0))
+        playback.play(
+            channel, overrideUrl = links.first(), catchupTitle = program.title,
+            fallbacks = links.drop(1),
+            catchupStartMs = start,
+            catchupLeadMs = lead,
+            catchupPrimaryUrl = url
+        )
+        _catchup.value = CatchupSession(channel, program, offsetMs.coerceAtLeast(0) - lead)
         // Load this channel's full schedule, so catch-up can follow on into later shows.
         repository.ensureChannelSchedule(channel.key)
         return true
     }
+
+    /** Playlist id -> the kind of catch-up link that last worked there (this session only). */
+    private val catchupForms = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** Playlist id -> when HLS catch-up last failed there (see [PlaylistSource.catchupNoHlsSince]). */
     private val playlistNoHls: StateFlow<Map<String, Long>> = prefs.playlists
@@ -756,7 +820,7 @@ class LiveTvViewModel @Inject constructor(
         // A replay that came as the live stream's rewind window: go by the stream's clock.
         playback.archiveOffsetMs(s.program.startMs)?.let { return it.coerceAtLeast(0) }
         val pos = playback.player?.currentPosition ?: 0L
-        return s.baseOffsetMs + pos.coerceAtLeast(0)
+        return (s.baseOffsetMs + pos.coerceAtLeast(0)).coerceAtLeast(0)
     }
 
     /**
@@ -768,10 +832,11 @@ class LiveTvViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         val latest = (minOf(s.program.stopMs, now - 15_000) - s.program.startMs).coerceAtLeast(0)
         val target = offsetMs.coerceIn(0, latest)
+        playback.cancelCatchupLead()
         if (playback.seekArchiveTo(s.program.startMs, target)) return
         val p = playback.player
         val inStream = target - s.baseOffsetMs
-        if (p != null && p.isCurrentMediaItemSeekable && p.duration != androidx.media3.common.C.TIME_UNSET &&
+        if (p != null && playback.catchupSeekInStream() && p.isCurrentMediaItemSeekable && p.duration != androidx.media3.common.C.TIME_UNSET &&
             inStream >= 0 && inStream <= p.duration
         ) {
             p.seekTo(inStream)
@@ -1454,10 +1519,11 @@ class LiveTvViewModel @Inject constructor(
         return true
     }
 
-    /** The last watched channel, once per app launch, when "auto-play last channel" is on. */
+    /** The last watched channel, once each time the app is opened, when "Start in Full Screen" is on. */
     suspend fun autoPlayCandidate(): LiveChannel? {
-        if (session.autoPlayedThisLaunch) return null
-        session.autoPlayedThisLaunch = true
+        val open = LiveTvAppOpens.count
+        if (session.autoPlayedForOpen == open) return null
+        session.autoPlayedForOpen = open
         if (!prefs.currentSettings().autoPlayLastChannel) return null
         val key = prefs.userState.first().lastChannelKey ?: return null
         val channels = withTimeoutOrNull(15_000) {

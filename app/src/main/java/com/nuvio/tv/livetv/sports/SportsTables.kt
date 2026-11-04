@@ -165,8 +165,6 @@ internal fun TablesPage(
 
     val content: @Composable (Modifier) -> Unit = { m ->
         Column(m) {
-            header()
-            Spacer(Modifier.height(8.dp))
             if (shown.isEmpty()) {
                 LiveText(
                     if (follows.isEmpty) "Follow a team or a league and its table shows here."
@@ -219,29 +217,39 @@ internal fun TablesPage(
         }
     }
 
+    // The Sports top bar across the top (like My Sports), then the table, with the video window
+    // beside it.
     Box(Modifier.fillMaxSize()) {
         if (videoOn) {
-            Row(Modifier.fillMaxSize().padding(start = 56.dp, end = 28.dp, top = 20.dp, bottom = 26.dp)) {
-                content(Modifier.width(470.dp).fillMaxHeight())
-                Spacer(Modifier.width(18.dp))
-                Column(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp)) {
-                    videoSlot(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    Spacer(Modifier.height(10.dp))
-                    if (table != null && !settings.hideScores) {
-                        val row = focusedRow?.takeIf { r -> table.find(r.id) != null }
-                            ?: marked.firstNotNullOfOrNull { table.find(it)?.second }
-                        row?.let { TeamSummary(table, it, it.id in marked, viewModel, now, use24h) }
-                        Spacer(Modifier.height(8.dp))
-                        TableKey(table, view)
+            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 28.dp, top = 20.dp, bottom = 26.dp)) {
+                header()
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    content(Modifier.width(470.dp).fillMaxHeight())
+                    Spacer(Modifier.width(18.dp))
+                    Column(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp)) {
+                        videoSlot(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                        Spacer(Modifier.height(10.dp))
+                        if (table != null && !settings.hideScores) {
+                            val row = focusedRow?.takeIf { r -> table.find(r.id) != null }
+                                ?: marked.firstNotNullOfOrNull { table.find(it)?.second }
+                            row?.let { TeamSummary(table, it, it.id in marked, viewModel, now, use24h) }
+                            Spacer(Modifier.height(8.dp))
+                            TableKey(table, view)
+                        }
                     }
                 }
             }
         } else {
-            Row(Modifier.fillMaxSize().padding(start = 56.dp, end = 36.dp, top = 20.dp, bottom = 26.dp)) {
-                content(Modifier.weight(1f).fillMaxHeight())
-                if (table != null && !settings.hideScores) {
-                    Spacer(Modifier.width(18.dp))
-                    Column(Modifier.width(300.dp).padding(top = 90.dp)) { TableKey(table, view) }
+            Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 36.dp, top = 20.dp, bottom = 26.dp)) {
+                header()
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    content(Modifier.weight(1f).fillMaxHeight())
+                    if (table != null && !settings.hideScores) {
+                        Spacer(Modifier.width(18.dp))
+                        Column(Modifier.width(300.dp).padding(top = 46.dp)) { TableKey(table, view) }
+                    }
                 }
             }
         }
@@ -299,14 +307,14 @@ private fun TableView(
     val firstReq = remember { FocusRequester() }
     // The row to open on: your team (or a marked one), else the top.
     val markKey = remember(groups, marked) {
-        groups.firstNotNullOfOrNull { g -> g.rows.firstOrNull { it.id in marked }?.let { g.name + "|" + it.id } }
+        groups.withIndex().firstNotNullOfOrNull { (gi, g) -> g.rows.firstOrNull { it.id in marked }?.let { "$gi|" + it.id } }
     }
     // Item keys in list order, to scroll to the marked row.
     val keys = remember(groups) {
         buildList {
-            groups.forEach { g ->
-                if (groups.size > 1 || table.hasDivisions) add("h|" + g.name)
-                g.rows.forEach { add(g.name + "|" + it.id) }
+            groups.forEachIndexed { gi, g ->
+                if (groups.size > 1 || table.hasDivisions) add("h|$gi")
+                g.rows.forEach { add("$gi|" + it.id) }
             }
         }
     }
@@ -361,14 +369,14 @@ private fun TableView(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             var first = true
-            groups.forEach { g ->
+            groups.forEachIndexed { gi, g ->
                 if (groups.size > 1 || table.hasDivisions) {
-                    item(key = "h|" + g.name) {
+                    item(key = "h|$gi") {
                         LiveText(Standings.shortGroupName(g.name).uppercase(), color = SportsLook.Dim, size = 10.sp, weight = FontWeight.Black, modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp))
                     }
                 }
                 g.rows.forEachIndexed { i, r ->
-                    val key = g.name + "|" + r.id
+                    val key = "$gi|" + r.id
                     val req = when {
                         key == markKey -> markReq
                         first -> firstReq
@@ -390,7 +398,7 @@ private fun TableView(
                         )
                     }
                     lines.firstOrNull { it.first == i + 1 && i + 1 < g.rows.size }?.let { (_, label) ->
-                        item(key = "line|" + g.name + "|" + i) { PlayoffLine(label) }
+                        item(key = "line|$gi|" + i) { PlayoffLine(label) }
                     }
                 }
             }

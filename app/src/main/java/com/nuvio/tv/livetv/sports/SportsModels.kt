@@ -175,6 +175,8 @@ data class SportsSettings(
     val region: String = "",
     val hideScores: Boolean = false,
     val scoreOnInfoBar: Boolean = true,
+    /** The pin button on Live TV's info bar and the pinned scoreboards in the corner. */
+    val pinnedScores: Boolean = true,
     val bestChannelFirst: Boolean = true,
     val remindMyTeams: Boolean = true,
     /** Minutes before the start (0 = at the start). */
@@ -201,13 +203,16 @@ data class SportsSettings(
     /** Channel groups (lowercase names) whose channels go to the top of every game's list. */
     val preferredGroups: Set<String> = emptySet(),
     /** "Channels from" on the game page ("" = all; see [ChannelRegions]). */
-    val channelRegion: String = ""
+    val channelRegion: String = "",
+    /** League Networks: a network's id (see [LeagueNetworks]) -> the channel you picked for it. */
+    val leagueNetworkChannels: Map<String, String> = emptyMap()
 ) {
     fun toJson(): String = JSONObject()
         .put("showInSidebar", showInSidebar)
         .put("region", region)
         .put("hideScores", hideScores)
         .put("scoreOnInfoBar", scoreOnInfoBar)
+        .put("pinnedScores", pinnedScores)
         .put("bestChannelFirst", bestChannelFirst)
         .put("remindMyTeams", remindMyTeams)
         .put("remindMinutes", remindMinutes)
@@ -223,6 +228,7 @@ data class SportsSettings(
         .put("leagueChannels", JSONObject(leagueChannels as Map<*, *>))
         .put("preferredGroups", JSONArray(preferredGroups.toList()))
         .put("channelRegion", channelRegion)
+        .put("leagueNetworkChannels", JSONObject(leagueNetworkChannels as Map<*, *>))
         .toString()
 
     companion object {
@@ -236,6 +242,7 @@ data class SportsSettings(
                     region = o.optString("region", ""),
                     hideScores = o.optBoolean("hideScores", d.hideScores),
                     scoreOnInfoBar = o.optBoolean("scoreOnInfoBar", d.scoreOnInfoBar),
+                    pinnedScores = o.optBoolean("pinnedScores", d.pinnedScores),
                     bestChannelFirst = o.optBoolean("bestChannelFirst", d.bestChannelFirst),
                     remindMyTeams = o.optBoolean("remindMyTeams", d.remindMyTeams),
                     remindMinutes = o.optInt("remindMinutes", d.remindMinutes),
@@ -251,7 +258,8 @@ data class SportsSettings(
                     teamChannels = o.optJSONObject("teamChannels").stringMap(),
                     leagueChannels = o.optJSONObject("leagueChannels").stringMap(),
                     preferredGroups = o.optJSONArray("preferredGroups").strings().toSet(),
-                    channelRegion = o.optString("channelRegion", "")
+                    channelRegion = o.optString("channelRegion", ""),
+                    leagueNetworkChannels = o.optJSONObject("leagueNetworkChannels").stringMap()
                 )
             }.getOrDefault(SportsSettings())
         }

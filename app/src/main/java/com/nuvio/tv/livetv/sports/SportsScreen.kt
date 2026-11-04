@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package com.nuvio.tv.livetv.sports
 
@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
@@ -137,6 +138,7 @@ private const val CHIP_LEAGUE = "lg:"
 private const val CHIP_SPORT = "sp:"
 /** Tables: your leagues' tables (see SportsTables). */
 private const val CHIP_TABLES = "tables"
+private const val CHIP_NETWORKS = "networks"
 
 /** Width of the game list next to the video window. */
 private val LIST_WIDTH = 470.dp
@@ -410,7 +412,8 @@ fun SportsScreen(
                 // Opened here: Back comes back here.
                 onOpen = { ev -> fromRoute = null; fromLabel = null; openId = ev.id },
                 onQuickWatch = ::quickWatch,
-                onPick = { picker = true }
+                onPick = { picker = true },
+                onWatchChannel = { ch -> viewModel.watchChannel(ch); onOpenLive() }
             )
         }
         // The picture, on top of the page where its slot is (one view for every page, so it
@@ -516,7 +519,8 @@ private fun SportsHub(
     viewModel: SportsViewModel,
     onOpen: (SportsEvent) -> Unit,
     onQuickWatch: (SportsEvent) -> Unit,
-    onPick: () -> Unit
+    onPick: () -> Unit,
+    onWatchChannel: (LiveChannel) -> Unit
 ) {
     // Back opens the side menu first, like the guide and On Demand (it used to go straight to
     // Home). With the menu open, Back is left to the app. A game page, Pick Your Teams and the
@@ -551,6 +555,8 @@ private fun SportsHub(
     }
     LaunchedEffect(day) { showPickedDay() }
     fun dayTabReq(offset: Int) = dayTabReqs.getOrPut(offset) { FocusRequester() }
+    // Day tabs that are on the row right now (a requester must be attached before focus goes to it).
+    val composedDays = remember { HashSet<Int>() }
     val effectiveChip = when {
         // League buttons and Live were folded into My Teams' rows and All Events: saved ones go home.
         pinnedChip != null || chip == CHIP_LIVE -> if (follows.isEmpty) CHIP_ALL else CHIP_MINE
@@ -663,44 +669,43 @@ private fun SportsHub(
             LiveText(it, color = NuvioTheme.colors.Error, size = 10.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = 8.dp))
         }
     }
-    val header: @Composable (Modifier) -> Unit = { hm ->
-        Row(hm, verticalAlignment = Alignment.CenterVertically) {
-            LiveText("Sports", size = 26.sp, weight = FontWeight.Black)
-            Spacer(Modifier.width(14.dp))
-            val lv = leagueView?.let { SportsCatalog.league(it) }
-            if (lv != null) {
-                LiveText("${lv.name} · the next 7 days", color = SportsLook.Dim, size = 12.sp, weight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            } else {
-                // A week back to a week ahead; opens on Yesterday and Today, and scrolls.
-                val dayFmt = remember { SimpleDateFormat("EEE d", Locale.getDefault()) }
-                LazyRow(
-                    Modifier.weight(1f)
-                        .onFocusChanged { if (!it.hasFocus) showPickedDay() }
-                        .keepFocusWhileHeld(vertical = false),
-                    state = tabsState,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    contentPadding = PaddingValues(end = 12.dp)
-                ) {
-                    items((-SportsRepository.DAYS_BACK..SportsRepository.DAYS_AHEAD).toList(), key = { it }) { offset ->
-                        val label = when (offset) {
-                            -1 -> "Yesterday"
-                            0 -> "Today"
-                            1 -> "Tomorrow"
-                            else -> dayFmt.format(Date(viewModel.repo.dayStart(offset) + 12 * 3_600_000L))
-                        }
-                        DayTab(label, selected = day == offset, modifier = Modifier.focusRequester(dayTabReq(offset)), onClick = { onDay(offset); focusedOnce = true })
+    // The days (or the league's name): under the top bar on All Events and league pages.
+    val dayBar: @Composable (Modifier) -> Unit = { dm ->
+        val lv = leagueView?.let { SportsCatalog.league(it) }
+        if (lv != null) {
+            LiveText("${lv.name} · the next 7 days", color = SportsLook.Dim, size = 12.sp, weight = FontWeight.Bold, modifier = dm)
+        } else {
+            // A week back to a week ahead; opens on Yesterday and Today, and scrolls.
+            val dayFmt = remember { SimpleDateFormat("EEE d", Locale.getDefault()) }
+            LazyRow(
+                dm
+                    .onFocusChanged { if (!it.hasFocus) showPickedDay() }
+                    .keepFocusWhileHeld(vertical = false)
+                    // Coming in from above or below lands on the day you're on, not whichever tab
+                    // happens to sit closest (that was two days ahead of Today).
+                    .focusProperties { enter = { if (day in composedDays) dayTabReq(day) else FocusRequester.Default } }
+                    .focusGroup(),
+                state = tabsState,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                contentPadding = PaddingValues(end = 12.dp)
+            ) {
+                items((-SportsRepository.DAYS_BACK..SportsRepository.DAYS_AHEAD).toList(), key = { it }) { offset ->
+                    val label = when (offset) {
+                        -1 -> "Yesterday"
+                        0 -> "Today"
+                        1 -> "Tomorrow"
+                        else -> dayFmt.format(Date(viewModel.repo.dayStart(offset) + 12 * 3_600_000L))
                     }
+                    DisposableEffect(offset) { composedDays += offset; onDispose { composedDays -= offset } }
+                    DayTab(label, selected = day == offset, modifier = Modifier.focusRequester(dayTabReq(offset)), onClick = { onDay(offset); focusedOnce = true })
                 }
             }
         }
     }
     val filters: @Composable (Modifier) -> Unit = { m ->
         LazyRow(m.keepFocusWhileHeld(vertical = false), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)) {
-            // ↑ from the filters on All Events: the day you're looking at (on screen: it's the one picked).
-            val upTo = if (!rowsPage) Modifier.focusProperties {
-                up = if (tabsState.layoutInfo.visibleItemsInfo.any { it.key == day }) dayTabReq(day) else FocusRequester.Default
-            } else Modifier
+            val upTo: Modifier = Modifier
             item(key = CHIP_MINE) { FilterIcon("★", "My Sports", effectiveChip == CHIP_MINE, Modifier.focusRequester(firstChip).then(upTo), withLabel = true) { pickChip(CHIP_MINE) } }
             // Everything on, day by day (live games first), with how many are on now.
             item(key = CHIP_ALL) {
@@ -711,6 +716,8 @@ private fun SportsHub(
             }
             // Your leagues' tables.
             item(key = CHIP_TABLES) { FilterIcon("🏆", "Tables", effectiveChip == CHIP_TABLES, upTo, withLabel = true) { pickChip(CHIP_TABLES) } }
+            // Each league's own channel (NFL Network, NBA TV…).
+            item(key = CHIP_NETWORKS) { FilterIcon("📡", "League Networks", effectiveChip == CHIP_NETWORKS, upTo, withLabel = true) { pickChip(CHIP_NETWORKS) } }
             // Sports you follow: My Teams for that sport only.
             if (followedSports.size > 1) {
                 item(key = "sep1") { ChipGap() }
@@ -778,6 +785,22 @@ private fun SportsHub(
         return
     }
 
+    // ---- League Networks: each league's own channel
+    if (effectiveChip == CHIP_NETWORKS) {
+        LeagueNetworksPage(
+            viewModel = viewModel,
+            settings = settings,
+            now = now,
+            use24h = use24h,
+            videoOn = videoOn,
+            videoSlot = videoSlot,
+            playingKey = playingKey,
+            filters = filters,
+            onWatchFull = onWatchChannel
+        )
+        return
+    }
+
     // ---- My Teams: rows (the next big game, Live & Upcoming, a row per team and league)
     if (rowsPage) {
         val minute = now / 60_000L
@@ -828,27 +851,35 @@ private fun SportsHub(
 
     Box(Modifier.fillMaxSize()) {
     if (videoOn) {
+        // The same top bar as every Sports page, then the list with the video window beside it.
         // Stops above the hint line at the bottom, so no game sits behind it.
-        Row(Modifier.fillMaxSize().padding(start = 56.dp, end = 28.dp, top = 20.dp, bottom = 26.dp)) {
-            Column(Modifier.width(LIST_WIDTH).fillMaxHeight()) {
-                header(Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                filters(Modifier.fillMaxWidth())
-                list(Modifier.weight(1f))
+        Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 28.dp, top = 20.dp, bottom = 26.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LiveText("Sports", size = 26.sp, weight = FontWeight.Black)
+                Spacer(Modifier.width(14.dp))
+                filters(Modifier.weight(1f))
             }
-            Spacer(Modifier.width(18.dp))
-            Column(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp)) {
-                videoSlot(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                Spacer(Modifier.height(10.dp))
-                NowPlayingPanel(events, matches, settings, now, use24h, playingKey, viewModel)
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.width(LIST_WIDTH).fillMaxHeight()) {
+                    dayBar(Modifier.fillMaxWidth())
+                    list(Modifier.weight(1f))
+                }
+                Spacer(Modifier.width(18.dp))
+                Column(Modifier.weight(1f).fillMaxHeight().padding(top = 4.dp)) {
+                    videoSlot(Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                    Spacer(Modifier.height(10.dp))
+                    NowPlayingPanel(events, matches, settings, now, use24h, playingKey, viewModel)
+                }
             }
         }
     } else {
         Column(Modifier.fillMaxSize().padding(start = 56.dp, end = 36.dp, top = 20.dp, bottom = 26.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                header(Modifier.weight(1f))
-                filters(Modifier.width(470.dp))
+                LiveText("Sports", size = 26.sp, weight = FontWeight.Black)
+                Spacer(Modifier.width(14.dp))
+                filters(Modifier.weight(1f))
             }
+            dayBar(Modifier.fillMaxWidth())
             Spacer(Modifier.height(4.dp))
             list(Modifier.weight(1f))
         }
@@ -1329,6 +1360,17 @@ private fun GamePage(
                     })
                 }
             }
+            // Pin the live score to the corner (up to three games; shows while something plays).
+            if (ev.state == GameState.LIVE && sides.size == 2 && showScore && settings.pinnedScores) {
+                val m = f()
+                item {
+                    val pinned = SportsLive.pins.collectAsStateWithLifecycle().value.contains(ev.id)
+                    SportsAction(if (pinned) "📌  Pinned" else "📌  Pin score", modifier = m, selected = pinned, onClick = {
+                        val now = SportsLive.togglePin(ev.id)
+                        LiveTvNotice.show(if (now) "Score pinned to the corner while you watch" else "Score unpinned")
+                    })
+                }
+            }
             sides.forEach { side ->
                 val m = f()
                 item {
@@ -1589,7 +1631,7 @@ private fun FixChannelDialog(ev: SportsEvent, matches: List<ChannelMatch>, hideS
 
 /** A channel in a Sports pop-up: logo, name, and a note on the right; white when highlighted. */
 @Composable
-private fun ChannelLine(channel: LiveChannel, detail: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ChannelLine(channel: LiveChannel, detail: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     Row(
         modifier
@@ -1611,7 +1653,7 @@ private fun ChannelLine(channel: LiveChannel, detail: String, modifier: Modifier
 
 /** Type part of a channel's name; OK on one picks it. */
 @Composable
-private fun ChannelPickerDialog(
+internal fun ChannelPickerDialog(
     title: String,
     initial: String,
     viewModel: SportsViewModel,

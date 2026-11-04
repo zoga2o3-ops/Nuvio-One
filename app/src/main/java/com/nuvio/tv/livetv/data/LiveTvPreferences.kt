@@ -115,10 +115,13 @@ class LiveTvPreferences @Inject constructor(
         val matchFrameRate = booleanPreferencesKey("match_frame_rate")
         val frameRateMode = stringPreferencesKey("frame_rate_mode")
         val onDemandInSidebar = booleanPreferencesKey("on_demand_in_sidebar")
+        val onDemandEnabled = booleanPreferencesKey("on_demand_enabled")
         val recordingsInSidebar = booleanPreferencesKey("recordings_in_sidebar")
         val sideMenuOrder = stringPreferencesKey("side_menu_order")
         val sideMenuHidden = stringPreferencesKey("side_menu_hidden")
         val calendarInMenu = booleanPreferencesKey("calendar_in_menu")
+        val sideMenuLine = booleanPreferencesKey("side_menu_line")
+        val sideMenuFit = booleanPreferencesKey("side_menu_fit")
         val calendarUpcomingRow = booleanPreferencesKey("calendar_upcoming_row")
         val calendarNewEpisodeCards = booleanPreferencesKey("calendar_new_episode_cards")
         val calendarHideSpoilers = booleanPreferencesKey("calendar_hide_spoilers")
@@ -135,6 +138,7 @@ class LiveTvPreferences @Inject constructor(
         val onDemandInStreams = booleanPreferencesKey("on_demand_in_streams")
         val onDemandStreamsPosition = stringPreferencesKey("on_demand_streams_position")
         val onDemandAutoPlay = booleanPreferencesKey("on_demand_auto_play")
+        val onDemandPlayDirect = booleanPreferencesKey("on_demand_play_direct")
         val searchOrder = stringPreferencesKey("search_order")
         val searchPreview = booleanPreferencesKey("search_preview")
         val onDemandAddonPosters = booleanPreferencesKey("on_demand_addon_posters")
@@ -312,7 +316,22 @@ class LiveTvPreferences @Inject constructor(
         .map { decodeEpgs(it[Keys.epgs]) }
         .distinctUntilChanged()
 
-    val settings: Flow<LiveTvSettings> = store.data.map { p ->
+    /**
+     * Which side-menu pages are off (Calendar and the others) is chosen per Nuvio profile. The first
+     * profile keeps the original key. A profile that hasn't made its own choice yet sees the first
+     * profile's, so nothing changes for people who already turned a page off.
+     */
+    private fun withMyMenu(p: Preferences, id: Int): Preferences {
+        if (id <= 1) return p
+        val own = p[my(Keys.sideMenuHidden, id)] ?: return p
+        val m = p.toMutablePreferences()
+        m[Keys.sideMenuHidden] = own
+        return m
+    }
+
+    val settings: Flow<LiveTvSettings> = kotlinx.coroutines.flow.combine(store.data, profileManager.activeProfileId) { p0, id ->
+        withMyMenu(p0, id)
+    }.map { p ->
         val d = LiveTvSettings()
         LiveTvSettings(
             showInSidebar = p[Keys.showInSidebar] ?: d.showInSidebar,
@@ -373,10 +392,14 @@ class LiveTvPreferences @Inject constructor(
             // Before the three choices it was on or off; on worked like "On start/stop".
             frameRateMode = p[Keys.frameRateMode] ?: if (p[Keys.matchFrameRate] == true) "START_STOP" else d.frameRateMode,
             onDemandInSidebar = p[Keys.onDemandInSidebar] ?: d.onDemandInSidebar,
+            // Missing on older setups: On, so "off" from before becomes "Off the menu only" (stream list and Search come back).
+            onDemandEnabled = p[Keys.onDemandEnabled] ?: d.onDemandEnabled,
             recordingsInSidebar = p[Keys.recordingsInSidebar] ?: d.recordingsInSidebar,
             sideMenuOrder = p[Keys.sideMenuOrder] ?: d.sideMenuOrder,
             sideMenuHidden = p[Keys.sideMenuHidden] ?: d.sideMenuHidden,
             calendarInMenu = p[Keys.calendarInMenu] ?: d.calendarInMenu,
+            sideMenuLine = p[Keys.sideMenuLine] ?: d.sideMenuLine,
+            sideMenuFit = p[Keys.sideMenuFit] ?: d.sideMenuFit,
             calendarUpcomingRow = p[Keys.calendarUpcomingRow] ?: d.calendarUpcomingRow,
             calendarNewEpisodeCards = p[Keys.calendarNewEpisodeCards] ?: d.calendarNewEpisodeCards,
             calendarHideSpoilers = p[Keys.calendarHideSpoilers] ?: d.calendarHideSpoilers,
@@ -389,6 +412,7 @@ class LiveTvPreferences @Inject constructor(
             onDemandInStreams = p[Keys.onDemandInStreams] ?: d.onDemandInStreams,
             onDemandStreamsPosition = p[Keys.onDemandStreamsPosition] ?: d.onDemandStreamsPosition,
             onDemandAutoPlay = p[Keys.onDemandAutoPlay] ?: d.onDemandAutoPlay,
+            onDemandPlayDirect = p[Keys.onDemandPlayDirect] ?: d.onDemandPlayDirect,
             searchOrder = p[Keys.searchOrder] ?: d.searchOrder,
             searchPreview = p[Keys.searchPreview] ?: d.searchPreview,
             onDemandAddonPosters = p[Keys.onDemandAddonPosters] ?: d.onDemandAddonPosters,
@@ -548,19 +572,29 @@ class LiveTvPreferences @Inject constructor(
 
     // ---------- calendar (synced with the rest of Live TV's settings) ----------
 
-    /** Shows whose bell is rung: a JSON list (see CalendarFollow). */
-    val calendarFollows: Flow<String> = store.data.map { it[Keys.calendarFollows] ?: "" }.distinctUntilChanged()
+    // Each Nuvio profile has its own followed and hidden shows. The first profile keeps the original
+    // keys; another profile sees the first profile's list until it changes its own, then keeps its own.
+    private fun mineOrShared(p: Preferences, key: Preferences.Key<String>, id: Int): String =
+        (if (id <= 1) p[key] else (p[my(key, id)] ?: p[key])) ?: ""
 
-    suspend fun editCalendarFollows(transform: (String) -> String) {
-        store.edit { it[Keys.calendarFollows] = transform(it[Keys.calendarFollows] ?: "") }
+    private suspend fun editMine(key: Preferences.Key<String>, transform: (String) -> String) {
+        val me = currentProfile
+        store.edit { it[my(key, me)] = transform(mineOrShared(it, key, me)) }
     }
 
-    /** Shows hidden from the Calendar: a JSON list of { id, name }. */
-    val calendarHiddenShows: Flow<String> = store.data.map { it[Keys.calendarHiddenShows] ?: "" }.distinctUntilChanged()
+    /** Shows whose bell is rung (this profile's): a JSON list (see CalendarFollow). */
+    val calendarFollows: Flow<String> = kotlinx.coroutines.flow.combine(store.data, profileManager.activeProfileId) { p, id ->
+        mineOrShared(p, Keys.calendarFollows, id)
+    }.distinctUntilChanged()
 
-    suspend fun editCalendarHiddenShows(transform: (String) -> String) {
-        store.edit { it[Keys.calendarHiddenShows] = transform(it[Keys.calendarHiddenShows] ?: "") }
-    }
+    suspend fun editCalendarFollows(transform: (String) -> String) = editMine(Keys.calendarFollows, transform)
+
+    /** Shows hidden from this profile's Calendar: a JSON list of { id, name }. */
+    val calendarHiddenShows: Flow<String> = kotlinx.coroutines.flow.combine(store.data, profileManager.activeProfileId) { p, id ->
+        mineOrShared(p, Keys.calendarHiddenShows, id)
+    }.distinctUntilChanged()
+
+    suspend fun editCalendarHiddenShows(transform: (String) -> String) = editMine(Keys.calendarHiddenShows, transform)
 
     /** The channel picked for each network ("Always use the channel I pick for FX"): a JSON object. */
     val calendarChannelPicks: Flow<String> = store.data.map { it[Keys.calendarChannelPicks] ?: "" }.distinctUntilChanged()
@@ -642,10 +676,19 @@ class LiveTvPreferences @Inject constructor(
         p[Keys.frameRateMode] = s.frameRateMode
         p[Keys.matchFrameRate] = s.matchFrameRate
         p[Keys.onDemandInSidebar] = s.onDemandInSidebar
+        p[Keys.onDemandEnabled] = s.onDemandEnabled
         p[Keys.recordingsInSidebar] = s.recordingsInSidebar
         p[Keys.sideMenuOrder] = s.sideMenuOrder
-        p[Keys.sideMenuHidden] = s.sideMenuHidden
+        val me = currentProfile
+        if (me <= 1) {
+            p[Keys.sideMenuHidden] = s.sideMenuHidden
+        } else {
+            val seen = p[my(Keys.sideMenuHidden, me)] ?: p[Keys.sideMenuHidden] ?: ""
+            if (s.sideMenuHidden != seen) p[my(Keys.sideMenuHidden, me)] = s.sideMenuHidden
+        }
         p[Keys.calendarInMenu] = s.calendarInMenu
+        p[Keys.sideMenuLine] = s.sideMenuLine
+        p[Keys.sideMenuFit] = s.sideMenuFit
         p[Keys.calendarUpcomingRow] = s.calendarUpcomingRow
         p[Keys.calendarNewEpisodeCards] = s.calendarNewEpisodeCards
         p[Keys.calendarHideSpoilers] = s.calendarHideSpoilers
@@ -658,6 +701,7 @@ class LiveTvPreferences @Inject constructor(
         p[Keys.onDemandInStreams] = s.onDemandInStreams
         p[Keys.onDemandStreamsPosition] = s.onDemandStreamsPosition
         p[Keys.onDemandAutoPlay] = s.onDemandAutoPlay
+        p[Keys.onDemandPlayDirect] = s.onDemandPlayDirect
         p[Keys.searchOrder] = s.searchOrder
         p[Keys.searchPreview] = s.searchPreview
         p[Keys.onDemandAddonPosters] = s.onDemandAddonPosters

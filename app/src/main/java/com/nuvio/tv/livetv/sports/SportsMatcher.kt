@@ -26,7 +26,9 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         /** Your guide time shift (Live TV settings), in ms: the database keeps the guide's own times. */
         val shiftMs: Long,
         val settings: SportsSettings,
-        val now: Long
+        val now: Long,
+        /** Nobody is on the Sports page: take short breaks while reading the guide so the box stays smooth. */
+        val gentle: Boolean = false
     )
 
     class Result(val matches: Map<String, List<ChannelMatch>>, val summary: String)
@@ -139,7 +141,13 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         }
 
         val teamEvents = wanted.filter { it.source != EventSource.GUIDE }
-        val terms = teamEvents.associate { ev -> ev.id to termsFor(ev) }
+        // Fights found in the guide ("Boxing : Canelo Alvarez vs. Christian Mbilli") are also looked
+        // for by channel name: their event channels ("Canelo v Mbilli") usually have no listings.
+        val guideFights = wanted.filter { ev ->
+            ev.source == EventSource.GUIDE && SportsCatalog.league(ev.leagueId)?.sport == Sport.FIGHTING &&
+                SportsCatalog.fightSides(ev.title) != null
+        }
+        val terms = (teamEvents + guideFights).associate { ev -> ev.id to termsFor(ev) }
 
         // Tournaments and race weekends running at the same time (several tennis events, two golf
         // tours): a channel or show that just says "Tennis" or "Golf" can't tell them apart.
@@ -167,20 +175,26 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         }
 
         // ---- 1. The guide, a half-hour slot at a time.
-        teamEvents.groupBy { it.startMs / (30 * MINUTE) }.forEach { (_, slot) ->
+        // The guide is read once for all the slots (it used to be searched again for every slot,
+        // which on a slower box took minutes); each show is checked against every slot's words as it goes by.
+        val guideSlots = teamEvents.groupBy { it.startMs / (30 * MINUTE) }.values.mapNotNull { slot ->
             val slotStart = slot.minOf { it.startMs }
             val slotEnd = slot.maxOf { it.startMs }
-            val words = slot.flatMap { ev -> terms[ev.id]?.sqlWords.orEmpty() }.distinct()
-            if (words.isEmpty()) return@forEach
-            val hits = runCatching {
-                db.findByWords(
-                    fromMs = slotStart - 100 * MINUTE - input.shiftMs,
-                    toMs = slotEnd + 70 * MINUTE - input.shiftMs,
-                    minStopMs = slotStart + 10 * MINUTE - input.shiftMs,
-                    words = words
-                )
-            }.getOrDefault(emptyList())
-            if (hits.isEmpty()) return@forEach
+            val words = slot.flatMap { ev -> terms[ev.id]?.sqlWords.orEmpty() }.map { it.trim() }.filter { it.length >= 3 }.toSet()
+            if (words.isEmpty()) null
+            else GuideSlot(
+                slot = slot,
+                fromMs = slotStart - 100 * MINUTE - input.shiftMs,
+                toMs = slotEnd + 70 * MINUTE - input.shiftMs,
+                minStopMs = slotStart + 10 * MINUTE - input.shiftMs,
+                words = words
+            )
+        }
+        val slotHits = runCatching { guideHitsBySlot(guideSlots, input.gentle) }.getOrDefault(guideSlots.map { emptyList() })
+        guideSlots.forEachIndexed { slotIndex, gs ->
+            val slot = gs.slot
+            val hits = slotHits[slotIndex]
+            if (hits.isEmpty()) return@forEachIndexed
             val prepared = hits.mapNotNull { (key, p0) ->
                 val ch = byKey[key] ?: return@mapNotNull null
                 val p = if (input.shiftMs == 0L) p0 else p0.copy(startMs = p0.startMs + input.shiftMs, stopMs = p0.stopMs + input.shiftMs)
@@ -228,7 +242,7 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         val tGuide = System.currentTimeMillis()
 
         // ---- 2. The channel's own name.
-        for (ev in teamEvents) {
+        for (ev in teamEvents + guideFights) {
             if (ev.state == GameState.POST && ev.startMs < input.now - 5 * HOUR) continue
             val t = terms[ev.id] ?: continue
             val discEvent = ev.id in discIds
@@ -399,7 +413,9 @@ internal class SportsMatcher(private val db: EpgDatabase) {
             val nt = norm(p.title)
             val nd = norm(p.description.orEmpty())
             if (SportsCatalog.NOT_LIVE_WORDS.any { hasWord(nt, it) }) continue
-            val league = leagueWords.firstOrNull { (w, _) -> hasWord(nt, norm(w).trim()) }?.second
+            // The first listed sport the title names, unless the show is plainly another sport
+            // ("Australian Volleyball Super League" isn't rugby league's Super League).
+            val league = leagueWords.firstOrNull { (w, l) -> hasWord(nt, norm(w).trim()) && !otherSport(l.sport, nt, nd) }?.second
             // 24/7 and loop channels ("NETFLIX WWE", a movie channel called "… NXT"): not live sport.
             if (fillerOrLoop(ch, p)) continue
             // Wrestling words turn up in other shows' titles ("RuPaul's Drag Race - Lip Sync
@@ -418,7 +434,7 @@ internal class SportsMatcher(private val db: EpgDatabase) {
             val prev = meta[g]
             meta[g] = (prev?.first ?: league) to (prev?.second ?: word)
         }
-        return groups.map { (g, list) ->
+        return mergeSameSession(groups.map { (g, list) ->
             val p = list.first().second
             val (league, word) = meta[g] ?: (null to null)
             SportsEvent(
@@ -440,7 +456,135 @@ internal class SportsMatcher(private val db: EpgDatabase) {
                 endMs = p.stopMs,
                 word = word
             )
+        }, now)
+    }
+
+    /**
+     * One session listed under different names by different channels ("MotoGP: Malaysia
+     * Warm-Up", "MotoGP - Malaysia Practice 3", "(L) MotoGP Malaysia: Warm Up, Round 20"):
+     * one entry with every channel. Same sport, on at the same time, and the titles share a
+     * word that isn't the sport's own or a session word (here "Malaysia"), so two different
+     * games on at once ("Wigan v Leeds", "Hull v Warrington") stay separate. Wrestling has its
+     * own merging (SportsRepository) and names you follow are left as they are.
+     */
+    private fun mergeSameSession(events: List<SportsEvent>, now: Long): List<SportsEvent> {
+        if (events.size < 2) return events
+        class Run(val league: League, first: SportsEvent) {
+            val items = arrayListOf(first)
+            val words = HashSet(sessionWords(first.title, league))
+            var end = first.endMs ?: first.startMs
         }
+        val out = ArrayList<SportsEvent>(events.size)
+        val runs = ArrayList<Run>()
+        for (ev in events.sortedBy { it.startMs }) {
+            val league = SportsCatalog.league(ev.leagueId)
+            if (league == null || ev.word != null || league.sport == Sport.WRESTLING) { out += ev; continue }
+            val words = sessionWords(ev.title, league)
+            val run = if (words.isEmpty()) null else runs.firstOrNull { r ->
+                r.league.id == league.id && ev.startMs < r.end && ev.startMs - r.items.first().startMs <= 60 * MINUTE &&
+                    words.any { it in r.words }
+            }
+            if (run == null) {
+                runs += Run(league, ev)
+            } else {
+                run.items += ev
+                run.words += words
+                run.end = maxOf(run.end, ev.endMs ?: ev.startMs)
+            }
+        }
+        for (r in runs) {
+            if (r.items.size == 1) { out += r.items.first(); continue }
+            // The first listing (earliest, then by name) names it, so its id stays the same
+            // between updates (a channel you picked for it is kept).
+            val first = r.items.minWith(compareBy<SportsEvent>({ it.startMs }, { it.title }))
+            val start = r.items.minOf { it.startMs }
+            val end = r.items.mapNotNull { it.endMs }.maxOrNull()
+            out += first.copy(
+                startMs = start,
+                endMs = end,
+                state = when {
+                    end != null && now >= end -> GameState.POST
+                    now >= start -> GameState.LIVE
+                    else -> GameState.PRE
+                },
+                subtitle = first.subtitle ?: r.items.firstNotNullOfOrNull { it.subtitle },
+                guideHits = r.items.flatMap { it.guideHits }.distinctBy { (key, p) -> key + "|" + p.startMs }
+            )
+        }
+        return out.sortedBy { it.startMs }
+    }
+
+    /** A title's words that tell one session or game from another (not the sport's own words, session words or numbers). */
+    private fun sessionWords(title: String, league: League): Set<String> {
+        val own = league.guideWords.flatMapTo(HashSet()) { norm(it).trim().split(' ') }
+        return norm(title).trim().split(' ').filterTo(HashSet()) { w ->
+            w.length >= 3 && w.any { it.isLetter() } && w !in own && w !in GENERIC_TOURNAMENT_WORDS && w !in SESSION_WORDS
+        }
+    }
+
+    /** The show is plainly a different sport from [sport]: its title (or, failing that, description) names another sport and never its own. */
+    private fun otherSport(sport: Sport, nt: String, nd: String): Boolean {
+        fun names(text: String, s: Sport) = SPORT_NAMES[s].orEmpty().any { hasWord(text, it) }
+        fun another(text: String) = SPORT_NAMES.keys.any { it != sport && names(text, it) }
+        if (names(nt, sport) || names(nd, sport)) return false
+        return another(nt) || another(nd)
+    }
+
+    // ------------------------------------------------------------------ the guide, read once
+
+    /** One half-hour of games: its guide window and every word its games are looked for by. */
+    private class GuideSlot(
+        val slot: List<SportsEvent>,
+        val fromMs: Long,
+        val toMs: Long,
+        val minStopMs: Long,
+        val words: Set<String>
+    )
+
+    /**
+     * The guide shows for each slot, in the same order as [slots]: shows starting in the slot's window
+     * (and still on at its minimum stop time) whose title or description has one of its words.
+     * One pass over the guide for all slots; a show is split into words once and looked up, rather
+     * than every show being compared with every word for every slot. With [gentle], a short pause
+     * every so often so the screen and video keep priority on slower boxes.
+     */
+    private fun guideHitsBySlot(slots: List<GuideSlot>, gentle: Boolean): List<List<Pair<String, EpgProgram>>> {
+        val out = List(slots.size) { ArrayList<Pair<String, EpgProgram>>() }
+        if (slots.isEmpty()) return out
+        // Every word looked for, by its first word, so a show only needs checking against the few that start like one of its own words.
+        val byFirst = HashMap<String, MutableList<String>>()
+        slots.flatMapTo(HashSet<String>()) { it.words }.forEach { w ->
+            byFirst.getOrPut(w.substringBefore(' ')) { ArrayList() } += w
+        }
+        val seen = List(slots.size) { HashSet<String>() }
+        var rows = 0
+        db.scanListings(slots.minOf { it.fromMs }, slots.maxOf { it.toMs }, slots.minOf { it.minStopMs }) { ch, start, stop, title, descr, cat ->
+            if (gentle && ++rows % 1000 == 0) Thread.sleep(3)
+            val nt = norm(title)
+            val nd = if (descr.isNullOrEmpty()) "" else norm(descr)
+            var matched: HashSet<String>? = null
+            fun look(text: String) {
+                if (text.isEmpty()) return
+                for (tok in text.split(' ')) {
+                    if (tok.isEmpty()) continue
+                    val cands = byFirst[tok] ?: continue
+                    for (w in cands) {
+                        if (hasWord(nt, w) || hasWord(nd, w)) (matched ?: HashSet<String>().also { matched = it }).add(w)
+                    }
+                }
+            }
+            look(nt)
+            look(nd)
+            val m = matched ?: return@scanListings
+            for (i in slots.indices) {
+                val s = slots[i]
+                if (start < s.fromMs || start >= s.toMs || stop <= s.minStopMs) continue
+                if (s.words.none { it in m }) continue
+                if (!seen[i].add("$ch|$start")) continue
+                out[i] += ch to EpgProgram(startMs = start, stopMs = stop, title = title, description = descr, category = cat)
+            }
+        }
+        return out
     }
 
     // ------------------------------------------------------------------ how a game is named
@@ -451,11 +595,26 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         val abbrA: String?, val abbrB: String?,
         val leagueWords: List<String>,
         val eventWords: List<String>,
-        val sqlWords: List<String>
+        val sqlWords: List<String>,
+        /** A fight's two sides ("canelo", "alvarez" / "mbilli"): a show or channel naming both is it. */
+        val fightA: List<String> = emptyList(),
+        val fightB: List<String> = emptyList()
     ) {
         private fun any(text: String, list: List<String>) = list.any { hasWord(text, it) }
 
         fun scoreText(nt: String, nd: String): Int {
+            val base = baseScore(nt, nd)
+            if (fightA.isEmpty() || fightB.isEmpty()) return base
+            val aT = any(nt, fightA); val bT = any(nt, fightB)
+            val fight = when {
+                aT && bT -> 100
+                (aT || any(nd, fightA)) && (bT || any(nd, fightB)) -> 85
+                else -> 0
+            }
+            return maxOf(base, fight)
+        }
+
+        private fun baseScore(nt: String, nd: String): Int {
             if (a.isNotEmpty() && b.isNotEmpty()) {
                 val aT = any(nt, a); val bT = any(nt, b)
                 val aW = any(nt, aWeak); val bW = any(nt, bWeak)
@@ -498,6 +657,8 @@ internal class SportsMatcher(private val db: EpgDatabase) {
             }
             abbrA?.let { out.add(it) }
             abbrB?.let { out.add(it) }
+            out.addAll(fightA)
+            out.addAll(fightB)
             return out
         }
 
@@ -505,6 +666,8 @@ internal class SportsMatcher(private val db: EpgDatabase) {
         fun leagueInName(nn: String): Boolean = leagueWords.any { it.length >= 2 && it != "grand prix" && hasWord(nn, it) }
 
         fun inName(nn: String): Boolean {
+            // An event channel named for the fight ("03 - (HD) Canelo v Mbilli"): both fighters.
+            if (fightA.isNotEmpty() && fightB.isNotEmpty() && any(nn, fightA) && any(nn, fightB)) return true
             if (a.isNotEmpty() && b.isNotEmpty()) {
                 if (any(nn, a) && any(nn, b)) return true
                 val x = abbrA ?: return false
@@ -574,7 +737,15 @@ internal class SportsMatcher(private val db: EpgDatabase) {
             .filter { it.length >= 4 && it !in GENERIC_EVENT_WORDS && leagueWords.none { lw -> lw == it } }
             .distinct()
             .take(8)
-        return Terms(emptyList(), emptyList(), emptyList(), emptyList(), null, null, leagueWords, core, (core + leagueWords).filter { it.length >= 3 }.distinct())
+        // A fight ("Canelo Álvarez vs Christian Mbilli"): event channels are named after the two
+        // fighters and rarely say "Boxing", so naming both is enough.
+        val fight = if (league?.sport == Sport.FIGHTING) SportsCatalog.fightSides(ev.title) else null
+        return Terms(
+            emptyList(), emptyList(), emptyList(), emptyList(), null, null, leagueWords, core,
+            (core + leagueWords + fight?.first.orEmpty() + fight?.second.orEmpty()).filter { it.length >= 3 }.distinct(),
+            fightA = fight?.first.orEmpty(),
+            fightB = fight?.second.orEmpty()
+        )
     }
 
     companion object {
@@ -588,6 +759,39 @@ internal class SportsMatcher(private val db: EpgDatabase) {
 
         /** Shows found in the guide for a followed name that isn't one of the listed sports. */
         const val OTHER_ID = "guide/other"
+
+        /** Session and filler words in event titles ("Warm-Up", "Round 20", "(L)"). */
+        private val SESSION_WORDS = setOf(
+            "warm", "practise", "session", "day", "night", "coverage", "from", "with", "matches", "match",
+            "game", "games", "league", "super", "premier", "full", "main", "event", "stage", "leg", "heat", "heats",
+            "pre", "post", "show", "build", "studio", "uncut", "only", "action", "free"
+        )
+
+        /**
+         * Words that name a sport, for telling when a show is plainly a different sport from the
+         * listed one its title happened to match. Already through norm ("Women's" -> "women s").
+         */
+        private val SPORT_NAMES: Map<Sport, List<String>> = mapOf(
+            Sport.RUGBY to listOf("rugby", "nrl"),
+            Sport.FOOTBALL to listOf("soccer", "football", "women s super league", "wsl", "indian super league",
+                "chinese super league", "super league greece", "swiss super league", "super league kerala"),
+            Sport.AMERICAN_FOOTBALL to listOf("nfl", "american football", "ncaaf"),
+            Sport.AUSSIE_RULES to listOf("afl", "aflw", "aussie rules"),
+            Sport.GAELIC to listOf("gaelic", "hurling", "camogie", "gaa"),
+            Sport.VOLLEYBALL to listOf("volleyball", "beach volley"),
+            Sport.BASKETBALL to listOf("basketball", "nba", "wnba", "nbl", "euroleague"),
+            Sport.NETBALL to listOf("netball"),
+            Sport.HOCKEY to listOf("hockey", "nhl"),
+            Sport.BASEBALL to listOf("baseball", "mlb"),
+            Sport.CRICKET to listOf("cricket"),
+            Sport.DARTS to listOf("darts"),
+            Sport.SNOOKER to listOf("snooker"),
+            Sport.TENNIS to listOf("tennis"),
+            Sport.GOLF to listOf("golf"),
+            Sport.RACING to listOf("motogp", "formula 1", "formula one", "nascar", "indycar", "superbikes", "wsbk"),
+            Sport.LACROSSE to listOf("lacrosse"),
+            Sport.OTHER to listOf("handball", "futsal", "badminton", "table tennis", "esports", "cycling", "horse racing")
+        )
 
         /** Words too common to tell one tournament or race from another ("Hall of Fame Open" is hall/fame, never open). */
         private val GENERIC_TOURNAMENT_WORDS = setOf(
