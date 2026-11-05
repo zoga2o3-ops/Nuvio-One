@@ -2,6 +2,7 @@ package com.liskovsoft.youtubeapi.videoinfo.V2;
 
 import com.liskovsoft.youtubeapi.app.PoTokenGate;
 import com.liskovsoft.youtubeapi.app.ReloadPlaybackGate;
+import com.liskovsoft.youtubeapi.app.visitor.ClientVisitorService;
 import com.liskovsoft.youtubeapi.common.helpers.AppClient;
 import com.liskovsoft.youtubeapi.common.helpers.QueryBuilder;
 
@@ -20,7 +21,7 @@ public class VideoInfoApiHelper {
                 .setVideoId(videoId)
                 .setClickTrackingParams(clickTrackingParams)
                 .setPoToken(PoTokenGate.getPoToken(client, videoId))
-                .setVisitorData(PoTokenGate.getVisitorData(client))
+                .setVisitorData(ClientVisitorService.getVisitorData(client))
                 .setReloadPlaybackToken(ReloadPlaybackGate.getToken(videoId))
                 .setLivingRoomPoTokenId(PoTokenGate.getLivingRoomPoTokenId(client))
                 .enableGeoFix(enableGeoFix) // may break other functionality

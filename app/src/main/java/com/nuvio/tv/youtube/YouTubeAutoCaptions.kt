@@ -15,6 +15,14 @@ object YouTubeAutoCaptions {
     private val space = Regex("[\\s\\u00A0]+")
     private val timing = Regex("(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{3})\\s*-->\\s*(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{3})")
 
+    /**
+     * Auto-generated captions use inline timing tags such as `<00:00:19.760>` and `<c>`.
+     * A translated track can lose the `kind=asr` query parameter, so detect the rolling
+     * format from the file itself instead of trusting the URL alone.
+     */
+    fun looksAutomatic(file: String): Boolean =
+        file.contains("<c>") || Regex("<\\d{2}:\\d{2}:\\d{2}\\.\\d{3}>").containsMatchIn(file)
+
     /** The captions in [file] (WebVTT) with only each caption's newest line. Anything else is returned as it is. */
     fun tidy(file: String): String {
         val text = file.replace("\r\n", "\n")

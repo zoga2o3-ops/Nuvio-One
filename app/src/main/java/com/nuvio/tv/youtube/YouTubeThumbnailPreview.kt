@@ -117,6 +117,9 @@ internal fun YouTubeThumbnailPreview(item: YtItem, viewModel: YouTubeViewModel) 
         factory = { ctx ->
             (LayoutInflater.from(ctx).inflate(R.layout.trailer_player_view, null) as PlayerView).apply {
                 useController = false
+                isFocusable = false
+                isFocusableInTouchMode = false
+                descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 this.player = player
             }
         },

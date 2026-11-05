@@ -7,6 +7,7 @@ import com.liskovsoft.sharedutils.mylogger.Log;
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences;
 import com.liskovsoft.youtubeapi.app.AppService;
 import com.liskovsoft.youtubeapi.app.PoTokenGate;
+import com.liskovsoft.youtubeapi.app.visitor.ClientVisitorService;
 import com.liskovsoft.youtubeapi.common.helpers.AppClient;
 import com.liskovsoft.googlecommon.common.helpers.RetrofitHelper;
 import com.liskovsoft.youtubeapi.service.internal.MediaServiceData;
@@ -188,6 +189,7 @@ public class VideoInfoService extends VideoInfoServiceBase {
 
         if (result != null) {
             result.setClient(client);
+            ClientVisitorService.updateFromPlayer(client, result.getResponseVisitorData());
         }
 
         return result;
@@ -197,12 +199,12 @@ public class VideoInfoService extends VideoInfoServiceBase {
         boolean auth = client.isAuthSupported() && mUseAuth;
 
         if (client.isReelClient()) {
-            Call<VideoInfoReel> wrapper = mVideoInfoApi.getVideoInfoReel(videoInfoQuery, mAppService.getVisitorData(),
+            Call<VideoInfoReel> wrapper = mVideoInfoApi.getVideoInfoReel(videoInfoQuery, ClientVisitorService.getVisitorData(client),
                     client.getUserAgent(), client.getInnerTubeName(), client.getClientVersion());
             return getVideoInfoReel(wrapper, auth);
         }
 
-        Call<VideoInfo> wrapper = mVideoInfoApi.getVideoInfo(videoInfoQuery, mAppService.getVisitorData(),
+        Call<VideoInfo> wrapper = mVideoInfoApi.getVideoInfo(videoInfoQuery, ClientVisitorService.getVisitorData(client),
                 client.getUserAgent(), client.getInnerTubeName(), client.getClientVersion());
         return getVideoInfo(wrapper, auth);
     }
@@ -237,7 +239,7 @@ public class VideoInfoService extends VideoInfoServiceBase {
     }
 
     private VideoInfoHls getVideoInfoHls(AppClient client, String videoInfoQuery) {
-        Call<VideoInfoHls> wrapper = mVideoInfoApi.getVideoInfoHls(videoInfoQuery, mAppService.getVisitorData(),
+        Call<VideoInfoHls> wrapper = mVideoInfoApi.getVideoInfoHls(videoInfoQuery, ClientVisitorService.getVisitorData(client),
                 client.getUserAgent(), client.getInnerTubeName(), client.getClientVersion());
 
         return RetrofitHelper.get(wrapper, client.isAuthSupported() && mUseAuth);

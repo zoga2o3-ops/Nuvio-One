@@ -46,8 +46,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -71,6 +73,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -115,6 +118,12 @@ fun YouTubeScreen(
     // Search stays a magnifier until it's opened, so the header isn't dominated by a text box.
     var searchExpanded by remember { mutableStateOf(false) }
     var collapseToSearchIcon by remember { mutableStateOf(false) }
+    // Scrolling down through the cards collapses the header and tab strip so more cards fit.
+    var headerHidden by remember { mutableStateOf(false) }
+    var headerHideSuppressedUntil by remember { mutableLongStateOf(0L) }
+    var focusHeaderAfterBack by remember { mutableStateOf(false) }
+    var focusHeaderSearchAfterTop by remember { mutableStateOf(false) }
+    val selectedTabFocus = remember { FocusRequester() }
     val searchIconFocus = remember { FocusRequester() }
 
     // The tabs you've left on in Settings. Read each time you come to the page.
@@ -173,8 +182,32 @@ fun YouTubeScreen(
     BackHandler(enabled = state.subTitle != null) { viewModel.back() }
     BackHandler(enabled = showAccounts) { showAccounts = false }
     BackHandler(enabled = suggestionsOpen) { suggestionsOpen = false }
+    BackHandler(
+        enabled = headerHidden && state.subTitle == null && !showAccounts &&
+            !suggestionsOpen && !sidebarExpanded
+    ) {
+        headerHidden = false
+        headerHideSuppressedUntil = android.os.SystemClock.elapsedRealtime() + 700L
+        focusHeaderAfterBack = true
+    }
+
+    LaunchedEffect(focusHeaderAfterBack, headerHidden) {
+        if (focusHeaderAfterBack && !headerHidden) {
+            delay(60)
+            runCatching { selectedTabFocus.requestFocus() }
+            focusHeaderAfterBack = false
+        }
+    }
+    LaunchedEffect(focusHeaderSearchAfterTop, headerHidden) {
+        if (focusHeaderSearchAfterTop && !headerHidden) {
+            delay(60)
+            runCatching { searchIconFocus.requestFocus() }
+            focusHeaderSearchAfterTop = false
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 20.dp)) {
+        if (!headerHidden) {
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -224,16 +257,36 @@ fun YouTubeScreen(
                 if (!searchExpanded) {
                     IconChip(Icons.Default.Search, "Search", searchIconFocus) {
                         searchExpanded = true
-                        editing = true
+                        editing = false
                     }
                 } else {
                     // The box is selected like any other item on the page (it's just something the arrows land on),
                     // and only starts taking text, with the keyboard, once OK is pressed on it.
                     var boxFocused by remember { mutableStateOf(false) }
+                    var textPlaced by remember { mutableStateOf(false) }
                     val textFocus = remember { FocusRequester() }
-                    LaunchedEffect(editing) {
-                        if (editing) {
-                            runCatching { textFocus.requestFocus() }
+                    LaunchedEffect(Unit) {
+                        // Focus the search box itself when it opens; this is what prevents the
+                        // account chip from taking focus when the magnifier disappears.
+                        repeat(6) {
+                            delay(30)
+                            if (runCatching { searchIconFocus.requestFocus() }.isSuccess) {
+                                return@LaunchedEffect
+                            }
+                        }
+                    }
+                    LaunchedEffect(editing, textPlaced) {
+                        if (editing && textPlaced) {
+                            // Focus restoration after the search icon disappears can land on the
+                            // account chip. Keep asking for the field across a few frames until
+                            // it actually owns focus.
+                            repeat(6) {
+                                delay(30)
+                                if (runCatching { textFocus.requestFocus() }.isSuccess) {
+                                    keyboard?.show()
+                                    return@LaunchedEffect
+                                }
+                            }
                             keyboard?.show()
                         }
                     }
@@ -249,6 +302,7 @@ fun YouTubeScreen(
                     Box(
                         Modifier
                             .width(320.dp)
+                            .focusRequester(searchIconFocus)
                             .clip(RoundedCornerShape(24.dp))
                             .background(CardBg)
                             .border(2.dp, if (boxFocused || editing) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
@@ -281,6 +335,7 @@ fun YouTubeScreen(
                             }),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .onPlaced { textPlaced = true }
                                 .focusRequester(textFocus)
                                 // Only while typing: the arrows never land inside the text field by themselves.
                                 .focusProperties {
@@ -312,12 +367,17 @@ fun YouTubeScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(tabs) { tab ->
-                TabChip(tab.title, selected = state.tab == tab && state.subTitle == null) {
+                TabChip(
+                    tab.title,
+                    selected = state.tab == tab && state.subTitle == null,
+                    focusRequester = if (state.tab == tab) selectedTabFocus else null
+                ) {
                     query = ""
                     suggestionsOpen = false
                     viewModel.selectTab(tab)
                 }
             }
+        }
         }
 
         // Playlists pinned from their card menu, so they're one press away from the top of the page.
@@ -392,6 +452,18 @@ fun YouTubeScreen(
             onSignOut = {
                 showAccounts = false
                 accountViewModel.signOut { viewModel.selectTab(state.tab) }
+            },
+            onScrollPosition = { index, offset ->
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (index == 0 && offset <= 24) {
+                    if (headerHidden && now >= headerHideSuppressedUntil) {
+                        headerHidden = false
+                        headerHideSuppressedUntil = now + 700L
+                        focusHeaderSearchAfterTop = true
+                    }
+                } else if (now >= headerHideSuppressedUntil) {
+                    headerHidden = true
+                }
             }
         )
     }
@@ -430,7 +502,8 @@ private fun Content(
     showAccounts: Boolean,
     onSelectAccount: (Int) -> Unit,
     onAddAccount: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    onScrollPosition: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Rows size their cards from the "Posters per row" setting too, so every tab honours it.
@@ -499,6 +572,11 @@ private fun Content(
           LaunchedEffect(needsInitialFocus, targetRow) {
               if (needsInitialFocus && targetRow >= 0) rowsState.scrollToItem(targetRow)
           }
+          LaunchedEffect(rowsState) {
+              snapshotFlow {
+                  rowsState.firstVisibleItemIndex to rowsState.firstVisibleItemScrollOffset
+              }.collect { (index, offset) -> onScrollPosition(index, offset) }
+          }
           LazyColumn(Modifier.fillMaxSize(), state = rowsState, verticalArrangement = Arrangement.spacedBy(20.dp)) {
             itemsIndexed(state.rows) { rowIndex, row ->
                 val rowState = rememberLazyListState()
@@ -538,10 +616,16 @@ private fun Content(
                     (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 8
                 }.collect { nearEnd -> if (nearEnd) viewModel.loadMore() }
             }
+            LaunchedEffect(gridState) {
+                snapshotFlow {
+                    gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+                }.collect { (index, offset) -> onScrollPosition(index, offset) }
+            }
             LazyVerticalGrid(
                 state = gridState,
+                // Shorts are tall; a couple more columns keeps the cards from dominating the page.
                 columns = GridCells.Fixed(
-                    YouTubeSettings.posterColumns(androidx.compose.ui.platform.LocalContext.current)
+                    if (state.tab == YtTab.SHORTS) (columnCount + 2).coerceAtMost(8) else columnCount
                 ),
                 modifier = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -565,6 +649,17 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
         LazyColumn(Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(state.grid) { i, channel ->
                 var focused by remember { mutableStateOf(false) }
+                var held by remember(channel.channelId) { mutableStateOf(false) }
+                var longFired by remember(channel.channelId) { mutableStateOf(false) }
+                LaunchedEffect(held, longFired) {
+                    if (held && !longFired) {
+                        delay(550)
+                        if (held && !longFired) {
+                            longFired = true
+                            viewModel.openMenu(channel)
+                        }
+                    }
+                }
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -572,7 +667,33 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
                         .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
                         .onFocusChanged {
                             focused = it.isFocused
+                            if (!it.isFocused) {
+                                held = false
+                                longFired = false
+                            }
                             if (it.isFocused && i >= state.grid.size - 5) viewModel.loadMore()
+                        }
+                        // A held OK shows the channel's menu; a plain press loads its videos.
+                        .onPreviewKeyEvent { e ->
+                            val isOk = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                            if (!isOk) return@onPreviewKeyEvent false
+                            when (e.type) {
+                                KeyEventType.KeyDown -> {
+                                    if (e.nativeKeyEvent.repeatCount == 0) {
+                                        held = true
+                                        longFired = false
+                                    }
+                                }
+                                KeyEventType.KeyUp -> {
+                                    if (held && !longFired) {
+                                        selectedChannel = channel.title
+                                        viewModel.previewChannel(channel)
+                                    }
+                                    held = false
+                                    longFired = false
+                                }
+                            }
+                            true
                         }
                         .clickable {
                             selectedChannel = channel.title
@@ -762,7 +883,12 @@ private fun Message(title: String, detail: String?, action: String?, onAction: (
 }
 
 @Composable
-private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TabChip(
+    label: String,
+    selected: Boolean,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
     var focused by remember { mutableStateOf(false) }
     Text(
         label,
@@ -773,6 +899,7 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
             .clip(RoundedCornerShape(20.dp))
             .background(if (selected) YtRed else CardBg)
             .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(20.dp))
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 9.dp)
@@ -837,13 +964,14 @@ private fun YouTubeItemMenuDialog(
     onTogglePinned: () -> Unit,
     onBlockChannel: () -> Unit
 ) {
-    var showPlaylists by remember(menu.item.videoId) { mutableStateOf(false) }
-    var creatingPlaylist by remember(menu.item.videoId) { mutableStateOf(false) }
-    var newPlaylistName by remember(menu.item.videoId) { mutableStateOf("") }
+    val menuKey = menu.item.videoId ?: menu.item.channelId ?: menu.item.title
+    var showPlaylists by remember(menuKey) { mutableStateOf(false) }
+    var creatingPlaylist by remember(menuKey) { mutableStateOf(false) }
+    var newPlaylistName by remember(menuKey) { mutableStateOf("") }
     val firstRow = remember { FocusRequester() }
     val nameFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(menu.item.videoId, creatingPlaylist) {
+    LaunchedEffect(menuKey, creatingPlaylist) {
         kotlinx.coroutines.yield()
         if (creatingPlaylist) {
             runCatching { nameFocus.requestFocus() }
@@ -853,6 +981,7 @@ private fun YouTubeItemMenuDialog(
         }
     }
     val isVideo = menu.item.kind == YtKind.VIDEO
+    val isChannel = menu.item.kind == YtKind.CHANNEL
     val hasChannel = menu.item.channelId != null
 
     if (creatingPlaylist) {
@@ -904,6 +1033,9 @@ private fun YouTubeItemMenuDialog(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (isVideo && !hasChannel && menu.loadingChannel) {
+                    Text("Looking up the channel…", color = Color.Gray, fontSize = 14.sp)
+                }
                 if (isVideo && hasChannel) {
                     MenuRow("Open channel", firstRow, onClick = onOpenChannel)
                 }
@@ -918,7 +1050,7 @@ private fun YouTubeItemMenuDialog(
                         onClick = onTogglePinned
                     )
                 }
-                if (isVideo && hasChannel && menu.subscribed != null) {
+                if ((isVideo || isChannel) && hasChannel && menu.subscribed != null) {
                     MenuRow(
                         if (menu.subscribed == true) "Unsubscribe" else "Subscribe",
                         enabled = !menu.busy,
@@ -947,7 +1079,7 @@ private fun YouTubeItemMenuDialog(
                         }
                     }
                 }
-                if (isVideo && hasChannel) {
+                if ((isVideo || isChannel) && hasChannel) {
                     MenuRow("Block this channel", enabled = !menu.busy, onClick = onBlockChannel)
                 }
             }
@@ -966,6 +1098,8 @@ private fun MenuRow(
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Whether the OK press currently ending began while this row had focus.
+    var pressedHere by remember { mutableStateOf(false) }
     Text(
         label,
         color = if (enabled) Color.White else Color.Gray,
@@ -978,7 +1112,28 @@ private fun MenuRow(
             .background(if (focused) Color(0xFF34343A) else Color.Transparent)
             .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(8.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (!it.isFocused) pressedHere = false
+            }
+            // The OK press that opened this menu was already down when the row took focus.
+            // Swallow that release so it cannot activate the row.
+            .onPreviewKeyEvent { e ->
+                val isOk = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
+                if (!isOk) return@onPreviewKeyEvent false
+                when (e.type) {
+                    KeyEventType.KeyDown -> {
+                        if (e.nativeKeyEvent.repeatCount == 0) pressedHere = true
+                        false
+                    }
+                    KeyEventType.KeyUp -> {
+                        val beganHere = pressedHere
+                        pressedHere = false
+                        !beganHere
+                    }
+                    else -> false
+                }
+            }
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
     )
@@ -1021,6 +1176,18 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
     // OK is held down on this poster (and whether that already counted as a long press).
     var held by remember(item.videoId) { mutableStateOf(false) }
     var longFired by remember(item.videoId) { mutableStateOf(false) }
+    val longAction by rememberUpdatedState(onLongClick)
+    // Some remotes (the projector included) never send key repeats, so measure the hold
+    // ourselves instead of waiting for a repeated key event.
+    LaunchedEffect(held, longFired) {
+        if (held && !longFired && longAction != null) {
+            delay(550)
+            if (held && !longFired) {
+                longFired = true
+                longAction?.invoke()
+            }
+        }
+    }
     // The side menu covers the page, so a preview should not keep playing behind it.
     val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
     val focusRequester = remember { FocusRequester() }
@@ -1045,13 +1212,17 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
             .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
             .onFocusChanged {
                 focused = it.isFocused
-                if (!it.isFocused) opened = false
+                if (!it.isFocused) {
+                    opened = false
+                    held = false
+                    longFired = false
+                }
                 if (it.isFocused && requestInitialFocus) onInitialFocus()
                 if (it.isFocused) onFocused()
             }
-            // Holding OK opens the poster's channel; a plain press still plays it.
+            // Holding OK opens the poster's options menu; a plain press still plays it.
             .onPreviewKeyEvent { e ->
-                val longAction = onLongClick ?: return@onPreviewKeyEvent false
+                if (onLongClick == null) return@onPreviewKeyEvent false
                 val isOk = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
                 if (!isOk) return@onPreviewKeyEvent false
                 when (e.type) {
@@ -1059,9 +1230,6 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
                         if (e.nativeKeyEvent.repeatCount == 0) {
                             held = true
                             longFired = false
-                        } else if (held && !longFired) {
-                            longFired = true
-                            longAction()
                         }
                     }
                     KeyEventType.KeyUp -> {

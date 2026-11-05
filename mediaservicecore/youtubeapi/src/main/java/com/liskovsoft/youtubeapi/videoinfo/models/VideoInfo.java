@@ -111,6 +111,8 @@ public class VideoInfo {
     private boolean mIsAuth;
     private String mPoToken;
     private String mVisitorCookie;
+    @JsonPath("$.responseContext.visitorData")
+    private String mResponseVisitorData;
     private AppClient mClient;
     private VideoUrlHolder mUrlHolder;
 
@@ -478,6 +480,10 @@ public class VideoInfo {
 
     public void setPoToken(String poToken) {
         mPoToken = poToken;
+    }
+
+    public String getResponseVisitorData() {
+        return mResponseVisitorData;
     }
 
     public String getVisitorCookie() {

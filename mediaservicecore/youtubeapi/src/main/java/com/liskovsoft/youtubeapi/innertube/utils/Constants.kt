@@ -55,11 +55,13 @@ internal object CLIENTS {
     val VISIONOS = CLIENT(
         NAME = "VISIONOS",
         VERSION = "1.02",
-        USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+        // YouTube's own visionOS app identity. The Safari-style UA belongs to the web client
+        // and does not match the VISIONOS client context we send.
+        USER_AGENT = "com.google.visionosyoutube/1.02 (RealityDevice14,1; U; CPU visionOS 26_6_1 like Mac OS X; en_US) gzip",
         DEVICE_MAKE = "Apple",
-        DEVICE_MODEL = "RealityDevice17,1",
+        DEVICE_MODEL = "RealityDevice14,1",
         OS_NAME = "visionOS",
-        OS_VERSION = "26.5.23O471"
+        OS_VERSION = "26.6.1"
     )
 
     val WEB = CLIENT(

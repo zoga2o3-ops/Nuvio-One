@@ -84,7 +84,8 @@ private fun youtubePlayerRoute(v: com.nuvio.tv.youtube.YtPlayable): String =
         contentType = "youtube",
         contentName = v.title,
         poster = v.poster,
-        addonName = "YouTube"
+        addonName = "YouTube",
+        youtubeLive = v.isLive
     )
 
 @Composable
@@ -983,6 +984,16 @@ private fun PlaybackNavHost(
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
+                },
+                navArgument("audioSlaveUrl") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("youtubeLive") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = "false"
                 }
             )
         ) { backStackEntry ->
@@ -1198,6 +1209,7 @@ private fun PlaybackNavHost(
                                 videoId = upNextVideoId,
                                 viewModel = ytPlayerVm,
                                 onClose = {
+                                    upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnSetYouTubeScrollFraction(0f))
                                     upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnDismissTransientOverlay)
                                 },
                                 onOpenChannel = { channelId, name ->
@@ -1214,6 +1226,14 @@ private fun PlaybackNavHost(
                                             }
                                         }
                                     )
+                                },
+                                onSeekTo = { positionMs ->
+                                    upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnSeekTo(positionMs))
+                                },
+                                startWithRecommendations = playerUi.youTubePanelStartWithRecommendations,
+                                scrollFraction = playerUi.youTubeScrollFraction,
+                                onScrollFractionChange = { fraction ->
+                                    upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnSetYouTubeScrollFraction(fraction))
                                 }
                             )
                         }
@@ -1332,9 +1352,17 @@ private fun PlaybackNavHost(
                     if (endedYouTubeId != null && exitReason == null && youtubeVm != null &&
                         com.nuvio.tv.youtube.YouTubeSettings.autoplayNext(playerContext)
                     ) {
+                        android.util.Log.i(
+                            "YouTubeAutoplay",
+                            "ended video=$endedYouTubeId, moving to next"
+                        )
                         youtubeVm.playNext(
                             currentVideoId = endedYouTubeId,
                             onReady = { v ->
+                                android.util.Log.i(
+                                    "YouTubeAutoplay",
+                                    "next ready video=${v.videoId} title=${v.title}"
+                                )
                                 navController.navigate(youtubePlayerRoute(v)) {
                                     popUpTo(backStackEntry.destination.id) { inclusive = true }
                                 }

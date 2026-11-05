@@ -1,5 +1,6 @@
 package com.nuvio.tv.youtube
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -20,11 +21,31 @@ internal class YouTubeTranslatedCaptions(
 ) {
     private var segmentNumber = -1L
     private var cues: List<Cue> = emptyList()
+    private var wholeFileCues: List<Cue>? = null
+    private var wholeFileTried = false
 
     private class Cue(val startMs: Long, val endMs: Long, val text: String)
 
     /** The line showing at [positionMs], or null when nothing is said then. */
     suspend fun lineAt(positionMs: Long): String? = withContext(Dispatchers.IO) {
+        if (!wholeFileTried) {
+            wholeFileTried = true
+            val file = YouTubeMpdServer.translatedCaptionFile(videoId, language)
+            val cleaned = file?.let {
+                if (YouTubeAutoCaptions.looksAutomatic(it)) YouTubeAutoCaptions.tidy(it) else it
+            }
+            val parsed = cleaned?.let(::parse).orEmpty()
+            if (parsed.isNotEmpty()) {
+                wholeFileCues = parsed
+                Log.i(TAG, "direct translated captions $videoId/$language cues=${parsed.size}")
+            } else {
+                Log.i(TAG, "direct translated captions $videoId/$language unavailable; using local translation")
+            }
+        }
+        wholeFileCues?.let { all ->
+            return@withContext all.firstOrNull { positionMs >= it.startMs && positionMs < it.endMs }?.text
+        }
+
         val number = positionMs / SEGMENT_MS
         if (number != segmentNumber) {
             segmentNumber = number
@@ -61,6 +82,7 @@ internal class YouTubeTranslatedCaptions(
     }
 
     private companion object {
+        const val TAG = "YouTubeCaptions"
         const val SEGMENT_MS = YouTubeCaptionSegments.DURATION_SECONDS * 1_000
         /** Hours are optional in the timing line; minutes and seconds are always there. */
         val timing = Regex("(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{3})\\s*-->\\s*(?:(\\d+):)?(\\d{1,2}):(\\d{2})[.,](\\d{3})")

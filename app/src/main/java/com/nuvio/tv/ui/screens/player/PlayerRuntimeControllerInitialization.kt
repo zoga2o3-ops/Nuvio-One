@@ -229,13 +229,20 @@ internal fun PlayerRuntimeController.initializePlayer(
                 playerSettings.mpvHi10pGnextSoftwareFallbackEnabled
             mpvHardwareDecodeModeSetting = playerSettings.mpvHardwareDecodeMode
             var effectiveInternalPlayerEngine = overrideInternalPlayerEngine ?: playerSettings.internalPlayerEngine
+            // YouTube VODs need ExoPlayer: VLC can't consume the generated DASH manifest, and
+            // its direct-video fallback starts slowly. YouTube live stays on the chosen engine.
+            val youtubeVod = contentType == "youtube" && !navigationArgs.youtubeLive
+            if (youtubeVod) {
+                effectiveInternalPlayerEngine = InternalPlayerEngine.EXOPLAYER
+            }
             if (effectiveInternalPlayerEngine == InternalPlayerEngine.AUTO) {
                 effectiveInternalPlayerEngine = resolveAutoInternalPlayerEngine()
             }
-            runtimeInternalPlayerEngineOverride = overrideInternalPlayerEngine
-            if (overrideInternalPlayerEngine == null && playerSettings.internalPlayerEngine == InternalPlayerEngine.AUTO) {
+            runtimeInternalPlayerEngineOverride =
+                if (youtubeVod) InternalPlayerEngine.EXOPLAYER else overrideInternalPlayerEngine
+            if (overrideInternalPlayerEngine == null && playerSettings.internalPlayerEngine == InternalPlayerEngine.AUTO && !youtubeVod) {
                 resolvedAutoPlayerEngine = effectiveInternalPlayerEngine
-            } else if (overrideInternalPlayerEngine != null) {
+            } else if (overrideInternalPlayerEngine != null || youtubeVod) {
                 resolvedAutoPlayerEngine = null
             }
             currentInternalPlayerEngine = effectiveInternalPlayerEngine
@@ -260,7 +267,8 @@ internal fun PlayerRuntimeController.initializePlayer(
                     tunneledSurfaceFill = tunneledSurfaceFill,
                     playbackIssueReportsEnabled = playerSettings.playbackIssueReportsEnabled,
                     tunnelingEnabled = tunnelingActive &&
-                            effectiveInternalPlayerEngine != InternalPlayerEngine.MVP_PLAYER
+                            effectiveInternalPlayerEngine != InternalPlayerEngine.MVP_PLAYER &&
+                            effectiveInternalPlayerEngine != InternalPlayerEngine.VLC_PLAYER
                 )
             }
 
@@ -314,6 +322,31 @@ internal fun PlayerRuntimeController.initializePlayer(
                 return@launch
             }
             mpvInitializationInProgress = false
+
+            if (effectiveInternalPlayerEngine == InternalPlayerEngine.VLC_PLAYER) {
+                vlcInitializationInProgress = true
+                try {
+                    val awaitedAfr = withTimeoutOrNull(AFR_PREFLIGHT_TOTAL_TIMEOUT_MS) {
+                        afrJob.await()
+                    }
+                    if (awaitedAfr == null) {
+                        Log.w(PlayerRuntimeController.TAG, "AFR preflight await timed out in VLC branch; cancelling afrJob")
+                        afrJob.cancel()
+                    }
+                    if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+                    setLoadingStatus(
+                        phase = "vlc_buffering",
+                        message = context.getString(R.string.player_loading_buffering)
+                    )
+                    if (!afrPreflightGate.isCurrent(afrPreflightToken)) return@launch
+                    initializeVlcPlayer(url = url, headers = headers, allowEngineFailover = allowEngineFailover)
+                    fetchAddonSubtitles()
+                } finally {
+                    vlcInitializationInProgress = false
+                }
+                return@launch
+            }
+            vlcInitializationInProgress = false
 
             // ── ExoPlayer Dolby Vision Logic (mode-driven via Dv7HandlingMode) ──
             DoviBridge.resetRuntimeCounters()

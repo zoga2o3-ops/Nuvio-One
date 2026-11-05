@@ -176,6 +176,8 @@ class PlayerRuntimeController(
 
     internal val navigationArgs = PlayerNavigationArgs.from(savedStateHandle)
     internal val initialStreamUrl: String = navigationArgs.streamUrl
+    internal val audioSlaveUrl: String? = navigationArgs.audioSlaveUrl
+    internal val youtubeLive: Boolean = navigationArgs.youtubeLive
     internal val title: String = navigationArgs.title
     internal val streamName: String? = navigationArgs.streamName
     internal val year: String? = navigationArgs.year
@@ -379,6 +381,11 @@ class PlayerRuntimeController(
         playerReportsLive: Boolean,
         isPlaying: Boolean
     ) {
+        // Engines report "not seekable / zero length" for a moment while opening a VOD.
+        // Never let that latch a movie or series into the live UI.
+        if (LivePlaybackUiPolicy.isVodContentType(contentType)) {
+            livePlaybackLatched = false
+        }
         livePlaybackLatched = LivePlaybackUiPolicy.nextLiveLatch(
             playerReportsLive = playerReportsLive,
             previouslyLatched = livePlaybackLatched
@@ -443,6 +450,7 @@ class PlayerRuntimeController(
     internal var automaticSubtitleSyncJob: Job? = null // AutoSync hook
     /** mpv: the add-on subtitle download and sub-add in flight, which AutoSync lets land first. */
     internal var mpvAddonSubtitleSelectionJob: Job? = null // AutoSync hook
+    internal var vlcAddonSubtitleSelectionJob: Job? = null
     /** ExoPlayer sidecar path: external addon cues without setMediaSource (preserves buffer). */
     internal var sidecarSubtitleJob: Job? = null
     internal var sidecarGenerationCounter: Long = 0L // AutoSync hook
@@ -647,6 +655,12 @@ class PlayerRuntimeController(
     internal val mpvErrorHandlingInProgress = AtomicBoolean(false)
     internal var delayMpvResumeSeekUntilVideoTrack: Boolean = false
     internal var mpvDelayStartAfterAfrSwitch: Boolean = false
+    internal var vlcView: NuvioVlcSurfaceView? = null
+    internal var vlcInitializationInProgress: Boolean = false
+    internal var vlcMediaLoadPrepared: Boolean = false
+    internal var vlcAudioPreferenceApplied: Boolean = false
+    internal var vlcSubtitlePreferenceApplied: Boolean = false
+    internal var vlcEndReachedHandled: Boolean = false
     internal var pauseOverlayJob: Job? = null
     internal val pauseOverlayDelayMs = 5000L
     internal val seekProgressSyncDebounceMs = 700L

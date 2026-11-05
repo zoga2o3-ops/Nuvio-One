@@ -1,8 +1,14 @@
 package com.nuvio.tv.youtube
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,9 +18,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,8 +42,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -44,8 +57,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 
-private enum class PanelMode { MAIN, PLAYLISTS, COMMENTS, REPLIES, RELATED }
+private enum class PanelMode { HOME, MAIN, PLAYLISTS, COMMENTS, REPLIES, RELATED }
 
 private val PanelBg = Color(0xF2111114)
 private val RowBg = Color(0xFF1C1C1E)
@@ -71,15 +85,28 @@ fun BoxScope.YouTubePlayerPanel(
     viewModel: YouTubePlayerViewModel,
     onClose: () -> Unit,
     onOpenChannel: (channelId: String, name: String) -> Unit,
-    onPlayVideo: (YtItem) -> Unit = {}
+    onPlayVideo: (YtItem) -> Unit = {},
+    onSeekTo: (Long) -> Unit = {},
+    /** Opened with Down: show chapters and recommendations first, not the action list. */
+    startWithRecommendations: Boolean = false,
+    /** 0 = video at full screen, 1 = recommendations fill the screen. */
+    scrollFraction: Float = 0f,
+    onScrollFractionChange: (Float) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
-    var mode by remember { mutableStateOf(PanelMode.MAIN) }
+    var mode by remember(videoId) {
+        mutableStateOf(if (startWithRecommendations) PanelMode.HOME else PanelMode.MAIN)
+    }
     // Where you were in the comments, so coming back from a comment's replies lands on it.
     var commentsIndex by remember { mutableIntStateOf(0) }
     var replyingTo by remember { mutableStateOf<YtComment?>(null) }
 
-    LaunchedEffect(videoId) { viewModel.load(videoId) }
+    LaunchedEffect(videoId) {
+        viewModel.load(videoId)
+        if (com.nuvio.tv.ui.screens.player.YouTubePageScrollUi.ENABLED) {
+            viewModel.loadRelated()
+        }
+    }
     // One Back press moves one level: replies → comments → the panel's main page → closed.
     val goBack: () -> Unit = {
         when (mode) {
@@ -88,17 +115,21 @@ fun BoxScope.YouTubePlayerPanel(
                 mode = PanelMode.COMMENTS
             }
             PanelMode.COMMENTS, PanelMode.PLAYLISTS, PanelMode.RELATED -> mode = PanelMode.MAIN
+            PanelMode.HOME -> onClose()
             PanelMode.MAIN -> onClose()
         }
     }
     BackHandler { goBack() }
 
+    val panelLayout = if (mode == PanelMode.HOME) {
+        // Transparent: the bottom sheet carries its own background, so the video shows above it.
+        Modifier.fillMaxSize()
+    } else {
+        Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(440.dp)
+    }
     Box(
-        Modifier
-            .align(Alignment.CenterEnd)
-            .fillMaxHeight()
-            .width(440.dp)
-            .background(PanelBg)
+        panelLayout
+            .then(if (mode == PanelMode.HOME) Modifier else Modifier.background(PanelBg))
             // Taking Back on the panel itself, before the activity's back dispatcher, is what makes
             // one press move one level while the panel has the remote.
             .onPreviewKeyEvent { e ->
@@ -109,11 +140,57 @@ fun BoxScope.YouTubePlayerPanel(
                 true
             }
     ) {
-        Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (mode == PanelMode.HOME) {
             val info = state.info
+            // One fluid move: the page rises from below while the video and its controls scroll up.
+            var started by remember { mutableStateOf(false) }
+            val pageScroll by animateFloatAsState(
+                targetValue = if (started) scrollFraction else 0f,
+                animationSpec = tween(460),
+                label = "youtube-page-scroll"
+            )
+            val rootFocus = remember { FocusRequester() }
+            val firstItemFocus = remember { FocusRequester() }
+            LaunchedEffect(Unit) {
+                runCatching { rootFocus.requestFocus() }
+                started = true
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationY = (1f - pageScroll) * size.height }
+                    .focusRequester(rootFocus)
+                    .focusable()
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF111114))
+                        .padding(horizontal = 24.dp, vertical = 20.dp)
+                ) {
+                    RecommendationsContent(
+                        title = info?.title.orEmpty(),
+                        chapters = info?.chapters.orEmpty(),
+                        related = state.related,
+                        loading = state.loading || state.relatedLoading,
+                        firstItemFocusRequester = firstItemFocus,
+                        firstItemUpFocusRequester = null,
+                        onSeekTo = { startMs ->
+                            onSeekTo(startMs)
+                            onClose()
+                        },
+                        onPlayVideo = onPlayVideo,
+                        onOpenActions = { mode = PanelMode.MAIN }
+                    )
+                }
+            }
+        } else {
+            Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val info = state.info
 
             // The heading for this level. The list below it is always there, so it always owns the remote.
             when (mode) {
+                PanelMode.HOME -> Text("Chapters & recommendations", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 PanelMode.MAIN -> {
                     Text(
                         info?.title ?: "YouTube",
@@ -142,6 +219,7 @@ fun BoxScope.YouTubePlayerPanel(
             }
 
             val busy = when (mode) {
+                PanelMode.HOME -> state.loading && info == null || state.relatedLoading && state.related.isEmpty()
                 PanelMode.MAIN -> state.loading && info == null
                 PanelMode.PLAYLISTS -> state.playlists == null
                 PanelMode.COMMENTS -> state.commentsLoading && state.comments.isEmpty()
@@ -153,6 +231,30 @@ fun BoxScope.YouTubePlayerPanel(
             }
 
             val entries: List<PanelEntry> = when (mode) {
+                PanelMode.HOME -> buildList {
+                    val chapters = info?.chapters.orEmpty()
+                    if (chapters.isEmpty() && state.related.isEmpty() && !state.relatedLoading) {
+                        add(PanelEntry("No chapters or recommendations to show.", null))
+                    }
+                    if (chapters.isNotEmpty()) {
+                        add(PanelEntry("CHAPTERS", null))
+                        chapters.forEach { (title, startMs) ->
+                            add(PanelEntry(title, formatChapterTime(startMs)) {
+                                onSeekTo(startMs)
+                                onClose()
+                            })
+                        }
+                    }
+                    add(PanelEntry("Related videos", null))
+                    state.related.forEach { item ->
+                        add(PanelEntry(
+                            title = item.title,
+                            detail = listOfNotNull(item.author, item.badge).joinToString("  ·  "),
+                            onClick = { onPlayVideo(item) }
+                        ))
+                    }
+                    add(PanelEntry("Video actions, comments & playlists", null) { mode = PanelMode.MAIN })
+                }
                 PanelMode.MAIN -> if (info == null) emptyList() else buildList {
                     add(PanelEntry(if (info.liked) "Liked   ✓" else "Like", info.likeCount) { viewModel.toggleLike() })
                     add(PanelEntry(if (info.disliked) "Disliked   ✓" else "Dislike", null) { viewModel.toggleDislike() })
@@ -222,6 +324,7 @@ fun BoxScope.YouTubePlayerPanel(
             if (!busy && entries.isEmpty()) {
                 Text(
                     when (mode) {
+                        PanelMode.HOME -> if (state.relatedLoading) "Loading recommendations…" else "No chapters or recommendations to show."
                         PanelMode.MAIN -> "Couldn't load this video's details."
                         PanelMode.PLAYLISTS -> "You have no playlists."
                         PanelMode.COMMENTS -> "No comments to show."
@@ -271,8 +374,166 @@ fun BoxScope.YouTubePlayerPanel(
                     color = Color.Gray, fontSize = 12.sp
                 )
             }
+            }
         }
     }
+}
+
+@Composable
+private fun RecommendationsContent(
+    title: String,
+    chapters: List<Pair<String, Long>>,
+    related: List<YtItem>,
+    loading: Boolean,
+    firstItemFocusRequester: FocusRequester,
+    firstItemUpFocusRequester: FocusRequester? = null,
+    onSeekTo: (Long) -> Unit,
+    onPlayVideo: (YtItem) -> Unit,
+    onOpenActions: () -> Unit
+) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = title.ifBlank { "Up next" },
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text("BACK  Return to video", color = Color.Gray, fontSize = 12.sp)
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (chapters.isNotEmpty()) {
+                item {
+                    Text("Chapters", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                }
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(chapters.size) { index ->
+                            val (chapterTitle, startMs) = chapters[index]
+                            RecommendationCard(
+                                title = chapterTitle,
+                                detail = formatChapterTime(startMs),
+                                thumbnail = null,
+                                focusRequester = if (index == 0) firstItemFocusRequester else null,
+                                upFocusRequester = if (index == 0) firstItemUpFocusRequester else null,
+                                onClick = { onSeekTo(startMs) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Text("Related videos & suggestions", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (related.isEmpty() && loading) {
+                item { Text("Loading recommendations…", color = Color.Gray, fontSize = 13.sp) }
+            } else if (related.isEmpty()) {
+                item { Text("No recommendations available.", color = Color.Gray, fontSize = 13.sp) }
+            } else {
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(related.size) { index ->
+                            val video = related[index]
+                            RecommendationCard(
+                                title = video.title,
+                                detail = listOfNotNull(video.author, video.badge).joinToString(" · "),
+                                thumbnail = video.thumbnail,
+                                focusRequester = if (chapters.isEmpty() && index == 0) firstItemFocusRequester else null,
+                                upFocusRequester = if (chapters.isEmpty() && index == 0) firstItemUpFocusRequester else null,
+                                onClick = { onPlayVideo(video) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(RowBg)
+                        .border(2.dp, Color.Transparent, RoundedCornerShape(10.dp))
+                        .clickable(onClick = onOpenActions)
+                        .focusable()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text("Video actions, comments & playlists", color = Color.White, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationCard(
+    title: String,
+    detail: String,
+    thumbnail: String?,
+    focusRequester: FocusRequester?,
+    upFocusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val focusModifier = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+    Column(
+        modifier = Modifier
+            .then(focusModifier)
+            .then(if (upFocusRequester != null) Modifier.focusProperties { up = upFocusRequester } else Modifier)
+            .width(220.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(RowBg)
+            .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .focusable()
+            .onFocusChanged { focused = it.isFocused }
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(92.dp)
+                .background(Color(0xFF303034))
+        ) {
+            if (!thumbnail.isNullOrBlank()) {
+                AsyncImage(
+                    model = thumbnail,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            if (detail.matches(Regex("\\d+:\\d{2}(:\\d{2})?"))) {
+                Text(
+                    detail,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    modifier = Modifier.align(Alignment.BottomEnd).background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(title, color = Color.White, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (detail.isNotBlank() && !detail.matches(Regex("\\d+:\\d{2}(:\\d{2})?"))) {
+                Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+private fun formatChapterTime(timeMs: Long): String {
+    val totalSeconds = (timeMs / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%d:%02d".format(minutes, seconds)
 }
 
 /** The "Top / Newest" choice above the comments, like the one on the YouTube page. */

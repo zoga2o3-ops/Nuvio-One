@@ -566,6 +566,14 @@ class LiveTvPlaybackController @Inject constructor(
         }
 
     @Volatile private var watchingFullscreen = false
+    @Volatile private var previewMuted = false
+
+    /** The guide's preview keeps the shared player alive; silence it while full screen is closed. */
+    fun setPreviewMuted(muted: Boolean) {
+        if (previewMuted == muted) return
+        previewMuted = muted
+        _player?.volume = if (muted) 0f else 1f
+    }
 
     fun attach(): ExoPlayer {
         releaseJob?.cancel()
@@ -1372,6 +1380,7 @@ class LiveTvPlaybackController @Inject constructor(
             .build()
             .apply {
                 playWhenReady = true
+                volume = if (previewMuted) 0f else 1f
                 addListener(listener)
                 // Choppy video ("slide show"): how many frames the box couldn't show in time,
                 // in the start-up report, so we can see when it starts and what was going on.

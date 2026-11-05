@@ -244,6 +244,14 @@ internal fun PlayerRuntimeController.pauseForLifecycle() {
         _uiState.update { it.copy(isPlaying = false) }
         return
     }
+    if (isUsingVlcEngine()) {
+        vlcView?.setPaused(true)
+        emitPauseScrobbleForCurrentProgress()
+        stopWatchProgressSaving()
+        stopProgressUpdates()
+        _uiState.update { it.copy(isPlaying = false) }
+        return
+    }
     _exoPlayer?.let { player ->
         // Disable automatic audio focus handling so ExoPlayer can't
         // re-acquire focus and set playWhenReady=true behind our back.
@@ -259,7 +267,7 @@ internal fun PlayerRuntimeController.pauseForLifecycle() {
  * that was reclaimed while in the background.
  */
 internal fun PlayerRuntimeController.releaseForBackground() {
-    if (isUsingMpvEngine() || pendingBackgroundCrashRecovery) return
+    if (isUsingMpvEngine() || isUsingVlcEngine() || pendingBackgroundCrashRecovery) return
     val player = _exoPlayer ?: return
     if (currentStreamUrl.isEmpty()) return
     backgroundCrashSavedPositionMs = if (_uiState.value.isLive) 0L else player.currentPosition.coerceAtLeast(0L)
@@ -575,26 +583,26 @@ internal fun PlayerRuntimeController.isUsingMpvEngine(): Boolean {
 }
 
 internal fun PlayerRuntimeController.currentPlaybackPositionMs(): Long? {
-    return if (isUsingMpvEngine()) {
-        mpvView?.currentPositionMs()
-    } else {
-        _exoPlayer?.currentPosition
+    return when {
+        isUsingVlcEngine() -> vlcView?.currentPositionMs()
+        isUsingMpvEngine() -> mpvView?.currentPositionMs()
+        else -> _exoPlayer?.currentPosition
     }
 }
 
 internal fun PlayerRuntimeController.currentPlaybackDurationMs(): Long {
-    return if (isUsingMpvEngine()) {
-        mpvView?.durationMs() ?: 0L
-    } else {
-        _exoPlayer?.duration ?: 0L
+    return when {
+        isUsingVlcEngine() -> vlcView?.durationMs() ?: 0L
+        isUsingMpvEngine() -> mpvView?.durationMs() ?: 0L
+        else -> _exoPlayer?.duration ?: 0L
     }
 }
 
 internal fun PlayerRuntimeController.isPlaybackCurrentlyPlaying(): Boolean {
-    return if (isUsingMpvEngine()) {
-        mpvView?.isPlayingNow() == true
-    } else {
-        _exoPlayer?.isPlaying == true
+    return when {
+        isUsingVlcEngine() -> vlcView?.isPlayingNow() == true
+        isUsingMpvEngine() -> mpvView?.isPlayingNow() == true
+        else -> _exoPlayer?.isPlaying == true
     }
 }
 
@@ -603,10 +611,10 @@ internal fun PlayerRuntimeController.isPlaybackCurrentlyPlaying(): Boolean {
  * but pausing on a route change then would strand playback stopped once buffering ends.
  */
 internal fun PlayerRuntimeController.hasActivePlayIntent(): Boolean {
-    return if (isUsingMpvEngine()) {
-        mpvView?.isPlayingNow() == true
-    } else {
-        _exoPlayer?.playWhenReady == true
+    return when {
+        isUsingVlcEngine() -> vlcView?.isPlayingNow() == true
+        isUsingMpvEngine() -> mpvView?.isPlayingNow() == true
+        else -> _exoPlayer?.playWhenReady == true
     }
 }
 
@@ -619,7 +627,9 @@ internal fun PlayerRuntimeController.seekPlaybackTo(
     seekParameters: SeekParameters = SeekParameters.CLOSEST_SYNC,
     exact: Boolean = false
 ) {
-    if (isUsingMpvEngine()) {
+    if (isUsingVlcEngine()) {
+        vlcView?.seekToMs(positionMs)
+    } else if (isUsingMpvEngine()) {
         mpvView?.let { view ->
             if (exact) view.seekToMsExact(positionMs) else view.seekToMs(positionMs)
             // Keep subtitle/audio delay sticky during FF/RW seeks.
@@ -655,15 +665,18 @@ internal fun PlayerRuntimeController.seekPlaybackTo(
 }
 
 internal fun PlayerRuntimeController.setPlaybackSpeedInternal(speed: Float) {
-    if (isUsingMpvEngine()) {
-        mpvView?.setPlaybackSpeed(speed)
-    } else {
-        _exoPlayer?.setPlaybackSpeed(speed)
+    when {
+        isUsingVlcEngine() -> vlcView?.setPlaybackSpeed(speed)
+        isUsingMpvEngine() -> mpvView?.setPlaybackSpeed(speed)
+        else -> _exoPlayer?.setPlaybackSpeed(speed)
     }
 }
 
 internal fun PlayerRuntimeController.setPlaybackPaused(paused: Boolean) {
-    if (isUsingMpvEngine()) {
+    if (isUsingVlcEngine()) {
+        vlcView?.setPaused(paused)
+        _uiState.update { it.copy(isPlaying = !paused) }
+    } else if (isUsingMpvEngine()) {
         mpvView?.setPaused(paused)
         _uiState.update { it.copy(isPlaying = !paused) }
         refreshMpvMediaSession()

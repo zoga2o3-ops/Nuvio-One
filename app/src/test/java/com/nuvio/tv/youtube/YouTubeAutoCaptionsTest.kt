@@ -78,6 +78,34 @@ second
     }
 
     @Test
+    fun `inline timestamp tags are stripped from translated captions`() {
+        val out = YouTubeAutoCaptions.tidy(
+            """WEBVTT
+
+00:00:01.000 --> 00:00:03.000
+Hello<00:00:01.500><c> world</c>
+
+00:00:03.000 --> 00:00:04.000
+Second<00:00:03.200><c> line</c>
+"""
+        )
+        assertTrue(out, out.contains("Hello world"))
+        assertTrue(out, out.contains("Second line"))
+        assertFalse(out, out.contains("<"))
+        assertFalse(out, out.contains("00:00:01.500"))
+    }
+
+    @Test
+    fun `rolling captions are detected from the file when the URL has no kind marker`() {
+        assertTrue(YouTubeAutoCaptions.looksAutomatic(rolling))
+        assertFalse(
+            YouTubeAutoCaptions.looksAutomatic(
+                "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n"
+            )
+        )
+    }
+
+    @Test
     fun `a file that is not WebVTT is left alone`() {
         val ttml = "<tt><body><div><p begin=\"0s\" end=\"1s\">hi</p></div></body></tt>"
         assertEquals(ttml, YouTubeAutoCaptions.tidy(ttml))

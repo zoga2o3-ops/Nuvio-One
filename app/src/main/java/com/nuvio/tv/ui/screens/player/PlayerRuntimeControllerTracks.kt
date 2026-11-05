@@ -1079,11 +1079,14 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
         pendingEngineSwitchTrackPreference = null
     }
     val usingSwitchPending = switchPending != null
+    val subtitlesOffInSettings =
+        _uiState.value.subtitleStyle.preferredLanguage.trim().equals("none", ignoreCase = true)
+    val dropRememberedSubtitle = switchPending == null && !isUserExplicitSubtitleSelection &&
+        (subtitlesOffInSettings ||
+            (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) &&
+                !com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context)))
     val pendingCandidate = (switchPending?.preference ?: persistedTrackPreference)?.let { preference ->
-        if (switchPending == null && !isUserExplicitSubtitleSelection &&
-            com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) &&
-            !com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context)) preference.copy(subtitle = null)
-        else preference
+        if (dropRememberedSubtitle) preference.copy(subtitle = null) else preference
     }
     logSwitchTrace(
         stage = "restore-enter",
@@ -1516,7 +1519,7 @@ private fun subtitleTrackMatchesLanguage(track: TrackInfo, target: String): Bool
     )
 }
 
-private fun audioTrackMatchesLanguage(track: TrackInfo, target: String): Boolean {
+internal fun audioTrackMatchesLanguage(track: TrackInfo, target: String): Boolean {
     return trackMatchesLanguage(
         name = track.name,
         language = track.language,
@@ -1773,8 +1776,10 @@ private fun audioMatchesSubtitleTargetForForced(audioTrack: TrackInfo, target: S
 }
 
 internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailableTracks() {
+    val subtitlesOffInSettings =
+        _uiState.value.subtitleStyle.preferredLanguage.trim().equals("none", ignoreCase = true)
     if (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId) &&
-        !com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context)) {
+        (!com.nuvio.tv.youtube.YouTubeSettings.autoSubtitles(context) || subtitlesOffInSettings)) {
         if (!isUserExplicitSubtitleSelection) {
             if (!youtubeSubtitleStartApplied && (if (isUsingMpvEngine()) mpvView != null else _exoPlayer != null)) {
                 youtubeSubtitleStartApplied = true
@@ -1796,6 +1801,18 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
     val state = _uiState.value
     val preferredTargets = subtitleLanguageTargets()
     val primaryTarget = preferredTargets.firstOrNull()
+
+    // "None" wins over any earlier auto-selection or a remembered track: if a subtitle is
+    // active, turn it off. Checked before the autoSubtitleSelected guard below so a stale
+    // auto-selection cannot keep the settings' off choice from being applied.
+    if (preferredTargets.isEmpty()) {
+        autoSubtitleSelected = true
+        if (state.selectedSubtitleTrackIndex >= 0 || state.selectedAddonSubtitle != null) {
+            Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: preferred=none")
+            disableSubtitles()
+        }
+        return
+    }
 
     if (autoSubtitleSelected) {
         val currentSelectedLang = when {
@@ -1836,14 +1853,6 @@ internal fun PlayerRuntimeController.tryAutoSelectPreferredSubtitleFromAvailable
     )
     if (useForcedSubtitles && selectedAudioTrack == null) {
         Log.d(PlayerRuntimeController.TAG, "AUTO_SUB defer: selected audio track unknown")
-        return
-    }
-    if (targets.isEmpty()) {
-        autoSubtitleSelected = true
-        Log.d(PlayerRuntimeController.TAG, "AUTO_SUB stop: preferred=none")
-        if (isUsingMpvEngine()) {
-            mpvView?.disableSubtitles()
-        }
         return
     }
 

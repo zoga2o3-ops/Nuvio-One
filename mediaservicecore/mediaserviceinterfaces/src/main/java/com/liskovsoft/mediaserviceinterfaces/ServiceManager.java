@@ -13,6 +13,8 @@ public interface ServiceManager {
     void refreshCacheIfNeeded();
     void switchNextClient();
     void switchNextClientNow();
+    /** Back to the engine's default playback client, which has HLS for live streams. */
+    void resetPlaybackClient();
     void switchNextSubsFormat();
     void reloadPlayerResponse(String videoId, String reloadPlaybackToken);
 }

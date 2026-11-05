@@ -282,6 +282,11 @@ fun LiveTvGuideScreen(
         viewModel.playback.attach()
         onDispose { viewModel.playback.detach() }
     }
+    // The preview window keeps playing after leaving full screen. Mute it there; the
+    // full-screen player restores the volume.
+    LaunchedEffect(fullscreen) {
+        viewModel.playback.setPreviewMuted(!fullscreen)
+    }
     LaunchedEffect(settings.showPreview) {
         if (!settings.showPreview) viewModel.playback.stop()
     }

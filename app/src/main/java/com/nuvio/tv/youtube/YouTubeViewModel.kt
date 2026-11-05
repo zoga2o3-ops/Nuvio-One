@@ -10,6 +10,7 @@ import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
+import com.liskovsoft.youtubeapi.service.internal.MediaServiceData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -94,6 +95,8 @@ data class YtItemMenu(
     val signedIn: Boolean = false,
     /** Whether the video's channel is subscribed, once it's known. */
     val subscribed: Boolean? = null,
+    /** A feed card often arrives without its channel ID; the menu is looking it up. */
+    val loadingChannel: Boolean = false,
     val playlists: List<YtPlaylistRow>? = null,
     val loadingPlaylists: Boolean = false,
     val busy: Boolean = false,
@@ -109,6 +112,8 @@ data class YtPlayable(
     val poster: String?,
     val videoId: String,
     val headers: Map<String, String> = emptyMap(),
+    /** Whether this is a live stream; live uses VLC when it is the selected engine. */
+    val isLive: Boolean = false,
     /** When this was looked up. YouTube's stream links stop working after a few hours. */
     val lookedUpAt: Long = android.os.SystemClock.elapsedRealtime()
 ) {
@@ -174,6 +179,11 @@ class YouTubeViewModel @Inject constructor(
     val canGoBack: Boolean get() = backStack.isNotEmpty()
 
     init {
+        // Clear an old experiment flag: VLC's adaptive HLS path crashes on YouTube manifests.
+        runCatching {
+            service
+            MediaServiceData.instance().setFormatEnabled(MediaServiceData.FORMATS_EXTENDED_HLS, false)
+        }
         selectTab(YouTubeSettings.lastTab(context))
         YouTubeMpdServer.attach(context.cacheDir)
     }
@@ -613,16 +623,43 @@ class YouTubeViewModel @Inject constructor(
         val pinned = item.kind == YtKind.PLAYLIST && playlistId != null &&
             YouTubeSettings.pinnedPlaylists(context).any { it.first == playlistId }
         _menu.value = YtItemMenu(item = item, signedIn = _state.value.signedIn, pinned = pinned)
+        // A channel card has no video id; ask the engine for its subscription state directly.
+        if (item.kind == YtKind.CHANNEL) {
+            val channelId = item.channelId ?: return
+            viewModelScope.launch {
+                val meta = withContext(Dispatchers.IO) {
+                    runCatching { service.mediaItemService.getMetadata(item.source) }.getOrNull()
+                }
+                _menu.update { menu ->
+                    if (menu?.item?.channelId == channelId) menu.copy(subscribed = meta?.isSubscribed) else menu
+                }
+            }
+            return
+        }
         val videoId = item.videoId ?: return
         if (item.kind != YtKind.VIDEO) return
 
-        if (item.channelId != null) {
-            viewModelScope.launch {
-                val meta = withContext(Dispatchers.IO) {
-                    runCatching { service.mediaItemService.getMetadata(videoId) }.getOrNull()
-                }
-                _menu.update { menu ->
-                    if (menu?.item?.videoId == videoId) menu.copy(subscribed = meta?.isSubscribed) else menu
+        // Home and search cards usually carry the author name but not the channel ID. The
+        // metadata call fills it in so Open channel / Subscribe / Block can appear.
+        if (item.channelId == null) _menu.update { it?.copy(loadingChannel = true) }
+        viewModelScope.launch {
+            val meta = withContext(Dispatchers.IO) {
+                runCatching { service.mediaItemService.getMetadata(videoId) }.getOrNull()
+            }
+            Log.i(TAG, "menu video=$videoId channel=${meta?.channelId} subscribed=${meta?.isSubscribed}")
+            _menu.update { menu ->
+                if (menu?.item?.videoId != videoId) {
+                    menu
+                } else {
+                    menu.copy(
+                        item = if (menu.item.channelId == null && !meta?.channelId.isNullOrBlank()) {
+                            menu.item.copy(channelId = meta?.channelId)
+                        } else {
+                            menu.item
+                        },
+                        subscribed = meta?.isSubscribed ?: menu.subscribed,
+                        loadingChannel = false
+                    )
                 }
             }
         }
@@ -870,6 +907,9 @@ class YouTubeViewModel @Inject constructor(
     /** Looks up the stream details for [video]; slow (several requests), so call off the main thread. */
     private fun resolveBlocking(video: YtItem): YtPlayable {
         val videoId = video.videoId ?: error("Not a video")
+        // Start from the default client every time. The TV client can spend 20+ seconds on its
+        // SABR/PO-token path before we switch; VISIONOS returns plain DASH quickly.
+        runCatching { service.resetPlaybackClient() }
         val startedAt = android.os.SystemClock.elapsedRealtime()
         fun since() = android.os.SystemClock.elapsedRealtime() - startedAt
         var info = service.mediaItemService.getFormatInfoObserve(videoId).blockingFirst()
@@ -887,23 +927,36 @@ class YouTubeViewModel @Inject constructor(
         if (info.isUnplayable) error(friendlyReason(info.playabilityReason))
         Log.i(TAG, "formats video=$videoId dash=${info.containsDashFormats()} " +
             "sabr=${info.containsSabrFormats()} hls=${info.containsHlsUrl()} " +
-            "adaptive=${info.adaptiveFormats?.size} live=${info.isLive} client=${info.clientInfo?.clientName}")
-        // Live streams come as HLS. Everything else is separate video and audio streams, which we
-        // describe in a DASH manifest so the player can offer every quality. A single combined
-        // stream (one low quality) is the last resort. dashUrl() refuses a live manifest, so a
-        // stream YouTube labels live only in its formats still falls through to HLS or its own DASH.
-        val url = info.hlsManifestUrl?.takeIf { info.isLive }
-            ?: dashUrl(videoId, info)
-            ?: info.hlsManifestUrl
-            ?: info.dashManifestUrl
-            ?: info.urlFormats?.firstOrNull()?.url
-            ?: error("YouTube didn't return a stream for this video. Try again in a moment.")
+            "adaptive=${info.adaptiveFormats?.size} urlFormats=${info.urlFormats?.size ?: 0} " +
+            "live=${info.isLive} client=${info.clientInfo?.clientName}")
+        Log.i(TAG, "live sources video=$videoId hls=${info.hlsManifestUrl != null} " +
+            "dashManifest=${!info.dashManifestUrl.isNullOrBlank()} urlFormats=${info.urlFormats?.size ?: 0}")
+        // YouTube VODs play through ExoPlayer, which can use the generated DASH manifest for
+        // quality switching and seeking. Live streams use HLS.
+        val url = if (info.isLive) {
+            info.hlsManifestUrl
+                ?: dashUrl(videoId, info)
+                ?: info.dashManifestUrl
+                ?: info.urlFormats?.firstOrNull()?.url
+        } else {
+            dashUrl(videoId, info)
+                ?: info.hlsManifestUrl
+                ?: info.dashManifestUrl
+                ?: info.urlFormats?.firstOrNull()?.url
+        } ?: error("YouTube didn't return a stream for this video. Try again in a moment.")
         Log.i(TAG, "ready $videoId after ${since()}ms")
         // Stream URLs are tied to the client that asked for them, so the player has to present
         // the same user-agent.
         val headers = info.clientInfo?.userAgent?.takeIf { it.isNotBlank() }
             ?.let { mapOf("User-Agent" to it) }.orEmpty()
-        return YtPlayable(url, video.title, video.thumbnail, videoId, headers)
+        return YtPlayable(
+            url,
+            video.title,
+            video.thumbnail,
+            videoId,
+            headers,
+            isLive = info.isLive
+        )
     }
 
     /** One lookup per video at a time: hovering a card and then pressing OK share the same request. */
@@ -1004,6 +1057,7 @@ class YouTubeViewModel @Inject constructor(
      * [onNone] if there isn't one. Used when a video ends and autoplay is on.
      */
     fun playNext(currentVideoId: String, onReady: (YtPlayable) -> Unit, onNone: () -> Unit) {
+        Log.i(TAG, "playNext requested after=$currentVideoId")
         viewModelScope.launch {
             // The one the card showed, if it was picked in time.
             val next = _upNext.value?.takeIf { upNextFor == currentVideoId } ?: pickNext(currentVideoId)
@@ -1091,6 +1145,7 @@ class YouTubeViewModel @Inject constructor(
             return
         }
         val id = item.videoId ?: return
+        Log.i(TAG, "activate video=$id title=${item.title}")
         // A second press while this video is already being looked up is the same request, not a new one.
         // Checking the marker rather than the cache also covers the gap before the lookup is launched.
         if (_resolving.value == id) return
@@ -1146,7 +1201,13 @@ class YouTubeViewModel @Inject constructor(
         if (info.isUnplayable) return false
         // Live HLS works from these clients; their URLs for finished videos usually give a 403.
         if (!info.isLive && info.clientInfo?.clientName in BROKEN_CLIENTS) return false
-        return info.containsDashFormats() || (info.isLive && info.containsHlsUrl())
+        if (info.isLive) {
+            // A live answer that only has adaptive DASH can be a dynamic manifest the player
+            // can't use. Try the next client: another one usually has HLS or YouTube's own
+            // manifest for the same stream.
+            return info.containsHlsUrl() || !info.dashManifestUrl.isNullOrBlank() || info.containsUrlFormats()
+        }
+        return info.containsDashFormats()
     }
 
     private fun dashUrl(videoId: String, info: MediaItemFormatInfo): String? {
@@ -1161,7 +1222,7 @@ class YouTubeViewModel @Inject constructor(
             Log.i(TAG, "mpd is dynamic; not using it")
             return null
         }
-        return YouTubeMpdServer.publish(videoId, mpd)
+        return YouTubeMpdServer.publish(videoId, mpd, info.visitorCookie)
     }
 
     // ---- search suggestions and recent searches ----

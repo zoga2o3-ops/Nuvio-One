@@ -38,7 +38,9 @@ internal data class PlayerNavigationArgs(
     val launchStartedAtMs: Long?,
     val profileId: Int?,
     val audioDelayMs: Int? = null,
-    val audioDelayLanguage: String? = null
+    val audioDelayLanguage: String? = null,
+    val audioSlaveUrl: String? = null,
+    val youtubeLive: Boolean = false
 ) {
     val torrentTrackers: List<String>
         get() {
@@ -100,7 +102,9 @@ internal data class PlayerNavigationArgs(
                 launchStartedAtMs = savedStateHandle.get<String>("launchStartedAtMs")?.toLongOrNull(),
                 profileId = savedStateHandle.get<String>("profileId")?.toIntOrNull(),
                 audioDelayMs = savedStateHandle.get<String>("audioDelayMs")?.toIntOrNull(),
-                audioDelayLanguage = decodedOrNull("audioDelayLanguage")
+                audioDelayLanguage = decodedOrNull("audioDelayLanguage"),
+                audioSlaveUrl = savedStateHandle.get<String>("audioSlaveUrl")?.takeIf { it.isNotEmpty() },
+                youtubeLive = savedStateHandle.get<String>("youtubeLive")?.toBooleanStrictOrNull() == true
             )
         }
     }

@@ -26,7 +26,7 @@ import java.util.concurrent.Executors
 object YouTubeMpdServer {
     private const val TAG = "YouTubeCaptions"
     private const val USER_AGENT =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
     /** How much text goes to the translator in one request. */
     private const val CHUNK_CHARS = 600
     /** How much text a fallback translator can take in one request; it keeps the line breaks. */
@@ -35,15 +35,21 @@ object YouTubeMpdServer {
     private const val MAX_PARALLEL = 1
 
     private val manifests = ConcurrentHashMap<String, ByteArray>()
+    /** YouTube's visitor cookie, used for the translated caption URL (the same idea as Morphe's caption cookies). */
+    private val captionCookies = ConcurrentHashMap<String, String>()
     private val pool = Executors.newCachedThreadPool()
 
     @Volatile private var server: ServerSocket? = null
 
     /** Stores [mpd] and returns the URL to play it from. */
     @Synchronized
-    fun publish(videoId: String, mpd: ByteArray): String {
+    fun publish(videoId: String, mpd: ByteArray, visitorCookie: String? = null): String {
         // Kept at least as long as the view model keeps its cached lookups.
-        if (manifests.size > 64) manifests.clear()
+        if (manifests.size > 64) {
+            manifests.clear()
+            captionCookies.clear()
+        }
+        if (visitorCookie.isNullOrBlank()) captionCookies.remove(videoId) else captionCookies[videoId] = visitorCookie
         manifests[videoId] = rewriteTranslatedCaptions(videoId, YouTubeAudioTracks.tidy(mpd))
         return "http://127.0.0.1:${ensureStarted().localPort}/yt/$videoId.mpd"
     }
@@ -102,6 +108,18 @@ object YouTubeMpdServer {
         return rewritten.toByteArray(Charsets.UTF_8)
     }
 
+    /**
+     * YouTube's own translated caption file for [language], when it will serve it to us.
+     * The visitor cookie is what makes the translated timedtext request look like a viewer
+     * rather than an anonymous automated query.
+     */
+    fun translatedCaptionFile(videoId: String, language: String): String? {
+        val address = captionUrls[videoId]?.firstOrNull { address ->
+            Regex("[?&]tlang=([^&]+)").find(address)?.groupValues?.get(1) == language
+        } ?: return null
+        return get(videoId, address)
+    }
+
     /** YouTube's speech-recognition captions ("kind=asr"). */
     private fun isAutomatic(address: String) = Regex("[?&]kind=asr(&|$)").containsMatchIn(address)
 
@@ -121,10 +139,14 @@ object YouTubeMpdServer {
     private fun sourceLanguage(videoId: String, original: String): String? =
         languageOf(original) ?: captionLanguages[videoId]?.takeIf { it.isNotBlank() }
 
-    private fun sourceCaptions(address: String): String? {
+    private fun sourceCaptions(videoId: String, address: String): String? {
         sourceCache[address]?.let { return it }
-        val source = get(address) ?: return null
-        val tidy = if (isAutomatic(address)) YouTubeAutoCaptions.tidy(source) else source
+        val source = get(videoId, address) ?: return null
+        val tidy = if (isAutomatic(address) || YouTubeAutoCaptions.looksAutomatic(source)) {
+            YouTubeAutoCaptions.tidy(source)
+        } else {
+            source
+        }
         if (sourceCache.size >= 8) sourceCache.clear()
         sourceCache[address] = tidy
         return tidy
@@ -137,12 +159,15 @@ object YouTubeMpdServer {
         translatedCache[key]?.let { return@synchronized it }
         Log.d(TAG, "loading caption segment $number for $videoId in $language")
         val original = address.replace(Regex("&tlang=[^&]+"), "")
-        val source = sourceCaptions(original) ?: return@synchronized null
+        val source = sourceCaptions(videoId, original) ?: return@synchronized null
         val segment = YouTubeCaptionSegments.extract(source, number)
         // If no translator can be reached the original lines are served; untranslated captions beat none.
         val sourceLang = sourceLanguage(videoId, original)
         Log.d(TAG, "caption segment $number source=${sourceLang ?: "unknown"} target=$language")
         val translated = if ("-->" in segment) translateVtt(segment, language, sourceLang) else segment
+        if (translated == segment) {
+            Log.w(TAG, "caption segment $number for $videoId could not be translated; serving the source")
+        }
         val bytes = translated.toByteArray(Charsets.UTF_8)
         if (translated == segment) {
             // Nothing could be translated. Don't remember the original lines: a later request, once a
@@ -166,7 +191,7 @@ object YouTubeMpdServer {
         // The video's own captions are served without any token. Fetch those, tidy them if they're automatic,
         // and translate them when a language was asked for.
         val original = address.replace(Regex("&tlang=[^&]+"), "")
-        val tidy = sourceCaptions(original) ?: return null
+        val tidy = sourceCaptions(videoId, original) ?: return null
         val sourceLang = sourceLanguage(videoId, original)
         val result = if (language == null) tidy else translateCaptions(tidy, language, sourceLang)
         val bytes = result.toByteArray(Charsets.UTF_8)
@@ -181,14 +206,24 @@ object YouTubeMpdServer {
 
     private fun typeOf(body: ByteArray) = if (String(body, 0, minOf(body.size, 8), Charsets.UTF_8).startsWith("WEBVTT")) "text/vtt" else "application/ttml+xml"
 
-    private fun get(url: String): String? = runCatching {
-        http.newCall(Request.Builder().url(url).header("User-Agent", USER_AGENT).build()).execute().use {
+    private fun get(videoId: String, url: String): String? = runCatching {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .header("Referer", "https://www.youtube.com/watch?v=$videoId")
+            .header("Origin", "https://www.youtube.com")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .apply {
+                captionCookies[videoId]?.takeIf { it.isNotBlank() }?.let { header("Cookie", it) }
+            }
+            .build()
+        http.newCall(request).execute().use {
             if (it.isSuccessful) it.body?.string() else {
-                Log.w(TAG, "caption request -> HTTP ${it.code}")
+                Log.w(TAG, "caption request $videoId -> HTTP ${it.code}")
                 null
             }
         }
-    }.onFailure { Log.w(TAG, "caption request failed", it) }.getOrNull()
+    }.onFailure { Log.w(TAG, "caption request for $videoId failed", it) }.getOrNull()
 
     private val cue = Regex("(<p\\b[^>]*>)(.*?)(</p>)", RegexOption.DOT_MATCHES_ALL)
 

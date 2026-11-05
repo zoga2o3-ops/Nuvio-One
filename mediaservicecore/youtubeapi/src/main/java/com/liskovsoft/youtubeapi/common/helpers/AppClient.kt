@@ -27,7 +27,7 @@ private const val CLIENT_SCREEN_EMBED = "EMBED" // no 18+ restriction but not al
 /**
  * https://github.com/gamer191/yt-dlp/blob/3ad3676e585d144c16a2c5945eb6e422fb918d44/yt_dlp/extractor/youtube/_base.py#L41
  */
-internal enum class AppClient(
+enum class AppClient(
     @JvmField val clientName: String, @JvmField val clientVersion: String, val innerTubeName: String?, @JvmField val userAgent: String, val referer: String?,
     val clientScreen: String = CLIENT_SCREEN_WATCH, val params: String? = null, val postData: String? = null, val postDataBrowse: String? = null
 ): MediaItemFormatInfo.ClientInfo {

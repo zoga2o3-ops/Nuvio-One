@@ -182,6 +182,7 @@ private fun playerPreferenceLabel(preference: PlayerPreference): String = when (
 private fun internalEngineLabel(engine: InternalPlayerEngine): String = when (engine) {
     InternalPlayerEngine.EXOPLAYER -> stringResource(R.string.playback_engine_exoplayer)
     InternalPlayerEngine.MVP_PLAYER -> stringResource(R.string.playback_engine_mvplayer)
+    InternalPlayerEngine.VLC_PLAYER -> stringResource(R.string.playback_engine_vlc)
     InternalPlayerEngine.AUTO -> stringResource(R.string.playback_player_auto)
 }
 
@@ -226,6 +227,11 @@ internal fun InternalPlayerEngineDialog(
             stringResource(R.string.playback_engine_mvplayer_desc)
         ),
         SettingsPickerOption(
+            InternalPlayerEngine.VLC_PLAYER,
+            stringResource(R.string.playback_engine_vlc),
+            stringResource(R.string.playback_engine_vlc_desc)
+        ),
+        SettingsPickerOption(
             InternalPlayerEngine.AUTO,
             stringResource(R.string.playback_player_auto),
             stringResource(R.string.playback_player_auto_desc)
@@ -239,6 +245,6 @@ internal fun InternalPlayerEngineDialog(
         onOptionSelected = onEngineSelected,
         onDismiss = onDismiss,
         width = 420.dp,
-        maxHeight = 320.dp
+        maxHeight = 420.dp
     )
 }

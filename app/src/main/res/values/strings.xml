@@ -780,6 +780,7 @@
     <string name="playback_internal_player_engine">Internal Engine</string>
     <string name="playback_engine_exoplayer">ExoPlayer</string>
     <string name="playback_engine_mvplayer">Libmpv (Beta)</string>
+    <string name="playback_engine_vlc">VLC (Experimental)</string>
     <string name="playback_auto_switch_internal_player_on_error">Auto-switch engine on startup error</string>
     <string name="playback_auto_switch_internal_player_on_error_sub">If stream startup fails, switch between ExoPlayer and libmpv automatically.</string>
     <string name="playback_external_forward_subtitles">Forward subtitles to external player</string>
@@ -810,6 +811,7 @@
     <string name="playback_player_auto_desc">ExoPlayer for Movies &amp; TV Shows · MPV for Anime</string>
     <string name="playback_engine_exoplayer_desc">Best compatibility with current Nuvio features.</string>
     <string name="playback_engine_mvplayer_desc">Uses libmpv with Nuvio OSD controls. Experimental.</string>
+    <string name="playback_engine_vlc_desc">libVLC for movies, series and add-on streams. YouTube and Live TV use their own players.</string>
 
     <string name="video_section">Video</string>
     <string name="playback_true_black_letterbox">True black bars</string>

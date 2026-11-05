@@ -151,6 +151,7 @@ fun SideMenuSettingsContent(initialFocusRequester: FocusRequester? = null) {
 
     val startChoices = buildList {
         add("HOME" to "Home")
+        add("YOUTUBE" to "YouTube")
         if (s.showInSidebar) add("LIVE_TV" to "Live TV")
         if (sportsSettings.showInSidebar) add("SPORTS" to "Sports")
         if (s.onDemandEnabled && s.onDemandInSidebar && onDemandHas) add("ON_DEMAND" to "On Demand")

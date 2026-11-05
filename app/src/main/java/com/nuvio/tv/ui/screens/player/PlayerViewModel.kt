@@ -281,6 +281,10 @@ class PlayerViewModel @Inject constructor(
         controller.attachMpvView(view)
     }
 
+    fun attachVlcView(view: NuvioVlcSurfaceView?) {
+        controller.attachVlcView(view)
+    }
+
     fun pauseForLifecycle() {
         controller.pauseForLifecycle()
     }

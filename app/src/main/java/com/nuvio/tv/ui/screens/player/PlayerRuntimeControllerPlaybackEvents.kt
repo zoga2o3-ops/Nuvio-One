@@ -144,6 +144,9 @@ internal fun PlayerRuntimeController.applyEffectiveAudioDelay() {
     if (isUsingMpvEngine()) {
         mpvView?.setAudioDelayMs(totalMs)
     }
+    if (isUsingVlcEngine()) {
+        vlcView?.setAudioDelayMs(totalMs)
+    }
     applyStreamSubtitleOffset()
 }
 
@@ -348,6 +351,56 @@ internal fun PlayerRuntimeController.startProgressUpdates() {
     progressJob?.cancel()
     progressJob = scope.launch {
         while (isActive) {
+            if (isUsingVlcEngine()) {
+                val view = vlcView
+                if (view != null) {
+                    val pos = view.currentPositionMs().coerceAtLeast(0L)
+                    val playerDuration = view.durationMs().coerceAtLeast(0L)
+                    val playingNow = view.isPlayingNow()
+                    val buffering = view.isBufferingNow()
+                    val live = view.isLiveStreamNow()
+                    if (view.hasRenderedFrame()) hasRenderedFirstFrame = true
+                    if (playerDuration > lastKnownDuration) {
+                        lastKnownDuration = playerDuration
+                    }
+                    val effectiveDuration = if (playerDuration > 0L) playerDuration else lastKnownDuration
+                    // A movie/series must never stay latched as live because VLC briefly
+                    // reported zero length/unseekable while opening the file.
+                    if (playerDuration > 0L && view.isSeekableNow() &&
+                        !LivePlaybackUiPolicy.isLiveContentType(contentType)) {
+                        livePlaybackLatched = false
+                    }
+                    publishPlaybackTimeline(
+                        currentPosition = pos,
+                        duration = effectiveDuration,
+                        bufferedPosition = pos,
+                        playerReportsLive = live,
+                        isPlaying = playingNow
+                    )
+                    val ended = view.isEndedNow() && !live
+                    if (!ended) vlcEndReachedHandled = false
+                    _uiState.update {
+                        it.copy(
+                            isPlaying = playingNow,
+                            isBuffering = buffering,
+                            // After the first frame this is a seek/rebuffer, not a new stream:
+                            // show the small spinner instead of the title + "Starting stream".
+                            showLoadingOverlay = it.loadingOverlayEnabled &&
+                                buffering && !hasRenderedFirstFrame,
+                            playbackEnded = ended
+                        )
+                    }
+                    // VLC reports the finish through its own state rather than a Media3
+                    // callback. Run the same completion handler as ExoPlayer/MPV once.
+                    if (ended && !vlcEndReachedHandled) {
+                        vlcEndReachedHandled = true
+                        handleNaturalPlaybackEnded()
+                    }
+                    updateActiveSkipInterval(pos)
+                }
+                delay(500L)
+                continue
+            }
             if (isUsingMpvEngine()) {
                 val view = mpvView
                 if (view != null) {
@@ -1328,6 +1381,9 @@ internal fun PlayerRuntimeController.setSubtitleDelayMs(targetMs: Int, showOverl
     if (isUsingMpvEngine()) {
         mpvView?.setSubtitleDelayMs(mpvSubtitleDelayMs(newDelayMs))
     }
+    if (isUsingVlcEngine()) {
+        vlcView?.setSubtitleDelayMs(newDelayMs)
+    }
     if (showOverlay) {
         _uiState.update {
             it.copy(
@@ -1740,10 +1796,14 @@ fun PlayerRuntimeController.onEvent(
                 scheduleHideControls()
             }
         }
-        PlayerEvent.OnShowYouTubePanel -> {
+        PlayerEvent.OnShowYouTubePanel, PlayerEvent.OnShowYouTubeRecommendations -> {
+            val recommendations = YouTubePageScrollUi.ENABLED &&
+                event is PlayerEvent.OnShowYouTubeRecommendations
             _uiState.update {
                 it.copy(
                     showYouTubePanel = true,
+                    youTubePanelStartWithRecommendations = recommendations,
+                    youTubeScrollFraction = if (recommendations) 1f else 0f,
                     showQualityOverlay = false,
                     showAudioOverlay = false,
                     showSubtitleOverlay = false,
@@ -1752,6 +1812,17 @@ fun PlayerRuntimeController.onEvent(
                     showSubtitleTimingDialog = false,
                     showSubtitleDelayOverlay = false,
                     showControls = true
+                )
+            }
+        }
+        is PlayerEvent.OnSetYouTubeScrollFraction -> {
+            _uiState.update {
+                it.copy(
+                    youTubeScrollFraction = if (YouTubePageScrollUi.ENABLED) {
+                        event.fraction.coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                 )
             }
         }
@@ -2143,6 +2214,9 @@ fun PlayerRuntimeController.onEvent(
                     aspectRatioIndicatorText = label
                 )
             }
+            if (isUsingVlcEngine()) {
+                vlcView?.setAspectMode(newMode)
+            }
             scope.launch {
                 Log.d(PlayerRuntimeController.TAG, "Persisting aspect mode: $newMode")
                 deviceLocalPlayerPreferences.setAspectMode(newMode)
@@ -2247,6 +2321,7 @@ internal fun PlayerRuntimeController.buildStreamInfoData(): StreamInfoData {
         playerEngine = when (currentInternalPlayerEngine) {
             com.nuvio.tv.data.local.InternalPlayerEngine.EXOPLAYER -> context.getString(R.string.playback_engine_exoplayer)
             com.nuvio.tv.data.local.InternalPlayerEngine.MVP_PLAYER -> context.getString(R.string.playback_engine_mvplayer)
+            com.nuvio.tv.data.local.InternalPlayerEngine.VLC_PLAYER -> context.getString(R.string.playback_engine_vlc)
             com.nuvio.tv.data.local.InternalPlayerEngine.AUTO -> null
         },
         serverPlayback = serverPlaybackSummary()
