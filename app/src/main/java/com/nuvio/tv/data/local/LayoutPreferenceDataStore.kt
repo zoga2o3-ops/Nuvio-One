@@ -111,6 +111,7 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val homeImdbRatingsVisibilityKey = stringPreferencesKey("home_imdb_ratings_visibility")
     private val detailImdbRatingsVisibilityKey = stringPreferencesKey("detail_imdb_ratings_visibility")
     private val useEpisodeThumbnailsInCwKey = booleanPreferencesKey("use_episode_thumbnails_in_cw")
+    private val showContinueWatchingEpisodeCountKey = booleanPreferencesKey("show_continue_watching_episode_count")
     private val continueWatchingEnabledKey = booleanPreferencesKey("continue_watching_enabled")
     private val continueWatchingCardStyleKey = stringPreferencesKey("continue_watching_card_style")
     private val showUnairedNextUpKey = booleanPreferencesKey("show_unaired_next_up")
@@ -376,6 +377,10 @@ class LayoutPreferenceDataStore @Inject constructor(
 
     val useEpisodeThumbnailsInCw: Flow<Boolean> = profileFlow { prefs ->
         prefs[useEpisodeThumbnailsInCwKey] ?: true
+    }
+
+    val showContinueWatchingEpisodeCount: Flow<Boolean> = profileFlow { prefs ->
+        prefs[showContinueWatchingEpisodeCountKey] ?: true
     }
 
     val showUnairedNextUp: Flow<Boolean> = profileFlow { prefs ->
@@ -779,6 +784,12 @@ class LayoutPreferenceDataStore @Inject constructor(
     suspend fun setUseEpisodeThumbnailsInCw(enabled: Boolean) {
         store().edit { prefs ->
             prefs[useEpisodeThumbnailsInCwKey] = enabled
+        }
+    }
+
+    suspend fun setShowContinueWatchingEpisodeCount(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[showContinueWatchingEpisodeCountKey] = enabled
         }
     }
 

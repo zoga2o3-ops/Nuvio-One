@@ -284,6 +284,9 @@ class HomeViewModel @Inject constructor(
     /** Snapshot of watchedShowEpisodes keys from the last badge evaluation cycle. */
     @Volatile
     internal var cwLastBadgeEpisodeKeys: Set<String> = emptySet()
+    /** Watched-episode counts used by the cards' "episodes left" badge. */
+    @Volatile
+    internal var cwLastWatchedEpisodeCounts: Map<String, Int> = emptyMap()
     /** Cached show ID siblings from the last badge evaluation cycle (for anime ID expansion). */
     @Volatile
     internal var cwLastShowIdSiblings: Map<String, Set<String>> = emptyMap()
@@ -418,6 +421,7 @@ class HomeViewModel @Inject constructor(
                     cwEnrichedInProgressOverlay.clear()
                     cwLastBadgeEpisodeKeys = emptySet()
                     cwLastShowIdSiblings = emptyMap()
+                    cwLastWatchedEpisodeCounts = emptyMap()
                     _uiState.update {
                         it.copy(layoutPreferencesReady = false, continueWatchingItems = emptyList())
                     }
@@ -472,6 +476,7 @@ class HomeViewModel @Inject constructor(
         cwEnrichedInProgressOverlay.clear()
         cwLastBadgeEpisodeKeys = emptySet()
         cwLastShowIdSiblings = emptyMap()
+        cwLastWatchedEpisodeCounts = emptyMap()
         watchedSeriesStateHolder.clearValidationState()
         _uiState.update { it.copy(continueWatchingItems = emptyList(), upcomingItems = emptyList()) }
         // Bump trigger so the pipeline's collectLatest restarts with fresh state.
@@ -526,6 +531,13 @@ class HomeViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { enabled ->
                     _uiState.update { it.copy(useEpisodeThumbnailsInCw = enabled) }
+                }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.showContinueWatchingEpisodeCount
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    _uiState.update { it.copy(showContinueWatchingEpisodeCount = enabled) }
                 }
         }
         viewModelScope.launch {

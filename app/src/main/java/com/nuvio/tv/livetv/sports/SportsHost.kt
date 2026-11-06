@@ -92,7 +92,9 @@ fun SportsHost(navController: NavController) {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     val settings by repo.settings.collectAsState()
-    if (!settings.showInSidebar) return
+    // Scoring alerts are independent of the Sports page: a user can hide Sports from the
+    // side menu and still ask for goal cards. Only stop here when neither is wanted.
+    if (!settings.showInSidebar && !settings.scoringAlerts) return
 
     // ---- reminders
     var due by remember { mutableStateOf<Pair<SportsEvent, String>?>(null) }
@@ -120,6 +122,8 @@ fun SportsHost(navController: NavController) {
             delay(15_000)
             if (due != null) continue
             val s = repo.settings.value
+            // The Sports page being off means game reminders are off too; goal cards are separate.
+            if (!s.showInSidebar) continue
             val f = repo.follows.value
             val now = System.currentTimeMillis()
             val lead = s.remindMinutes.coerceAtLeast(0) * 60_000L
@@ -158,6 +162,7 @@ fun SportsHost(navController: NavController) {
             }
         }
     }
+    if (settings.showInSidebar) {
     countdown?.let { (ev, m) ->
         SwitchCountdown(
             ev = ev, match = m,
@@ -200,8 +205,9 @@ fun SportsHost(navController: NavController) {
             }
         )
     }
+    }
 
-    // ---- scoring alerts (never take the highlight: just a card in the corner for a few seconds)
+    // ---- scoring alerts (still shown when the Sports page itself is off)
     val alert by SportsLive.alerts.collectAsState()
     LaunchedEffect(alert) {
         val a = alert ?: return@LaunchedEffect

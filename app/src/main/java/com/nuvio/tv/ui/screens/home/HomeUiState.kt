@@ -66,6 +66,7 @@ data class HomeUiState(
     val showFullReleaseDate: Boolean = true,
     val blurUnwatchedEpisodes: Boolean = false,
     val useEpisodeThumbnailsInCw: Boolean = true,
+    val showContinueWatchingEpisodeCount: Boolean = true,
     val continueWatchingEnabled: Boolean = true,
     val continueWatchingCardStyle: ContinueWatchingCardStyle = ContinueWatchingCardStyle.CARD,
     val heroEnrichmentEnabled: Boolean = false,
@@ -93,7 +94,9 @@ sealed class ContinueWatchingItem {
         override val shufflePlayback: Boolean = false,
         val originalPoster: String? = null,
         val customLandscapePoster: String? = null,
-        val mdbListRatings: com.nuvio.tv.domain.model.MDBListRatings? = null
+        val mdbListRatings: com.nuvio.tv.domain.model.MDBListRatings? = null,
+        /** Episodes in the series not watched yet, for the card's "N left" badge. */
+        val remainingEpisodes: Int? = null
     ) : ContinueWatchingItem()
 
     @Immutable
@@ -140,6 +143,8 @@ data class NextUpInfo(
     val seedEpisode: Int? = null,
     val contentLanguage: String? = null,
     val mdbListRatings: com.nuvio.tv.domain.model.MDBListRatings? = null,
+    /** Episodes in the series not watched yet, for the card's "N left" badge. */
+    val remainingEpisodes: Int? = null,
     /** Live TV fork: a card from the Calendar (a show whose bell is rung, or an upcoming episode). */
     val fromCalendar: Boolean = false
 )

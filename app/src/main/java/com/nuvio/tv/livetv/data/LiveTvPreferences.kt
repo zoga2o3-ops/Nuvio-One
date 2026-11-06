@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.nuvio.tv.livetv.model.AddonChannelSource
 import com.nuvio.tv.livetv.model.ChannelSort
 import com.nuvio.tv.livetv.model.matchFrameRate
 import com.nuvio.tv.livetv.model.CustomGroup
@@ -56,6 +57,7 @@ class LiveTvPreferences @Inject constructor(
     private object Keys {
         val playlists = stringPreferencesKey("playlists")
         val epgs = stringPreferencesKey("epg_sources")
+        val addonChannels = stringPreferencesKey("addon_channels")
 
         val showInSidebar = booleanPreferencesKey("show_in_sidebar")
         val showNames = booleanPreferencesKey("show_channel_names")
@@ -317,6 +319,10 @@ class LiveTvPreferences @Inject constructor(
         .map { decodeEpgs(it[Keys.epgs]) }
         .distinctUntilChanged()
 
+    val addonChannelSources: Flow<List<AddonChannelSource>> = store.data
+        .map { decodeAddonChannels(it[Keys.addonChannels]) }
+        .distinctUntilChanged()
+
     /**
      * Which side-menu pages are off (Calendar and the others) is chosen per Nuvio profile. The first
      * profile keeps the original key. A profile that hasn't made its own choice yet sees the first
@@ -530,6 +536,7 @@ class LiveTvPreferences @Inject constructor(
 
     suspend fun currentPlaylists(): List<PlaylistSource> = playlists.first()
     suspend fun currentEpgSources(): List<EpgSource> = epgSources.first()
+    suspend fun currentAddonChannelSources(): List<AddonChannelSource> = addonChannelSources.first()
     suspend fun currentSettings(): LiveTvSettings = settings.first()
 
     // ---------- sources ----------
@@ -543,6 +550,12 @@ class LiveTvPreferences @Inject constructor(
             p[Keys.playlists] = encodePlaylists(after)
         }
         noteRemovedSources(removed)
+    }
+
+    suspend fun updateAddonChannelSources(transform: (List<AddonChannelSource>) -> List<AddonChannelSource>) {
+        store.edit { p ->
+            p[Keys.addonChannels] = encodeAddonChannels(transform(decodeAddonChannels(p[Keys.addonChannels])))
+        }
     }
 
     suspend fun updateEpgSources(transform: (List<EpgSource>) -> List<EpgSource>) {
@@ -1225,6 +1238,9 @@ class LiveTvPreferences @Inject constructor(
                         Keys.epgs.name -> encodeEpgs(decodeEpgs(value).map {
                             it.copy(lastUpdatedMs = 0, lastError = null, programCount = 0)
                         })
+                        Keys.addonChannels.name -> encodeAddonChannels(decodeAddonChannels(value).map {
+                            it.copy(lastUpdatedMs = 0, lastError = null, channelCount = 0)
+                        })
                         else -> value
                     }
                     JSONObject().put("t", "str").put("v", v)
@@ -1241,7 +1257,8 @@ class LiveTvPreferences @Inject constructor(
         if (data == null) return false
         fun raw(key: String) = data.optJSONObject(key)?.optString("v")
         return runCatching { decodePlaylists(raw(Keys.playlists.name)).isNotEmpty() }.getOrDefault(false) ||
-            runCatching { decodeEpgs(raw(Keys.epgs.name)).isNotEmpty() }.getOrDefault(false)
+            runCatching { decodeEpgs(raw(Keys.epgs.name)).isNotEmpty() }.getOrDefault(false) ||
+            runCatching { decodeAddonChannels(raw(Keys.addonChannels.name)).isNotEmpty() }.getOrDefault(false)
     }
 
     /** Replaces this TV's Live TV setup with [data] from [exportForSync], keeping per-TV state. */
@@ -1251,6 +1268,7 @@ class LiveTvPreferences @Inject constructor(
         store.edit { p ->
             val localPlaylists = decodePlaylists(p[Keys.playlists]).associateBy { it.id }
             val localEpgs = decodeEpgs(p[Keys.epgs]).associateBy { it.id }
+            val localAddons = decodeAddonChannels(p[Keys.addonChannels]).associateBy { it.id }
             // Remove synced keys the other TV doesn't have, then write everything it does.
             p.asMap().keys.filter { it.name !in SYNC_EXCLUDED && !data.has(it.name) }.forEach {
                 @Suppress("UNCHECKED_CAST")
@@ -1286,6 +1304,12 @@ class LiveTvPreferences @Inject constructor(
                             v = encodeEpgs(decodeEpgs(v).map { r ->
                                 localEpgs[r.id]?.let { l ->
                                     r.copy(lastUpdatedMs = l.lastUpdatedMs, lastError = l.lastError, programCount = l.programCount)
+                                } ?: r
+                            })
+                        } else if (name == Keys.addonChannels.name) {
+                            v = encodeAddonChannels(decodeAddonChannels(v).map { r ->
+                                localAddons[r.id]?.let { l ->
+                                    r.copy(lastUpdatedMs = l.lastUpdatedMs, lastError = l.lastError, channelCount = l.channelCount)
                                 } ?: r
                             })
                         }
@@ -1348,6 +1372,45 @@ class LiveTvPreferences @Inject constructor(
                     .put("serverTimezone", s.serverTimezone)
                     .put("catchupNoHlsSince", s.catchupNoHlsSince)
                     .put("logoSource", s.logoSource)
+            )
+        }
+        return arr.toString()
+    }
+
+    private fun decodeAddonChannels(raw: String?): List<AddonChannelSource> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                AddonChannelSource(
+                    id = o.optString("id"),
+                    addonBaseUrl = o.optString("addonBaseUrl"),
+                    addonName = o.optString("addonName"),
+                    addonLogo = o.optString("addonLogo").ifBlank { null },
+                    catalogId = o.optString("catalogId"),
+                    catalogName = o.optString("catalogName"),
+                    enabled = o.optBoolean("enabled", true),
+                    lastUpdatedMs = o.optLong("lastUpdatedMs"),
+                    lastError = o.optString("lastError").ifBlank { null },
+                    channelCount = o.optInt("channelCount")
+                )
+            }.filter { it.id.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun encodeAddonChannels(list: List<AddonChannelSource>): String {
+        val arr = JSONArray()
+        list.forEach { s ->
+            arr.put(
+                JSONObject()
+                    .put("id", s.id).put("addonBaseUrl", s.addonBaseUrl)
+                    .put("addonName", s.addonName).put("addonLogo", s.addonLogo ?: "")
+                    .put("catalogId", s.catalogId).put("catalogName", s.catalogName)
+                    .put("enabled", s.enabled)
+                    .put("lastUpdatedMs", s.lastUpdatedMs)
+                    .put("lastError", s.lastError ?: "")
+                    .put("channelCount", s.channelCount)
             )
         }
         return arr.toString()

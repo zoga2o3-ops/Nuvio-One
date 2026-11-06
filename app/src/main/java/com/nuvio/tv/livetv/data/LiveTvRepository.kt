@@ -2,6 +2,7 @@ package com.nuvio.tv.livetv.data
 
 import android.content.Context
 import android.util.Log
+import com.nuvio.tv.livetv.model.AddonChannelRef
 import com.nuvio.tv.livetv.model.EpgAssignment
 import com.nuvio.tv.livetv.model.EpgChannelEntry
 import com.nuvio.tv.livetv.model.EpgProgram
@@ -18,10 +19,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -56,7 +60,8 @@ data class LiveTvStatus(
 class LiveTvRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val prefs: LiveTvPreferences,
-    private val guideDb: EpgDatabase
+    private val guideDb: EpgDatabase,
+    private val addonChannels: AddonChannelRepository
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -83,7 +88,30 @@ class LiveTvRepository @Inject constructor(
 
     /** Programs keyed by [LiveChannel.key], sorted by start. Offset is not applied here. */
     private val _programs = MutableStateFlow<Map<String, List<EpgProgram>>>(emptyMap())
-    val programs: StateFlow<Map<String, List<EpgProgram>>> = _programs.asStateFlow()
+    /**
+     * One-off listings carried by an add-on's live catalog (CNCVerse's event ids). They are
+     * merged with the XMLTV guide so an event channel still shows what's on and when.
+     */
+    private val _addonPrograms = MutableStateFlow<Map<String, List<EpgProgram>>>(emptyMap())
+    val programs: StateFlow<Map<String, List<EpgProgram>>> =
+        combine(_programs, _addonPrograms) { guide, addon ->
+            if (addon.isEmpty()) {
+                guide
+            } else {
+                val out = HashMap(guide)
+                addon.forEach { (key, events) ->
+                    val existing = out[key].orEmpty()
+                    out[key] = if (existing.isEmpty()) {
+                        events
+                    } else {
+                        (existing + events.filter { event ->
+                            existing.none { it.startMs < event.stopMs && event.startMs < it.stopMs }
+                        }).sortedBy { it.startMs }
+                    }
+                }
+                out
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     /** Channel key -> the guide channel picked automatically (shown in Assign EPG). */
     private val _autoMatches = MutableStateFlow<Map<String, EpgAssignment>>(emptyMap())
@@ -237,7 +265,19 @@ class LiveTvRepository @Inject constructor(
         if (remaining.size == _channels.value.size) return
         val keys = remaining.mapTo(HashSet()) { it.key }
         _channels.value = remaining
+        refreshAddonPrograms(remaining)
         _programs.value = _programs.value.filterKeys { it in keys }
+    }
+
+    /** Event details embedded in add-on catalog ids become one-off guide entries. */
+    private fun refreshAddonPrograms(channels: List<LiveChannel>) {
+        val map = HashMap<String, List<EpgProgram>>()
+        channels.forEach { channel ->
+            val channelId = channel.addon?.channelId ?: return@forEach
+            val event = AddonGuideInfo.event(channelId) ?: return@forEach
+            map[channel.key] = listOf(event.toProgram(channel))
+        }
+        _addonPrograms.value = map
     }
 
     suspend fun setPlaylistEnabled(id: String, enabled: Boolean) {
@@ -585,10 +625,12 @@ class LiveTvRepository @Inject constructor(
         }
 
         // Build channels first so EPG matching knows which channels exist.
-        if (changed || _channels.value.isEmpty()) {
+        val addonSources = prefs.currentAddonChannelSources().filter { it.enabled }
+        val addonStale = addonSources.isNotEmpty() && addonSources.any { now - it.lastUpdatedMs > ADDON_REFRESH_MS }
+        if (changed || _channels.value.isEmpty() || addonStale) {
             outOfTheWay()
             setStatus(loading = true, message = "Reading channels…")
-            buildChannels()
+            buildChannels(forceAddon = forcePlaylists || addonStale)
             saveChannels() // so the next start uses it straight away
         }
 
@@ -701,6 +743,9 @@ class LiveTvRepository @Inject constructor(
             sb.append(pl.id).append(':').append(pl.name.hashCode()).append(':').append(pl.userAgent.hashCode())
                 .append(':').append(f.length()).append(':').append(contentStamp(f)).append(',')
         }
+        prefs.currentAddonChannelSources().filter { it.enabled }.forEach { src ->
+            sb.append("addon:").append(src.id).append(':').append(src.lastUpdatedMs).append(',')
+        }
         return sb.toString()
     }
 
@@ -753,11 +798,22 @@ class LiveTvRepository @Inject constructor(
                         val lh = HashMap<String, String>().apply { repeat(input.readInt()) { put(input.readUTF(), input.readUTF()) } }
                         com.nuvio.tv.livetv.model.DrmInfo(scheme, license, lh, opt())
                     } else null
-                    list += LiveChannel(key, sourceId, sourceName, name, tvgId, tvgName, logo, groupId, group, number, url, headers, catchup, drm)
+                    val addon = if (input.readBoolean()) {
+                        AddonChannelRef(
+                            addonBaseUrl = shared(),
+                            addonName = shared(),
+                            addonLogo = opt(),
+                            catalogId = shared(),
+                            channelId = shared(),
+                            channelType = shared()
+                        )
+                    } else null
+                    list += LiveChannel(key, sourceId, sourceName, name, tvgId, tvgName, logo, groupId, group, number, url, headers, catchup, drm, addon = addon)
                 }
                 embeddedEpgUrls.clear()
                 embeddedEpgUrls.putAll(epg)
                 _channels.value = list
+                refreshAddonPrograms(list)
                 true
             }
         }.getOrElse {
@@ -769,6 +825,7 @@ class LiveTvRepository @Inject constructor(
     private suspend fun saveChannels() = withContext(Dispatchers.IO) {
         val fingerprint = channelsFingerprint()
         runCatching {
+            baseDir.mkdirs()
             val list = _channels.value
             // Text shared by many channels, stored once.
             val index = LinkedHashMap<String, Int>()
@@ -778,6 +835,9 @@ class LiveTvRepository @Inject constructor(
                 c.headers.keys.forEach { id(it) }
                 c.catchup?.let { id(it.type) }
                 c.drm?.let { id(it.scheme) }
+                c.addon?.let { a ->
+                    id(a.addonBaseUrl); id(a.addonName); id(a.catalogId); id(a.channelId); id(a.channelType)
+                }
             }
             val tmp = File(baseDir, "channels_cache3.tmp")
             java.io.DataOutputStream(java.io.BufferedOutputStream(tmp.outputStream(), 256 * 1024)).use { out ->
@@ -805,6 +865,13 @@ class LiveTvRepository @Inject constructor(
                         out.writeInt(index.getValue(d.scheme)); out.writeUTF(d.license)
                         out.writeInt(d.licenseHeaders.size); d.licenseHeaders.forEach { (k, v) -> out.writeUTF(k); out.writeUTF(v) }
                         opt(d.manifestType)
+                    }
+                    out.writeBoolean(c.addon != null)
+                    c.addon?.let { a ->
+                        out.writeInt(index.getValue(a.addonBaseUrl)); out.writeInt(index.getValue(a.addonName))
+                        opt(a.addonLogo)
+                        out.writeInt(index.getValue(a.catalogId)); out.writeInt(index.getValue(a.channelId))
+                        out.writeInt(index.getValue(a.channelType))
                     }
                 }
             }
@@ -1629,7 +1696,7 @@ class LiveTvRepository @Inject constructor(
 
     private val embeddedEpgUrls = HashMap<String, List<String>>()
 
-    private suspend fun buildChannels() = withContext(Dispatchers.IO) {
+    private suspend fun buildChannels(forceAddon: Boolean = false) = withContext(Dispatchers.IO) {
         val playlists = prefs.currentPlaylists().filter { it.liveEnabled }
         val multi = playlists.size > 1
         val out = ArrayList<LiveChannel>()
@@ -1679,7 +1746,60 @@ class LiveTvRepository @Inject constructor(
             }
             prefs.updatePlaylists { list -> list.map { if (it.id == pl.id) it.copy(channelCount = parsed.entries.size) else it } }
         }
+
+        // Live TV catalogs from Stremio addons. Their stream links are looked up only when a
+        // channel is opened, so only the channel list is fetched here.
+        var allAddonSources = prefs.currentAddonChannelSources()
+        if (allAddonSources.any { it.catalogId.isBlank() }) {
+            val migrated = addonChannels.migrateLegacy(allAddonSources)
+            if (migrated != allAddonSources) {
+                prefs.updateAddonChannelSources { migrated }
+                allAddonSources = migrated
+            }
+        }
+        val addonSources = allAddonSources.filter { it.enabled }
+        if (addonSources.isNotEmpty()) {
+            setStatus(loading = true, message = "Reading channels from your add-ons…")
+            val loaded = addonChannels.load(addonSources, force = forceAddon)
+            val now = System.currentTimeMillis()
+            val selectedIds = addonSources.mapTo(HashSet()) { it.id }
+            prefs.updateAddonChannelSources { list ->
+                list.map { source ->
+                    if (source.id !in selectedIds) source
+                    else source.copy(
+                        lastUpdatedMs = if (loaded.counts.containsKey(source.id)) now else source.lastUpdatedMs,
+                        lastError = loaded.errors[source.id],
+                        channelCount = loaded.counts[source.id] ?: source.channelCount
+                    )
+                }
+            }
+            loaded.channels.forEach { channel ->
+                var key = channel.key
+                var n = 2
+                while (!usedKeys.add(key)) key = channel.key + "#${n++}"
+                out += channel.copy(key = key, number = counter++)
+            }
+            val failed = loaded.errors.entries.take(2).joinToString("; ") { "${it.key}: ${it.value}" }
+            if (failed.isNotBlank()) LIVE_REPORT.add("Add-on channels: $failed")
+            LIVE_REPORT.add("Add-on channels loaded: ${loaded.channels.size}")
+        }
         _channels.value = out
+        refreshAddonPrograms(out)
+    }
+
+    /** Re-reads the selected addons' live catalogs (after the source list changes). */
+    fun refreshAddonChannelsNow() {
+        scope.launch {
+            mutex.withLock {
+                setStatus(loading = true, message = "Reading channels from your add-ons…")
+                runCatching {
+                    addonChannels.invalidate()
+                    buildChannels(forceAddon = true)
+                    saveChannels()
+                }.onFailure { Log.w(TAG, "Add-on channels refresh failed", it) }
+                _status.value = LiveTvStatus(loading = false, loadedOnce = true)
+            }
+        }
     }
 
     private suspend fun buildPrograms(settings: LiveTvSettings, targets: List<EpgTarget>) {
@@ -2719,7 +2839,8 @@ class LiveTvRepository @Inject constructor(
         private const val RANGE_SLACK_MS = 6 * HOUR
         // 2: guides compared by how far ahead they go (matched again once after updating).
         private const val GUIDE_CACHE_VERSION = 2
-        private const val CHANNELS_CACHE_VERSION = 6
+        private const val CHANNELS_CACHE_VERSION = 8
+    private const val ADDON_REFRESH_MS = 10 * 60_000L
         private const val MAX_SAVED_LISTINGS = 300_000
         /** Titles guides use when they have no real listing. */
         private val PLACEHOLDER_TITLES = Regex(

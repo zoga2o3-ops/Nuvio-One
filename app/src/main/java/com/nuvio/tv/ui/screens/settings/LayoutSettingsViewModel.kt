@@ -73,6 +73,7 @@ data class LayoutSettingsUiState(
     val detailImdbRatingsVisibility: DetailImdbRatingsVisibility = DetailImdbRatingsVisibility.SHOW_ALL,
     val blurContinueWatchingNextUp: Boolean = false,
     val useEpisodeThumbnailsInCw: Boolean = true,
+    val showContinueWatchingEpisodeCount: Boolean = true,
     val detailPageTrailerButtonEnabled: Boolean = true,
     val detailPageTrailerAutoplayEnabled: Boolean = true,
     val detailPageTrailerAutoplayDelaySeconds: Int = 7,
@@ -137,6 +138,7 @@ sealed class LayoutSettingsEvent {
     data class SetDetailImdbRatingsVisibility(val visibility: DetailImdbRatingsVisibility) : LayoutSettingsEvent()
     data class SetBlurContinueWatchingNextUp(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetUseEpisodeThumbnailsInCw(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetShowContinueWatchingEpisodeCount(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetDetailPageTrailerButtonEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetDetailPageTrailerAutoplayEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data class SetDetailPageTrailerAutoplayDelaySeconds(val seconds: Int) : LayoutSettingsEvent()
@@ -353,6 +355,11 @@ class LayoutSettingsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            layoutPreferenceDataStore.showContinueWatchingEpisodeCount.distinctUntilChanged().collectLatest { enabled ->
+                updateUiStateIfChanged { it.copy(showContinueWatchingEpisodeCount = enabled) }
+            }
+        }
+        viewModelScope.launch {
             layoutPreferenceDataStore.detailPageTrailerButtonEnabled.distinctUntilChanged().collectLatest { enabled ->
                 updateUiStateIfChanged { it.copy(detailPageTrailerButtonEnabled = enabled) }
             }
@@ -476,6 +483,7 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SetDetailImdbRatingsVisibility -> setDetailImdbRatingsVisibility(event.visibility)
             is LayoutSettingsEvent.SetBlurContinueWatchingNextUp -> setBlurContinueWatchingNextUp(event.enabled)
             is LayoutSettingsEvent.SetUseEpisodeThumbnailsInCw -> setUseEpisodeThumbnailsInCw(event.enabled)
+            is LayoutSettingsEvent.SetShowContinueWatchingEpisodeCount -> setShowContinueWatchingEpisodeCount(event.enabled)
             is LayoutSettingsEvent.SetDetailPageTrailerButtonEnabled -> setDetailPageTrailerButtonEnabled(event.enabled)
             is LayoutSettingsEvent.SetDetailPageTrailerAutoplayEnabled -> setDetailPageTrailerAutoplayEnabled(event.enabled)
             is LayoutSettingsEvent.SetDetailPageTrailerAutoplayDelaySeconds -> setDetailPageTrailerAutoplayDelaySeconds(event.seconds)
@@ -844,6 +852,13 @@ class LayoutSettingsViewModel @Inject constructor(
         if (_uiState.value.useEpisodeThumbnailsInCw == enabled) return
         viewModelScope.launch {
             layoutPreferenceDataStore.setUseEpisodeThumbnailsInCw(enabled)
+        }
+    }
+
+    private fun setShowContinueWatchingEpisodeCount(enabled: Boolean) {
+        if (_uiState.value.showContinueWatchingEpisodeCount == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setShowContinueWatchingEpisodeCount(enabled)
         }
     }
 

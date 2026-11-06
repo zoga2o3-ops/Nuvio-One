@@ -63,6 +63,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.nuvio.tv.domain.model.Addon
+import com.nuvio.tv.domain.model.CatalogDescriptor
+import com.nuvio.tv.livetv.model.AddonChannelSource
 import com.nuvio.tv.livetv.model.ChannelSort
 import com.nuvio.tv.livetv.model.EpgSource
 import com.nuvio.tv.livetv.model.LiveTvSettings
@@ -179,6 +182,7 @@ private sealed interface LiveDialog {
     data object AddM3u : LiveDialog
     data object AddXtream : LiveDialog
     data object AddEpg : LiveDialog
+    data object AddonChannels : LiveDialog
     data class PlaylistActions(val source: PlaylistSource) : LiveDialog
     data class EditPlaylist(val source: PlaylistSource) : LiveDialog
     data class EpgActions(val source: EpgSource) : LiveDialog
@@ -279,6 +283,8 @@ internal fun LiveTvSettingsContent(
     fun firstFocus(p: LiveTvPage): FocusRequester? = firstRequester.takeIf { page == p }
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val epgs by viewModel.epgSources.collectAsStateWithLifecycle()
+    val addonChannels by viewModel.addonChannelSources.collectAsStateWithLifecycle()
+    val installedAddons by viewModel.installedAddons.collectAsStateWithLifecycle()
     val s by viewModel.settings.collectAsStateWithLifecycle()
     val user by viewModel.userState.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
@@ -455,6 +461,25 @@ internal fun LiveTvSettingsContent(
                         subtitle = "Sign in with the server, username and password from your provider. Its TV guide comes with it.",
                         leadingIcon = Icons.Default.Add,
                         onClick = { dialog = LiveDialog.AddXtream }
+                    )
+                    SubHeading("Add-on Channels")
+                    addonChannels.filter { it.enabled }.forEach { src ->
+                        SettingsActionRow(
+                            title = "${src.addonName} · ${src.catalogName}",
+                            subtitle = sourceStatus(
+                                src.enabled, src.lastUpdatedMs, src.lastError,
+                                "${src.channelCount} channels"
+                            ),
+                            value = "On",
+                            leadingIcon = Icons.Default.LiveTv,
+                            onClick = { dialog = LiveDialog.AddonChannels }
+                        )
+                    }
+                    SettingsActionRow(
+                        title = "Add Live TV from Add-ons",
+                        subtitle = "Use the Live TV catalogs your installed addons provide. A channel's stream is looked up when you open it.",
+                        leadingIcon = Icons.Default.Add,
+                        onClick = { dialog = LiveDialog.AddonChannels }
                     )
                     SubHeading("TV Guides (EPG)")
                     epgs.forEach { e ->
@@ -1652,6 +1677,14 @@ internal fun LiveTvSettingsContent(
             onDismiss = close,
             onSave = { v, _ -> if (v[1].isNotBlank()) viewModel.addEpg(v[0], v[1]); close() }
         )
+        LiveDialog.AddonChannels -> AddonChannelsDialog(
+            addons = installedAddons,
+            selected = addonChannels,
+            onToggle = { addon, catalog, enabled ->
+                viewModel.setAddonCatalogEnabled(addon, catalog, enabled)
+            },
+            onDismiss = close
+        )
         is LiveDialog.PlaylistActions -> ActionListDialog(
             title = d.source.name,
             actions = listOfNotNull(
@@ -2340,6 +2373,64 @@ private fun SourceFormDialog(
                 },
                 primary = true
             )
+        }
+    }
+}
+
+@Composable
+private fun AddonChannelsDialog(
+    addons: List<Addon>,
+    selected: List<AddonChannelSource>,
+    onToggle: (Addon, CatalogDescriptor, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val first = remember { FocusRequester() }
+    val options = addons.flatMap { addon ->
+        addon.catalogs
+            .filter { it.rawType.equals("tv", ignoreCase = true) }
+            .map { addon to it }
+    }
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { first.requestFocus() }
+    }
+    NuvioDialog(
+        onDismiss = onDismiss,
+        title = "Add-on channels",
+        subtitle = "Pick the Live TV catalogs to show in the guide. A channel's stream is looked up when you open it.",
+        width = 620.dp
+    ) {
+        if (options.isEmpty()) {
+            Text(
+                "No installed add-on has a Live TV catalog.",
+                color = NuvioTheme.colors.TextSecondary
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 380.dp),
+                verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs)
+            ) {
+                itemsIndexed(options) { i, (addon, catalog) ->
+                    val sourceId = "${addon.baseUrl}|${catalog.id}"
+                    val source = selected.firstOrNull { it.id == sourceId }
+                    val error = source?.lastError?.takeIf { it.isNotBlank() }
+                    SettingsToggleRow(
+                        title = catalog.name,
+                        subtitle = buildString {
+                            append(addon.displayName)
+                            val count = source?.channelCount ?: 0
+                            if (count > 0) append(" · ").append(count).append(" channels")
+                            if (error != null) append(" · ").append(error)
+                        },
+                        checked = source?.enabled == true,
+                        onToggle = { onToggle(addon, catalog, source?.enabled != true) },
+                        modifier = if (i == 0) Modifier.focusRequester(first) else Modifier
+                    )
+                }
+            }
+        }
+        SettingsDialogActionRow {
+            SettingsDialogActionButton(text = "Done", onClick = onDismiss, primary = true)
         }
     }
 }

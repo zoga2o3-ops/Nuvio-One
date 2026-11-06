@@ -622,6 +622,19 @@ fun LiveTvGuideScreen(
         }
         highlightKey = target.key
     }
+    // A channel that was switched to automatically (backup channel): follow it in the guide,
+    // changing group when the working channel lives somewhere else.
+    val focusChannelRequest by viewModel.focusChannelRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(focusChannelRequest) {
+        val key = focusChannelRequest ?: return@LaunchedEffect
+        val channel = viewModel.channelByKey(key)
+        viewModel.consumeFocusChannelRequest()
+        if (channel == null) return@LaunchedEffect
+        if (channels.none { it.key == key }) {
+            viewModel.groupToShow(channel)?.let { viewModel.selectGroup(it) }
+        }
+        highlightKey = key
+    }
     LaunchedEffect(highlightKey, channels) {
         val key = highlightKey ?: return@LaunchedEffect
         val idx = channels.indexOfFirst { it.key == key }
@@ -1115,8 +1128,9 @@ fun LiveTvGuideScreen(
                             pinGroup = g
                             pinWrong = false
                         } else if (g.id == ChannelGroup.SEARCH) {
-                            LiveTvSearchBridge.origin.value = LiveTvSearchBridge.GUIDE
-                            onOpenNuvioSearch()
+                            // Live TV's search stays in Live TV: channels only, never Nuvio's
+                            // movie/series search.
+                            searchOpen = true
                         } else {
                             if (g.id != ui.selectedGroupId) {
                                 viewModel.selectGroup(g.id)
@@ -1476,7 +1490,7 @@ fun LiveTvGuideScreen(
                                         focusedChannel?.let { menuTarget = MenuTarget(it, focusedBlock) }
                                         true
                                     }
-                                            event.key == Key.Search -> { LiveTvSearchBridge.origin.value = LiveTvSearchBridge.GUIDE; onOpenNuvioSearch(); true }
+                                            event.key == Key.Search -> { searchOpen = true; true }
                                     code in android.view.KeyEvent.KEYCODE_0..android.view.KeyEvent.KEYCODE_9 -> {
                                         if (numberBuffer.length < 5) numberBuffer += (code - android.view.KeyEvent.KEYCODE_0).toString()
                                         true
@@ -2020,7 +2034,7 @@ fun LiveTvGuideScreen(
                 onProgramInfo = { menuTarget = null; infoTarget = target },
                 streamProgram = target.block?.program ?: viewModel.currentProgram(target.channel.key),
                 onFindInNuvio = { p -> menuTarget = null; findInNuvio(p) },
-                onSearch = { menuTarget = null; LiveTvSearchBridge.origin.value = LiveTvSearchBridge.GUIDE; onOpenNuvioSearch() },
+                onSearch = { menuTarget = null; searchOpen = true },
                 onRefresh = { menuTarget = null; viewModel.refresh() },
                 onGuideDisplay = { menuTarget = null; guideGearOpen = true },
                 onSettings = { menuTarget = null; onOpenSettings() }
@@ -2203,6 +2217,7 @@ fun LiveTvGuideScreen(
                 onDismiss = { searchOpen = false },
                 onSearch = { q ->
                     searchOpen = false
+                    groupsOpen = false
                     viewModel.setSearchQuery(q)
                     row = 0
                     resetToNow()

@@ -179,6 +179,9 @@ fun BoxScope.YouTubePlayerPanel(
                             onSeekTo(startMs)
                             onClose()
                         },
+                        onOpenChannel = { item ->
+                            item.channelId?.let { onOpenChannel(it, item.title) }
+                        },
                         onPlayVideo = onPlayVideo,
                         onOpenActions = { mode = PanelMode.MAIN }
                     )
@@ -193,7 +196,7 @@ fun BoxScope.YouTubePlayerPanel(
                 PanelMode.HOME -> Text("Chapters & recommendations", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 PanelMode.MAIN -> {
                     Text(
-                        info?.title ?: "YouTube",
+                        info?.title ?: "OneTube",
                         color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                         maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
@@ -276,7 +279,7 @@ fun BoxScope.YouTubePlayerPanel(
                     })
                     info.channelId?.let { channel ->
                         add(PanelEntry("Open channel", info.author.takeIf(String::isNotBlank)) { onOpenChannel(channel, info.author) })
-                        add(PanelEntry("Hide this channel", "Keeps it off the YouTube page") { viewModel.hideChannel() })
+                        add(PanelEntry("Hide this channel", "Keeps it off the OneTube page") { viewModel.hideChannel() })
                     }
                 }
                 PanelMode.PLAYLISTS -> state.playlists.orEmpty().map { row ->
@@ -316,7 +319,13 @@ fun BoxScope.YouTubePlayerPanel(
                         title = item.title,
                         detail = listOfNotNull(item.author, item.badge).joinToString("  ·  "),
                         titleLines = 2,
-                        onClick = { onPlayVideo(item) }
+                        onClick = {
+                            if (item.kind == YtKind.CHANNEL) {
+                                item.channelId?.let { onOpenChannel(it, item.title) }
+                            } else {
+                                onPlayVideo(item)
+                            }
+                        }
                     )
                 }
             }
@@ -366,11 +375,11 @@ fun BoxScope.YouTubePlayerPanel(
                 Text(it, color = Color(0xFFFFC107), fontSize = 13.sp)
             }
             if (mode == PanelMode.MAIN && !state.signedIn && info != null) {
-                Text("Sign in on the YouTube page to like, subscribe or save.", color = Color.Gray, fontSize = 12.sp)
+                Text("Sign in on the OneTube page to like, subscribe or save.", color = Color.Gray, fontSize = 12.sp)
             }
             if (mode == PanelMode.COMMENTS && entries.isNotEmpty()) {
                 Text(
-                    if (state.signedIn) "Hold OK on a comment to like it." else "Sign in on the YouTube page to like comments.",
+                    if (state.signedIn) "Hold OK on a comment to like it." else "Sign in on the OneTube page to like comments.",
                     color = Color.Gray, fontSize = 12.sp
                 )
             }
@@ -388,6 +397,7 @@ private fun RecommendationsContent(
     firstItemFocusRequester: FocusRequester,
     firstItemUpFocusRequester: FocusRequester? = null,
     onSeekTo: (Long) -> Unit,
+    onOpenChannel: (YtItem) -> Unit,
     onPlayVideo: (YtItem) -> Unit,
     onOpenActions: () -> Unit
 ) {
@@ -441,15 +451,26 @@ private fun RecommendationsContent(
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(related.size) { index ->
-                            val video = related[index]
-                            RecommendationCard(
-                                title = video.title,
-                                detail = listOfNotNull(video.author, video.badge).joinToString(" · "),
-                                thumbnail = video.thumbnail,
-                                focusRequester = if (chapters.isEmpty() && index == 0) firstItemFocusRequester else null,
-                                upFocusRequester = if (chapters.isEmpty() && index == 0) firstItemUpFocusRequester else null,
-                                onClick = { onPlayVideo(video) }
-                            )
+                            val item = related[index]
+                            val focusRequester = if (chapters.isEmpty() && index == 0) firstItemFocusRequester else null
+                            val upFocusRequester = if (chapters.isEmpty() && index == 0) firstItemUpFocusRequester else null
+                            if (item.kind == YtKind.CHANNEL) {
+                                ChannelRecommendationCard(
+                                    channel = item,
+                                    focusRequester = focusRequester,
+                                    upFocusRequester = upFocusRequester,
+                                    onClick = { onOpenChannel(item) }
+                                )
+                            } else {
+                                RecommendationCard(
+                                    title = item.title,
+                                    detail = listOfNotNull(item.author, item.badge).joinToString(" · "),
+                                    thumbnail = item.thumbnail,
+                                    focusRequester = focusRequester,
+                                    upFocusRequester = upFocusRequester,
+                                    onClick = { onPlayVideo(item) }
+                                )
+                            }
                         }
                     }
                 }
@@ -521,6 +542,64 @@ private fun RecommendationCard(
         Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
             Text(title, color = Color.White, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (detail.isNotBlank() && !detail.matches(Regex("\\d+:\\d{2}(:\\d{2})?"))) {
+                Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelRecommendationCard(
+    channel: YtItem,
+    focusRequester: FocusRequester?,
+    upFocusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val focusModifier = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+    Column(
+        modifier = Modifier
+            .then(focusModifier)
+            .then(if (upFocusRequester != null) Modifier.focusProperties { up = upFocusRequester } else Modifier)
+            .width(220.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(RowBg)
+            .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .focusable()
+            .onFocusChanged { focused = it.isFocused }
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(92.dp)
+                .background(Color(0xFF303034))
+        ) {
+            if (!channel.thumbnail.isNullOrBlank()) {
+                AsyncImage(
+                    model = channel.thumbnail,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            Text(
+                "CHANNEL",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Text(channel.title, color = Color.White, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val detail = channel.author ?: channel.meta
+            if (!detail.isNullOrBlank()) {
                 Text(detail, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

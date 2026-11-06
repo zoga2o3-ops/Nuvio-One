@@ -24,6 +24,7 @@ object YouTubeSettings {
     private const val KEY_HIDE_WATCHED = "hide_watched"
     private const val KEY_HIDE_UPCOMING = "hide_upcoming"
     private const val KEY_CODEC = "codec_preference"
+    private const val KEY_COMPATIBILITY = "compatibility_mode"
     private const val KEY_AUTO_SUBTITLES = "auto_subtitles"
     private const val KEY_VIDEO_PREVIEWS = "video_previews"
     private const val KEY_CONTENT_REGION = "content_region"
@@ -275,7 +276,7 @@ object YouTubeSettings {
             "avc" -> listOf(avc, vp9, av1)
             "vp9" -> listOf(vp9, avc, av1)
             "av1" -> listOf(av1, vp9, avc)
-            else -> listOf(vp9, avc, av1)
+            else -> if (compatibilityActive(context)) listOf(avc, vp9, av1) else listOf(vp9, avc, av1)
         }
     }
 
@@ -287,4 +288,113 @@ object YouTubeSettings {
     }
 
     fun qualityLabel(height: Int) = if (height <= 0) "Auto" else "${height}p"
+
+    /**
+     * The order the settings row cycles through. On a device using compatibility, the safe
+     * capped size comes first; the higher sizes stay available but are a deliberate later choice.
+     */
+    fun qualityCycle(context: Context): List<Int> {
+        if (!compatibilityActive(context)) return qualityChoices
+        val cap = compatibilityMaxHeight(context)
+        val lower = qualityChoices.filter { it in 1 until cap }.sortedDescending()
+        val higher = qualityChoices.filter { it > cap }.sorted()
+        return listOf(0, cap) + lower + higher
+    }
+
+    // ------------------------------------------------------------ device compatibility
+
+    /** Auto lets the detected device profile decide; On and Off force it. */
+    fun compatibilityMode(context: Context): String =
+        prefs(context).getString(KEY_COMPATIBILITY, COMPATIBILITY_AUTO)
+            ?.takeIf { it in setOf(COMPATIBILITY_AUTO, COMPATIBILITY_ON, COMPATIBILITY_OFF) }
+            ?: COMPATIBILITY_AUTO
+
+    fun setCompatibilityMode(context: Context, mode: String) {
+        val safe = mode.takeIf { it in setOf(COMPATIBILITY_AUTO, COMPATIBILITY_ON, COMPATIBILITY_OFF) }
+            ?: COMPATIBILITY_AUTO
+        prefs(context).edit().putString(KEY_COMPATIBILITY, safe).apply()
+    }
+
+    fun compatibilityActive(context: Context): Boolean = when (compatibilityMode(context)) {
+        COMPATIBILITY_ON -> true
+        COMPATIBILITY_OFF -> false
+        else -> YouTubeCompatibility.deviceProfile(context).needsCompatibility
+    }
+
+    fun compatibilityMaxHeight(context: Context): Int =
+        YouTubeCompatibility.deviceProfile(context).compatibilityHeight
+
+    fun compatibilityLabel(context: Context, mode: String = compatibilityMode(context)): String = when (mode) {
+        COMPATIBILITY_ON -> "On"
+        COMPATIBILITY_OFF -> "Off"
+        else -> if (compatibilityActive(context)) "Auto (${compatibilityMaxHeight(context)}p)" else "Auto"
+    }
+
+    fun compatibilityDescription(context: Context, mode: String = compatibilityMode(context)): String = when (mode) {
+        COMPATIBILITY_ON ->
+            "Always prefer H.264 and cap the starting quality for smoother playback."
+        COMPATIBILITY_OFF ->
+            "Full codec and quality selection. Pick Automatic to let this device choose again."
+        else -> {
+            val profile = YouTubeCompatibility.deviceProfile(context)
+            if (profile.needsCompatibility) {
+                "This device starts with H.264 and ${profile.compatibilityHeight}p (${profile.reason.lowercase()})."
+            } else {
+                "This device can use its best codecs and resolution."
+            }
+        }
+    }
+
+    /**
+     * The size the player should start at. An explicit choice always wins; Auto follows the
+     * compatibility profile.
+     */
+    fun effectivePreferredHeight(context: Context): Int {
+        val saved = preferredHeight(context)
+        val mode = compatibilityMode(context)
+        // A size the viewer picked explicitly always wins. The compatibility cap only decides
+        // what "Auto" means for this device, unless compatibility is forced on.
+        if (saved > 0) {
+            return if (mode == COMPATIBILITY_ON && saved > compatibilityMaxHeight(context)) {
+                compatibilityMaxHeight(context)
+            } else {
+                saved
+            }
+        }
+        return if (mode == COMPATIBILITY_ON || (mode == COMPATIBILITY_AUTO && compatibilityActive(context))) {
+            compatibilityMaxHeight(context)
+        } else {
+            0
+        }
+    }
+
+    /**
+     * Picking a size above the compatibility cap is an explicit request for the full quality
+     * path, so compatibility is switched off for this device from then on.
+     */
+    fun onUserSelectedQuality(context: Context, height: Int) {
+        if (height == 0) {
+            if (compatibilityMode(context) == COMPATIBILITY_OFF) setCompatibilityMode(context, COMPATIBILITY_AUTO)
+            return
+        }
+        if (height > compatibilityMaxHeight(context) && compatibilityActive(context)) {
+            setCompatibilityMode(context, COMPATIBILITY_OFF)
+        }
+    }
+
+    /** Choosing VP9/AV1 explicitly also means the user wants the full codec path. */
+    fun onUserSelectedCodec(context: Context, codec: String) {
+        when (codec) {
+            "vp9", "av1" -> if (compatibilityActive(context)) {
+                setCompatibilityMode(context, COMPATIBILITY_OFF)
+            }
+            "auto" -> if (compatibilityMode(context) == COMPATIBILITY_OFF) {
+                setCompatibilityMode(context, COMPATIBILITY_AUTO)
+            }
+        }
+    }
+
+    private const val COMPATIBILITY_AUTO = "auto"
+    private const val COMPATIBILITY_ON = "on"
+    private const val COMPATIBILITY_OFF = "off"
 }

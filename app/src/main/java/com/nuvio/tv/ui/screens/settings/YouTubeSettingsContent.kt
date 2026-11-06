@@ -1,5 +1,6 @@
 package com.nuvio.tv.ui.screens.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.activity.compose.BackHandler
@@ -72,6 +73,7 @@ internal fun YouTubeSettingsContent(
     var hideWatched by remember { mutableStateOf(YouTubeSettings.hideWatched(context)) }
     var hideUpcoming by remember { mutableStateOf(YouTubeSettings.hideUpcoming(context)) }
     var codec by remember { mutableStateOf(YouTubeSettings.codecPreference(context)) }
+    var compatibility by remember { mutableStateOf(YouTubeSettings.compatibilityMode(context)) }
     var contentRegion by remember { mutableStateOf(YouTubeSettings.contentRegion(context)) }
     var showContentRegion by remember { mutableStateOf(false) }
     var posterColumns by remember { mutableStateOf(YouTubeSettings.posterColumns(context)) }
@@ -82,8 +84,8 @@ internal fun YouTubeSettingsContent(
         verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
     ) {
         SettingsDetailHeader(
-            title = "YouTube",
-            subtitle = "Sign in to see your subscriptions and watch history in the YouTube section"
+            title = "OneTube",
+            subtitle = "Sign in to see your subscriptions and watch history in the OneTube section"
         )
 
         SettingsGroupCard(title = "Account") {
@@ -112,7 +114,7 @@ internal fun YouTubeSettingsContent(
                 state.signedIn -> {
                     SettingsActionRow(
                         title = "Signed in",
-                        subtitle = state.accountName ?: "Your YouTube account is connected",
+                        subtitle = state.accountName ?: "Your OneTube account is connected",
                         onClick = {},
                         enabled = false
                     )
@@ -139,7 +141,7 @@ internal fun YouTubeSettingsContent(
         SettingsGroupCard(title = "Header") {
             SettingsToggleRow(
                 title = "Clock",
-                subtitle = "Show the time in the middle of the YouTube header",
+                subtitle = "Show the time in the OneTube header",
                 checked = clockOn,
                 onToggle = {
                     clockOn = !clockOn
@@ -151,7 +153,7 @@ internal fun YouTubeSettingsContent(
         SettingsGroupCard(title = "Playback") {
             SettingsToggleRow(
                 title = "Thumbnail previews with sound",
-                subtitle = "Play a preview when you pause on a YouTube video",
+                subtitle = "Play a preview when you pause on a OneTube video",
                 checked = videoPreviews,
                 onToggle = {
                     videoPreviews = !videoPreviews
@@ -160,7 +162,7 @@ internal fun YouTubeSettingsContent(
             )
             SettingsToggleRow(
                 title = "Automatically select subtitles",
-                subtitle = "Start YouTube videos with your preferred subtitles when available",
+                subtitle = "Start OneTube videos with your preferred subtitles when available",
                 checked = autoSubtitles,
                 onToggle = {
                     autoSubtitles = !autoSubtitles
@@ -175,7 +177,7 @@ internal fun YouTubeSettingsContent(
             )
             SettingsActionRow(
                 title = "Posters per row",
-                subtitle = "How many videos fit across the YouTube grids",
+                subtitle = "How many videos fit across the OneTube grids",
                 value = "$posterColumns",
                 onClick = {
                     posterColumns = if (posterColumns >= 5) 3 else posterColumns + 1
@@ -184,7 +186,7 @@ internal fun YouTubeSettingsContent(
             )
             SettingsToggleRow(
                 title = "Autoplay next video",
-                subtitle = "When a video ends, play YouTube's related video, or the next one in the list",
+                subtitle = "When a video ends, play a related video, or the next one in the list",
                 checked = autoplay,
                 onToggle = {
                     autoplay = !autoplay
@@ -192,23 +194,68 @@ internal fun YouTubeSettingsContent(
                 }
             )
             SettingsActionRow(
+                title = "Device compatibility",
+                subtitle = YouTubeSettings.compatibilityDescription(context, compatibility),
+                value = YouTubeSettings.compatibilityLabel(context, compatibility),
+                onClick = {
+                    val next = when (compatibility) {
+                        "auto" -> "on"
+                        "on" -> "off"
+                        else -> "auto"
+                    }
+                    YouTubeSettings.setCompatibilityMode(context, next)
+                    compatibility = next
+                }
+            )
+            SettingsActionRow(
                 title = "Video format",
-                subtitle = "Auto prefers VP9, then H.264, and leaves AV1 for last. Pick H.264 if video stutters.",
+                subtitle = if (YouTubeSettings.compatibilityActive(context))
+                    "Auto uses H.264 on this device for smoother playback. Pick H.264 if video stutters."
+                else "Auto prefers VP9, then H.264, and leaves AV1 for last. Pick H.264 if video stutters.",
                 value = YouTubeSettings.codecLabel(codec),
                 onClick = {
+                    val before = compatibility
                     val choices = YouTubeSettings.codecChoices
                     codec = choices[(choices.indexOf(codec).coerceAtLeast(0) + 1) % choices.size]
                     YouTubeSettings.setCodecPreference(context, codec)
+                    YouTubeSettings.onUserSelectedCodec(context, codec)
+                    compatibility = YouTubeSettings.compatibilityMode(context)
+                    if (before != "off" && compatibility == "off") {
+                        Toast.makeText(
+                            context,
+                            "Compatibility mode off for full codec quality",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                 }
             )
             SettingsActionRow(
                 title = "Default quality",
-                subtitle = "The video size to start at. You can still change it in the player.",
+                subtitle = if (quality <= 0 && YouTubeSettings.compatibilityActive(context))
+                    "Auto currently starts at ${YouTubeSettings.compatibilityMaxHeight(context)}p on this device. You can still change it in the player."
+                else "The video size to start at. You can still change it in the player.",
                 value = YouTubeSettings.qualityLabel(quality),
                 onClick = {
-                    val choices = YouTubeSettings.qualityChoices
+                    val before = compatibility
+                    val choices = YouTubeSettings.qualityCycle(context)
                     quality = choices[(choices.indexOf(quality).coerceAtLeast(0) + 1) % choices.size]
                     YouTubeSettings.setPreferredHeight(context, quality)
+                    YouTubeSettings.onUserSelectedQuality(context, quality)
+                    compatibility = YouTubeSettings.compatibilityMode(context)
+                    when {
+                        before != "off" && compatibility == "off" ->
+                            Toast.makeText(
+                                context,
+                                "Compatibility mode off for higher quality",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        before == "off" && compatibility == "auto" && quality <= 0 ->
+                            Toast.makeText(
+                                context,
+                                "Compatibility mode back on Automatic",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                    }
                 }
             )
         }
@@ -239,7 +286,7 @@ internal fun YouTubeSettingsContent(
 
         SettingsGroupCard(
             title = "Feeds",
-            subtitle = "Leave things out of the YouTube page. History always shows everything you've watched."
+            subtitle = "Leave things out of the OneTube page. History always shows everything you've watched."
         ) {
             SettingsToggleRow(
                 title = "Hide Shorts",
@@ -272,7 +319,7 @@ internal fun YouTubeSettingsContent(
 
         SettingsGroupCard(
             title = "Hidden words and channels",
-            subtitle = "Videos with these words in the title or channel name, and these channels, stay off the YouTube page"
+            subtitle = "Videos with these words in the title or channel name, and these channels, stay off the OneTube page"
         ) {
             // The keyboard only opens once you choose to type, not when you scroll past the field.
             if (!addingWord) {
@@ -340,7 +387,7 @@ internal fun YouTubeSettingsContent(
             }
             if (hiddenWords.isEmpty() && hiddenChannels.isEmpty()) {
                 Text(
-                    text = "Nothing hidden yet. Hide a channel from the YouTube panel in the player.",
+                    text = "Nothing hidden yet. Hide a channel from the OneTube panel in the player.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = NuvioTheme.colors.TextSecondary,
                     modifier = Modifier.padding(vertical = NuvioTheme.spacing.sm)
@@ -350,7 +397,7 @@ internal fun YouTubeSettingsContent(
 
         SettingsGroupCard(
             title = "Tabs",
-            subtitle = "Choose which tabs show along the top of the YouTube page"
+            subtitle = "Choose which tabs show along the top of the OneTube page"
         ) {
             SettingsToggleRow(
                 title = "Open on the last tab used",

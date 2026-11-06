@@ -159,6 +159,24 @@ fun SportsSettingsContent(
             }
             item(key = "reminders") {
                 SettingsGroupCard(title = "Reminders") {
+                    if ((f.teams.isNotEmpty() || f.leagues.isNotEmpty()) && !s.scoringAlerts) {
+                        SettingsActionRow(
+                            title = "Goal Alerts Are Off",
+                            subtitle = "You follow teams or leagues but won't get a card when they score.",
+                            value = "Turn On",
+                            leadingIcon = Icons.Default.Notifications,
+                            onClick = { update { it.copy(scoringAlerts = true) } }
+                        )
+                    }
+                    if (s.scoringAlerts && s.hideScores) {
+                        SettingsActionRow(
+                            title = "Goal Cards Are Hidden",
+                            subtitle = "Hide Scores is on, so scoring alerts can't appear.",
+                            value = "Show",
+                            leadingIcon = Icons.Default.Notifications,
+                            onClick = { update { it.copy(hideScores = false) } }
+                        )
+                    }
                     SettingsToggleRow(
                         "Remind Me About My Teams",
                         "A message before your teams play, with a button to watch. Games you set a reminder on are always reminded",

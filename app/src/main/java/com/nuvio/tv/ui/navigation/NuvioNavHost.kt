@@ -84,7 +84,7 @@ private fun youtubePlayerRoute(v: com.nuvio.tv.youtube.YtPlayable): String =
         contentType = "youtube",
         contentName = v.title,
         poster = v.poster,
-        addonName = "YouTube",
+        addonName = "OneTube",
         youtubeLive = v.isLive
     )
 
@@ -1158,6 +1158,7 @@ private fun PlaybackNavHost(
                 youtubeLive = ytState.info?.isLive == true,
                 youtubeSubscribed = ytState.info?.subscribed == true,
                 youtubeChannelImage = ytState.info?.authorImage,
+                youtubeChannelName = ytState.info?.author,
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
                 onYouTubeChannel = ytState.info?.channelId?.let { channel ->
                     {

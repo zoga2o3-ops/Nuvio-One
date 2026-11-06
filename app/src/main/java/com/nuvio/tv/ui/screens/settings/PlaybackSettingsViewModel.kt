@@ -164,6 +164,10 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setLoadingOverlayEnabled(enabled)
     }
 
+    suspend fun setSeekPreviewEnabled(enabled: Boolean) {
+        playerSettingsDataStore.setSeekPreviewEnabled(enabled)
+    }
+
     suspend fun setShowPlayerLoadingStatus(enabled: Boolean) {
         playerSettingsDataStore.setShowPlayerLoadingStatus(enabled)
     }

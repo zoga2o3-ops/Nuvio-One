@@ -174,7 +174,7 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     // Live TV fork
     SettingsCategory.LIVE_TV -> SettingsSectionSpec(category, "Live TV", Icons.Default.LiveTv, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SPORTS -> SettingsSectionSpec(category, "Sports", Icons.Default.EmojiEvents, destination = SettingsSectionDestination.Inline)
-    SettingsCategory.YOUTUBE -> SettingsSectionSpec(category, "YouTube", Icons.Default.PlayCircle, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.YOUTUBE -> SettingsSectionSpec(category, "OneTube", Icons.Default.PlayCircle, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SIDE_MENU -> SettingsSectionSpec(category, "Menu & Features", Icons.Default.Menu, destination = SettingsSectionDestination.Inline)
     SettingsCategory.CALENDAR -> SettingsSectionSpec(category, "Calendar", Icons.Default.DateRange, destination = SettingsSectionDestination.Inline)
     SettingsCategory.EXPERIENCE -> SettingsSectionSpec(category, stringResource(R.string.settings_experience), Icons.Default.Tune, destination = SettingsSectionDestination.Inline)

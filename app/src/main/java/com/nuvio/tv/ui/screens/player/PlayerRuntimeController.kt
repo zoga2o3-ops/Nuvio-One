@@ -612,6 +612,7 @@ class PlayerRuntimeController(
     internal var pendingSeekFlush: Boolean = false
     internal var suppressBufferingUiForSeek: Boolean = false
     internal var isScrubbingModeActive: Boolean = false
+    internal var scrubbingModeResetJob: Job? = null
     internal var seekBufferingUiJob: Job? = null
     internal var seekBufferingUiDeferred: Boolean = false
     internal val seekBufferingUiDelayMs = 1000L

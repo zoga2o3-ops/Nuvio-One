@@ -226,6 +226,11 @@ class PlayerViewModel @Inject constructor(
     fun getCurrentStreamUrl(): String = controller.getCurrentStreamUrl()
     fun isYouTubePlayback(): Boolean = com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(controller.contentId)
 
+    /** The YouTube video id behind this playback, if it is a OneTube video. */
+    fun youtubeVideoId(): String? = controller.contentId
+        ?.takeIf { com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(it) }
+        ?.removePrefix(com.nuvio.tv.youtube.YouTubeProgress.ID_PREFIX)
+
     fun getCurrentHeaders(): Map<String, String> = controller.getCurrentHeaders()
 
     fun getCurrentFileSizeBytes(): Long? = controller.currentVideoSize

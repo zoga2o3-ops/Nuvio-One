@@ -2,13 +2,26 @@ package com.nuvio.tv.youtube
 
 import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +32,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -35,6 +52,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,12 +64,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -67,6 +90,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -74,17 +98,23 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.nuvio.tv.R
 import com.nuvio.tv.ui.components.NuvioDialog
+import com.nuvio.tv.ui.screens.settings.DebugReportDialog
 import java.util.Date
+import kotlin.math.abs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import coil3.compose.AsyncImage
 import com.nuvio.tv.core.qr.QrCodeGenerator
 
@@ -96,6 +126,7 @@ private val CardBg = Color(0xFF1C1C1E)
  * the top, then rows or a grid. Videos play in Nuvio's own player via [onPlay]; nothing here feeds
  * Home or Continue Watching.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YouTubeScreen(
     onPlay: (YtPlayable) -> Unit,
@@ -106,6 +137,12 @@ fun YouTubeScreen(
     val error by viewModel.error.collectAsState()
     val cardMenu by viewModel.menu.collectAsState()
     var query by remember { mutableStateOf("") }
+    // OneTube sits slightly smaller than the rest of the app, so a 1080p TV shows more cards
+    // and the header/tabs stop feeling oversized. Everything inside the page scales together.
+    val baseDensity = LocalDensity.current
+    val contentDensity = remember(baseDensity) {
+        Density(baseDensity.density * 0.90f, baseDensity.fontScale)
+    }
 
     // Signing in happens on this page: the code shows here and the tab reloads when it's approved.
     val accountViewModel: YouTubeAccountViewModel = hiltViewModel()
@@ -117,17 +154,52 @@ fun YouTubeScreen(
     val firstSuggestion = remember { FocusRequester() }
     // Search stays a magnifier until it's opened, so the header isn't dominated by a text box.
     var searchExpanded by remember { mutableStateOf(false) }
+    var searchEditing by remember { mutableStateOf(false) }
     var collapseToSearchIcon by remember { mutableStateOf(false) }
     // Scrolling down through the cards collapses the header and tab strip so more cards fit.
     var headerHidden by remember { mutableStateOf(false) }
     var headerHideSuppressedUntil by remember { mutableLongStateOf(0L) }
     var focusHeaderAfterBack by remember { mutableStateOf(false) }
-    var focusHeaderSearchAfterTop by remember { mutableStateOf(false) }
+    var showDebugReport by remember { mutableStateOf(false) }
     val selectedTabFocus = remember { FocusRequester() }
     val searchIconFocus = remember { FocusRequester() }
+    // Down from any tab should land on the first video card, not whichever card happens
+    // to sit underneath that tab.
+    val firstCardFocus = remember { FocusRequester() }
+    val tabsDownFocus = if (state.rows.isNotEmpty() || state.grid.isNotEmpty()) firstCardFocus else null
+    // Down from the header should land on the tab you're actually on, not whichever tab
+    // happens to sit underneath the search icon.
+    val headerDownFocus = if (state.subTitle == null) selectedTabFocus else null
+    // Kept outside the collapsing band so the tab strip doesn't jump back to the start when the
+    // header is shown again.
+    val tabScrollState = rememberScrollState()
+    // Keep focused tabs where they are when they're already fully visible. The default
+    // bring-into-view spec centres them, which used to scroll Home off-screen just for pressing
+    // Up on the first card.
+    val tabDensity = contentDensity
+    val defaultBringIntoViewSpec = LocalBringIntoViewSpec.current
+    val tabBringIntoViewSpec = remember(tabDensity, defaultBringIntoViewSpec) {
+        val margin = with(tabDensity) { 8.dp.toPx() }
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+        object : BringIntoViewSpec {
+            override val scrollAnimationSpec = defaultBringIntoViewSpec.scrollAnimationSpec
+            override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+                if (containerSize <= 0f) return 0f
+                val end = offset + abs(size)
+                return when {
+                    offset < margin -> offset - margin
+                    end > containerSize - margin -> end - (containerSize - margin)
+                    else -> 0f
+                }
+            }
+        }
+    }
 
     // The tabs you've left on in Settings. Read each time you come to the page.
     val appContext = androidx.compose.ui.platform.LocalContext.current
+    // The centred logo needs room either side of it; on a narrower TV the account chip steps
+    // aside while the search box is open instead of colliding with the title.
+    val compactHeader = appContext.resources.configuration.screenWidthDp < 1100
     val tabs = remember { YouTubeSettings.visibleTabs(appContext) }
     var pinnedPlaylists by remember { mutableStateOf(YouTubeSettings.pinnedPlaylists(appContext)) }
     // Pinning or unpinning happens in the card menu; refresh the row when that closes.
@@ -169,6 +241,15 @@ fun YouTubeScreen(
     val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
     val openSidebar = com.nuvio.tv.LocalOpenSidebar.current
 
+    // Leaving the search behind (another tab, a card, settings) should put the magnifier back,
+    // not leave a text box sitting in the header of the next page.
+    fun collapseSearch() {
+        keyboard?.hide()
+        suggestionsOpen = false
+        searchEditing = false
+        searchExpanded = false
+    }
+
     // After the search box closes, the remote's highlight goes back to the magnifier.
     LaunchedEffect(collapseToSearchIcon) {
         if (collapseToSearchIcon) {
@@ -193,188 +274,267 @@ fun YouTubeScreen(
 
     LaunchedEffect(focusHeaderAfterBack, headerHidden) {
         if (focusHeaderAfterBack && !headerHidden) {
-            delay(60)
-            runCatching { selectedTabFocus.requestFocus() }
+            // The header expands with an animation, so the selected tab may not be placed on
+            // the first frame. Keep asking across a few frames until focus actually lands.
+            repeat(8) {
+                delay(30)
+                if (runCatching { selectedTabFocus.requestFocus() }.isSuccess) {
+                    focusHeaderAfterBack = false
+                    return@LaunchedEffect
+                }
+            }
             focusHeaderAfterBack = false
         }
     }
-    LaunchedEffect(focusHeaderSearchAfterTop, headerHidden) {
-        if (focusHeaderSearchAfterTop && !headerHidden) {
-            delay(60)
-            runCatching { searchIconFocus.requestFocus() }
-            focusHeaderSearchAfterTop = false
-        }
-    }
 
-    Column(Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, top = 20.dp)) {
-        if (!headerHidden) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+    CompositionLocalProvider(LocalDensity provides contentDensity) {
+    Column(Modifier.fillMaxSize().padding(start = 28.dp, end = 28.dp, top = 16.dp)) {
+        // The header and tab strip share one collapsing band, so the cards get the full screen
+        // height while browsing and the whole header comes back on one press.
+        AnimatedVisibility(
+            visible = !headerHidden,
+            enter = expandVertically(tween(220)) + fadeIn(tween(160)),
+            exit = shrinkVertically(tween(200)) + fadeOut(tween(120))
         ) {
-            // The left half: who's watching, then the page name.
-            Row(
-                Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Who's watching: the account or channel profile in use. Sign in when there's none.
-                // First in the row, so pressing up from the first tab lands straight on it.
-                TabChip(
-                    label = when {
-                        account.signedIn -> "●  ${account.accountName ?: "Account"}"
-                        !account.checked -> "Account"
-                        else -> "Sign in"
-                    },
-                    selected = false
-                ) {
-                    if (account.signedIn) showAccounts = !showAccounts
-                    else {
-                        signInStarted = true
-                        accountViewModel.startSignIn()
+            Column {
+                Box(Modifier.fillMaxWidth().height(64.dp)) {
+                    // Clock on the far left, when it's on in Settings.
+                    if (YouTubeSettings.showClock(appContext)) {
+                        HeaderClock(Modifier.align(Alignment.CenterStart))
                     }
-                }
-                Text(
-                    state.subTitle ?: "YouTube",
-                    color = Color.White,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            // The time, dead centre, when it's on in Settings.
-            if (YouTubeSettings.showClock(appContext)) HeaderClock()
-            var editing by remember { mutableStateOf(false) }
-            // The right half: the search and the settings gear, together at the end.
-            Row(
-                Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.End)
-            ) {
-                if (!searchExpanded) {
-                    IconChip(Icons.Default.Search, "Search", searchIconFocus) {
-                        searchExpanded = true
-                        editing = false
-                    }
-                } else {
-                    // The box is selected like any other item on the page (it's just something the arrows land on),
-                    // and only starts taking text, with the keyboard, once OK is pressed on it.
-                    var boxFocused by remember { mutableStateOf(false) }
-                    var textPlaced by remember { mutableStateOf(false) }
-                    val textFocus = remember { FocusRequester() }
-                    LaunchedEffect(Unit) {
-                        // Focus the search box itself when it opens; this is what prevents the
-                        // account chip from taking focus when the magnifier disappears.
-                        repeat(6) {
-                            delay(30)
-                            if (runCatching { searchIconFocus.requestFocus() }.isSuccess) {
-                                return@LaunchedEffect
-                            }
-                        }
-                    }
-                    LaunchedEffect(editing, textPlaced) {
-                        if (editing && textPlaced) {
-                            // Focus restoration after the search icon disappears can land on the
-                            // account chip. Keep asking for the field across a few frames until
-                            // it actually owns focus.
-                            repeat(6) {
-                                delay(30)
-                                if (runCatching { textFocus.requestFocus() }.isSuccess) {
-                                    keyboard?.show()
-                                    return@LaunchedEffect
-                                }
-                            }
-                            keyboard?.show()
-                        }
-                    }
-                    // Back out of the search: the keyboard goes, the suggestions close, and the
-                    // magnifier takes its place again. The query is kept for the next time it opens.
-                    BackHandler {
-                        keyboard?.hide()
-                        suggestionsOpen = false
-                        editing = false
-                        searchExpanded = false
-                        collapseToSearchIcon = true
-                    }
-                    Box(
+                    // The OneTube tile and page name sit dead centre, whatever is either side.
+                    Row(
                         Modifier
-                            .width(320.dp)
-                            .focusRequester(searchIconFocus)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(CardBg)
-                            .border(2.dp, if (boxFocused || editing) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
-                            // Down from the box goes into the suggestions when they're showing.
-                            .focusProperties { if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion }
-                            .onFocusChanged { boxFocused = it.isFocused }
-                            .clickable(
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                                indication = null
-                            ) { editing = true }
-                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                            .align(Alignment.Center)
+                            .widthIn(max = if (searchExpanded) 220.dp else 320.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        BasicTextField(
-                            value = query,
-                            onValueChange = {
-                                query = it
-                                viewModel.suggest(it)
-                            },
-                            singleLine = true,
-                            textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
-                            cursorBrush = SolidColor(Color.White),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                // Close the keyboard and move on to the results.
-                                keyboard?.hide()
-                                suggestionsOpen = false
-                                editing = false
-                                focusManager.moveFocus(FocusDirection.Down)
-                                viewModel.search(query)
-                            }),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .onPlaced { textPlaced = true }
-                                .focusRequester(textFocus)
-                                // Only while typing: the arrows never land inside the text field by themselves.
-                                .focusProperties {
-                                    canFocus = editing
-                                    if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion
-                                }
-                                .onFocusChanged {
-                                    if (it.isFocused) {
-                                        suggestionsOpen = true
-                                        viewModel.suggest(query)
-                                    } else if (editing) {
-                                        // Focus left the box (down into the suggestions, say): done typing.
-                                        editing = false
-                                    }
-                                },
-                            decorationBox = { inner ->
-                                if (query.isEmpty()) Text("Search YouTube", color = Color.Gray, fontSize = 18.sp)
-                                inner()
-                            }
+                        Image(
+                            painter = painterResource(R.drawable.onetube_mark_red),
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            state.subTitle ?: "OneTube",
+                            color = Color.White,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
+                    // Search, settings and the account, together at the end.
+                    Row(
+                        Modifier.align(Alignment.CenterEnd),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (!searchExpanded) {
+                            IconChip(
+                                Icons.Default.Search,
+                                "Search",
+                                searchIconFocus,
+                                downFocusRequester = headerDownFocus
+                            ) {
+                                searchExpanded = true
+                                // Open straight into typing: the field takes focus and the
+                                // keyboard comes up without an extra OK press.
+                                searchEditing = true
+                            }
+                        } else {
+                            // The box is selected like any other item on the page (it's just something the arrows land on),
+                            // and only starts taking text, with the keyboard, once OK is pressed on it.
+                            var boxFocused by remember { mutableStateOf(false) }
+                            var boxHadFocus by remember { mutableStateOf(false) }
+                            var textPlaced by remember { mutableStateOf(false) }
+                            // The field gets a focus-lost callback as it enters composition. Only
+                            // leave typing mode after it has actually held focus and then lost it.
+                            var hadTextFocus by remember { mutableStateOf(false) }
+                            val textFocus = remember { FocusRequester() }
+                            LaunchedEffect(searchEditing, textPlaced) {
+                                if (searchEditing && textPlaced) {
+                                    // Focus restoration after the search icon disappears can land on the
+                                    // account chip. Keep asking for the field across a few frames until
+                                    // it actually owns focus.
+                                    repeat(6) {
+                                        delay(30)
+                                        if (runCatching { textFocus.requestFocus() }.isSuccess) {
+                                            keyboard?.show()
+                                            return@LaunchedEffect
+                                        }
+                                    }
+                                    keyboard?.show()
+                                }
+                            }
+                            // Back out of the search: the keyboard goes, the suggestions close, and the
+                            // magnifier takes its place again. The query is kept for the next time it opens.
+                            BackHandler {
+                                keyboard?.hide()
+                                suggestionsOpen = false
+                                searchEditing = false
+                                searchExpanded = false
+                                collapseToSearchIcon = true
+                            }
+                            Box(
+                                Modifier
+                                    .width(280.dp)
+                                    .focusRequester(searchIconFocus)
+                                    .clip(RoundedCornerShape(24.dp))
+                                    .background(CardBg)
+                                    .border(2.dp, if (boxFocused || searchEditing) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
+                                    // Down from the box goes into the suggestions when they're showing.
+                                    .focusProperties {
+                                        if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion
+                                        else if (headerDownFocus != null) down = headerDownFocus
+                                    }
+                                    .onFocusChanged { focusState ->
+                                        boxFocused = focusState.isFocused
+                                        // Moving focus out to the page (not down into a visible
+                                        // suggestion list) means the search is done: collapse it.
+                                        if (boxHadFocus && !focusState.hasFocus &&
+                                            !(suggestionsOpen && suggestions.isNotEmpty())
+                                        ) {
+                                            searchEditing = false
+                                            searchExpanded = false
+                                        }
+                                        boxHadFocus = focusState.hasFocus
+                                    }
+                                    .clickable(
+                                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                        indication = null
+                                    ) { searchEditing = true }
+                                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                            ) {
+                                BasicTextField(
+                                    value = query,
+                                    onValueChange = {
+                                        query = it
+                                        viewModel.suggest(it)
+                                    },
+                                    singleLine = true,
+                                    textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
+                                    cursorBrush = SolidColor(Color.White),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = {
+                                        // Close the keyboard and move on to the results.
+                                        keyboard?.hide()
+                                        suggestionsOpen = false
+                                        searchEditing = false
+                                        focusManager.moveFocus(FocusDirection.Down)
+                                        viewModel.search(query)
+                                    }),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onPlaced { textPlaced = true }
+                                        .focusRequester(textFocus)
+                                        // Only while typing: the arrows never land inside the text field by themselves.
+                                        .focusProperties {
+                                            canFocus = searchEditing
+                                            if (suggestionsOpen && suggestions.isNotEmpty()) {
+                                                down = firstSuggestion
+                                            } else if (headerDownFocus != null) {
+                                                down = headerDownFocus
+                                            }
+                                        }
+                                        .onFocusChanged {
+                                            if (it.isFocused) {
+                                                hadTextFocus = true
+                                                suggestionsOpen = true
+                                                viewModel.suggest(query)
+                                            } else if (hadTextFocus && searchEditing) {
+                                                // Focus left the box (down into the suggestions, say): done typing.
+                                                hadTextFocus = false
+                                                searchEditing = false
+                                                // With no suggestion list to browse, the arrows have moved on to the
+                                                // page itself, so put the magnifier back instead of leaving the box open.
+                                                if (!(suggestionsOpen && suggestions.isNotEmpty())) {
+                                                    searchExpanded = false
+                                                }
+                                            }
+                                        },
+                                    decorationBox = { inner ->
+                                        if (query.isEmpty()) Text("Search OneTube", color = Color.Gray, fontSize = 18.sp)
+                                        inner()
+                                    }
+                                )
+                            }
+                        }
+                        IconChip(
+                            Icons.Default.Settings,
+                            "OneTube settings",
+                            downFocusRequester = headerDownFocus
+                        ) {
+                            collapseSearch()
+                            onOpenSettings()
+                        }
+                        IconChip(
+                            Icons.Default.BugReport,
+                            "Send debug report",
+                            downFocusRequester = headerDownFocus
+                        ) {
+                            collapseSearch()
+                            showDebugReport = true
+                        }
+                        // While the search box is open it takes the room the account chip would
+                        // use, so the centred title never collides with the controls.
+                        if (!searchExpanded) {
+                            AccountChip(
+                                label = when {
+                                    account.signedIn -> account.accountName ?: "Account"
+                                    !account.checked -> "Account"
+                                    else -> "Sign in"
+                                },
+                                signedIn = account.signedIn,
+                                downFocusRequester = headerDownFocus
+                            ) {
+                                if (account.signedIn) showAccounts = !showAccounts
+                                else {
+                                    signInStarted = true
+                                    accountViewModel.startSignIn()
+                                }
+                            }
+                        }
+                    }
                 }
-                IconChip(Icons.Default.Settings, "YouTube settings") { onOpenSettings() }
-            }
-        }
 
-        LazyRow(
-            Modifier.padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(tabs) { tab ->
-                TabChip(
-                    tab.title,
-                    selected = state.tab == tab && state.subTitle == null,
-                    focusRequester = if (state.tab == tab) selectedTabFocus else null
-                ) {
-                    query = ""
-                    suggestionsOpen = false
-                    viewModel.selectTab(tab)
+                // The tabs stay centred under the header. If the enabled tabs are wider than the
+                // screen the row still scrolls normally instead of clipping the first tab.
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val tabsMaxWidth = maxWidth
+                    CompositionLocalProvider(LocalBringIntoViewSpec provides tabBringIntoViewSpec) {
+                    Box(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier
+                                .horizontalScroll(tabScrollState)
+                                .widthIn(min = tabsMaxWidth)
+                                .wrapContentWidth(Alignment.CenterHorizontally)
+                                .padding(top = 8.dp, bottom = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            tabs.forEach { tab ->
+                                TabChip(
+                                    tab.title,
+                                    selected = state.tab == tab && state.subTitle == null,
+                                    focusRequester = if (state.tab == tab) selectedTabFocus else null,
+                                    downFocusRequester = tabsDownFocus
+                                ) {
+                                    query = ""
+                                    collapseSearch()
+                                    viewModel.selectTab(tab)
+                                }
+                            }
+                        }
+                        // With every tab switched on the strip can be wider than the TV; the
+                        // chevrons say there are more tabs that way instead of leaving them hidden.
+                        if (tabScrollState.value > 0) {
+                            RowScrollCue(Alignment.CenterStart, Icons.AutoMirrored.Filled.KeyboardArrowLeft)
+                        }
+                        if (tabScrollState.value < tabScrollState.maxValue) {
+                            RowScrollCue(Alignment.CenterEnd, Icons.AutoMirrored.Filled.KeyboardArrowRight)
+                        }
+                    }
                 }
             }
         }
@@ -391,9 +551,14 @@ fun YouTubeScreen(
                     Text("Pinned", color = Color.Gray, fontSize = 14.sp)
                 }
                 items(pinnedPlaylists) { (id, title) ->
-                    TabChip(title, selected = false) {
+                    TabChip(
+                        title,
+                        selected = false,
+                        upFocusRequester = if (!headerHidden) selectedTabFocus else null,
+                        downFocusRequester = tabsDownFocus
+                    ) {
                         query = ""
-                        suggestionsOpen = false
+                        collapseSearch()
                         viewModel.openPlaylistById(id, title)
                     }
                 }
@@ -430,7 +595,10 @@ fun YouTubeScreen(
             state = state,
             account = account,
             viewModel = viewModel,
-            onPlay = onPlay,
+            onPlay = { playable ->
+                collapseSearch()
+                onPlay(playable)
+            },
             onSignIn = {
                 signInStarted = true
                 accountViewModel.startSignIn()
@@ -453,19 +621,24 @@ fun YouTubeScreen(
                 showAccounts = false
                 accountViewModel.signOut { viewModel.selectTab(state.tab) }
             },
+            // Up from the first row should land on the tab that's actually selected, not
+            // whichever tab happens to sit under the card by geometry. A channel or playlist
+            // has no selected tab, so there is nothing to point at then.
+            tabsFocus = if (!headerHidden && state.subTitle == null) selectedTabFocus else null,
+            firstCardFocus = firstCardFocus,
             onScrollPosition = { index, offset ->
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (index == 0 && offset <= 24) {
                     if (headerHidden && now >= headerHideSuppressedUntil) {
                         headerHidden = false
                         headerHideSuppressedUntil = now + 700L
-                        focusHeaderSearchAfterTop = true
                     }
                 } else if (now >= headerHideSuppressedUntil) {
                     headerHidden = true
                 }
             }
         )
+    }
     }
 
     cardMenu?.let { open ->
@@ -489,6 +662,10 @@ fun YouTubeScreen(
             onBlockChannel = { viewModel.menuBlockChannel() }
         )
     }
+
+    if (showDebugReport) {
+        DebugReportDialog(onDismiss = { showDebugReport = false })
+    }
 }
 
 @Composable
@@ -503,14 +680,16 @@ private fun Content(
     onSelectAccount: (Int) -> Unit,
     onAddAccount: () -> Unit,
     onSignOut: () -> Unit,
+    tabsFocus: FocusRequester? = null,
+    firstCardFocus: FocusRequester? = null,
     onScrollPosition: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    // Rows size their cards from the "Posters per row" setting too, so every tab honours it.
+    // Grids follow the "Posters per row" setting; rows are 16:9 and get their own width so
+    // about four cards fit on a 1080p TV, with the next one peeking in at the edge.
     val columnCount = YouTubeSettings.posterColumns(context)
     val screenWidthDp = context.resources.configuration.screenWidthDp
-    val rowCardWidth = ((screenWidthDp - 48 - (columnCount - 1) * 14) / columnCount)
-        .coerceAtLeast(140).dp
+    val rowCardWidth = ((screenWidthDp - 56) * 0.23f).coerceIn(190f, 300f).dp
     var needsInitialFocus by remember { mutableStateOf(true) }
     val canRequestInitialFocus = needsInitialFocus && !com.nuvio.tv.LocalSidebarExpanded.current
     val restoreId = viewModel.lastPlayedVideoId
@@ -523,6 +702,15 @@ private fun Content(
     } ?: -1
     val restoredGridIndex = state.grid.indexOfFirst { it.kind == YtKind.VIDEO && it.videoId == restoreId }
     val targetGridIndex = if (restoredGridIndex >= 0) restoredGridIndex else state.grid.indexOfFirst { it.kind == YtKind.VIDEO }
+    // Down from the tabs always goes to the first row on the page, even when that row is not
+    // made of videos (Gaming's "Top Live Games", for example). Use its first video if it has
+    // one, otherwise its first card.
+    val firstRowIndex = state.rows.indexOfFirst { it.items.isNotEmpty() }.takeIf { it >= 0 } ?: 0
+    val firstRowCardIndex = state.rows.getOrNull(firstRowIndex)?.items?.let { items ->
+        items.indexOfFirst { it.kind == YtKind.VIDEO }.takeIf { it >= 0 } ?: 0
+    } ?: -1
+    val firstGridCardIndex = state.grid.indexOfFirst { it.kind == YtKind.VIDEO }.takeIf { it >= 0 }
+        ?: if (state.grid.isNotEmpty()) 0 else -1
     when {
         account.code != null -> SignInPanel(account, onCancelSignIn)
 
@@ -537,13 +725,15 @@ private fun Content(
             "Sign in to see your ${state.tab.title.lowercase()}",
             account.error ?: "You'll get a code to enter at ${account.url}.",
             "Sign in",
-            onSignIn
+            upFocusRequester = tabsFocus,
+            onAction = onSignIn
         )
 
         state.error != null && state.isEmpty -> Message(
             state.error,
             "Check your connection and try again.",
-            "Try again"
+            "Try again",
+            upFocusRequester = tabsFocus
         ) {
             // Take the remote back to the content once it loads, rather than leaving it on the
             // header after the button disappears.
@@ -553,15 +743,17 @@ private fun Content(
 
         state.isEmpty && !state.signedIn && state.tab == YtTab.HOME && state.subTitle == null -> Message(
             "Home is picked for you",
-            "YouTube only fills it once you sign in. Try Live, Music or Gaming above, or sign in.",
+            "OneTube only fills it once you sign in. Try Live, Music or Gaming above, or sign in.",
             "Sign in",
-            onSignIn
+            upFocusRequester = tabsFocus,
+            onAction = onSignIn
         )
 
         state.isEmpty -> Message(
             "Nothing here yet",
-            "YouTube didn't send this page. It can be busy for a moment.",
-            "Try again"
+            "OneTube didn't send this page. It can be busy for a moment.",
+            "Try again",
+            upFocusRequester = tabsFocus
         ) {
             needsInitialFocus = true
             viewModel.selectTab(state.tab)
@@ -569,6 +761,7 @@ private fun Content(
 
         state.rows.isNotEmpty() -> {
           val rowsState = rememberLazyListState()
+          val rowsScope = rememberCoroutineScope()
           LaunchedEffect(needsInitialFocus, targetRow) {
               if (needsInitialFocus && targetRow >= 0) rowsState.scrollToItem(targetRow)
           }
@@ -577,7 +770,12 @@ private fun Content(
                   rowsState.firstVisibleItemIndex to rowsState.firstVisibleItemScrollOffset
               }.collect { (index, offset) -> onScrollPosition(index, offset) }
           }
-          LazyColumn(Modifier.fillMaxSize(), state = rowsState, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+          LazyColumn(
+              Modifier.fillMaxSize(),
+              state = rowsState,
+              contentPadding = PaddingValues(bottom = 36.dp),
+              verticalArrangement = Arrangement.spacedBy(26.dp)
+          ) {
             itemsIndexed(state.rows) { rowIndex, row ->
                 val rowState = rememberLazyListState()
                 LaunchedEffect(needsInitialFocus, targetRow, targetRowVideo) {
@@ -585,24 +783,38 @@ private fun Content(
                 }
                 Column {
                     if (row.title.isNotBlank()) {
-                        Text(row.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            row.title,
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    LazyRow(Modifier.padding(top = 8.dp), state = rowState, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        itemsIndexed(row.items) { i, v ->
-                            ItemCard(v, viewModel, Modifier.width(rowCardWidth), requestInitialFocus = canRequestInitialFocus && rowIndex == targetRow && i == targetRowVideo, onInitialFocus = { needsInitialFocus = false }, onFocused = {
-                                viewModel.prefetch(v)
-                                if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
-                            }, onLongClick = { viewModel.openMenu(v) }) {
-                                viewModel.activate(v, row.items, onPlay)
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        LazyRow(
+                            state = rowState,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            itemsIndexed(row.items) { i, v ->
+                                ItemCard(v, viewModel, Modifier.width(rowCardWidth), requestInitialFocus = canRequestInitialFocus && rowIndex == targetRow && i == targetRowVideo, upFocusRequester = if (rowIndex == 0) tabsFocus else null, externalFocusRequester = if (rowIndex == firstRowIndex && i == firstRowCardIndex) firstCardFocus else null, onInitialFocus = { needsInitialFocus = false }, onFocused = {
+                                    viewModel.prefetch(v)
+                                    // Bring the row the user just entered to the top, so the next
+                                    // row starts with its cards instead of the previous descriptions.
+                                    rowsScope.launch { rowsState.animateScrollToItem(rowIndex) }
+                                    if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
+                                }, onLongClick = { viewModel.openMenu(v) }) {
+                                    viewModel.activate(v, row.items, onPlay)
+                                }
                             }
                         }
+                        RowScrollCues(rowState)
                     }
                 }
             }
           }
         }
 
-        state.tab == YtTab.CHANNELS && state.subTitle == null -> ChannelsSplit(state, viewModel, onPlay, canRequestInitialFocus) { needsInitialFocus = false }
+        state.tab == YtTab.CHANNELS && state.subTitle == null -> ChannelsSplit(state, viewModel, onPlay, canRequestInitialFocus, firstCardFocus) { needsInitialFocus = false }
 
         else -> {
             val gridState = rememberLazyGridState()
@@ -621,18 +833,18 @@ private fun Content(
                     gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
                 }.collect { (index, offset) -> onScrollPosition(index, offset) }
             }
+            // Shorts now use the same 16:9 card shape as regular videos, so the same column count.
+            val gridColumnCount = columnCount
             LazyVerticalGrid(
                 state = gridState,
-                // Shorts are tall; a couple more columns keeps the cards from dominating the page.
-                columns = GridCells.Fixed(
-                    if (state.tab == YtTab.SHORTS) (columnCount + 2).coerceAtMost(8) else columnCount
-                ),
+                columns = GridCells.Fixed(gridColumnCount),
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 36.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 gridItemsIndexed(state.grid) { index, v ->
-                    ItemCard(v, viewModel, Modifier, requestInitialFocus = canRequestInitialFocus && index == targetGridIndex, onInitialFocus = { needsInitialFocus = false }, onFocused = { viewModel.prefetch(v) }, onLongClick = { viewModel.openMenu(v) }) { viewModel.activate(v, state.grid, onPlay) }
+                    ItemCard(v, viewModel, Modifier, requestInitialFocus = canRequestInitialFocus && index == targetGridIndex, upFocusRequester = if (index < gridColumnCount) tabsFocus else null, externalFocusRequester = if (index == firstGridCardIndex) firstCardFocus else null, onInitialFocus = { needsInitialFocus = false }, onFocused = { viewModel.prefetch(v) }, onLongClick = { viewModel.openMenu(v) }) { viewModel.activate(v, state.grid, onPlay) }
                 }
             }
         }
@@ -641,7 +853,7 @@ private fun Content(
 
 /** Your subscribed channels as a list; the highlighted one's videos show beside it, like SmartTube. */
 @Composable
-private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay: (YtPlayable) -> Unit, needsInitialFocus: Boolean, onInitialFocus: () -> Unit) {
+private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay: (YtPlayable) -> Unit, needsInitialFocus: Boolean, firstFocus: FocusRequester? = null, onInitialFocus: () -> Unit) {
     val preview by viewModel.preview.collectAsState()
     // Only OK loads a channel's videos; moving the focus just highlights the name.
     var selectedChannel by remember { mutableStateOf<String?>(null) }
@@ -663,6 +875,7 @@ private fun ChannelsSplit(state: YtUiState, viewModel: YouTubeViewModel, onPlay:
                 Row(
                     Modifier
                         .fillMaxWidth()
+                        .then(if (i == 0 && firstFocus != null) Modifier.focusRequester(firstFocus) else Modifier)
                         .clip(RoundedCornerShape(10.dp))
                         .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
                         .onFocusChanged {
@@ -774,7 +987,7 @@ private fun SignInPanel(account: YouTubeAccountState, onCancel: () -> Unit) {
                 Image(it, contentDescription = "QR code to sign in", modifier = Modifier.size(260.dp).clip(RoundedCornerShape(12.dp)))
             }
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Sign in to YouTube", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text("Sign in to OneTube", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     if (qr != null) "Scan the code with your phone, or go to ${account.url} and enter:"
                     else "On your phone or computer, go to ${account.url} and enter:",
@@ -872,12 +1085,18 @@ private fun AccountRow(title: String, detail: String?, avatar: String?, modifier
 }
 
 @Composable
-private fun Message(title: String, detail: String?, action: String?, onAction: () -> Unit) {
+private fun Message(
+    title: String,
+    detail: String?,
+    action: String?,
+    upFocusRequester: FocusRequester? = null,
+    onAction: () -> Unit
+) {
     Box(Modifier.fillMaxSize(), Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
             detail?.let { Text(it, color = Color.Gray, fontSize = 16.sp, textAlign = TextAlign.Center) }
-            if (action != null) TabChip(action, selected = true, onClick = onAction)
+            if (action != null) TabChip(action, selected = true, upFocusRequester = upFocusRequester, onClick = onAction)
         }
     }
 }
@@ -887,6 +1106,8 @@ private fun TabChip(
     label: String,
     selected: Boolean,
     focusRequester: FocusRequester? = null,
+    upFocusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -900,9 +1121,13 @@ private fun TabChip(
             .background(if (selected) YtRed else CardBg)
             .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(20.dp))
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusProperties {
+                if (upFocusRequester != null) up = upFocusRequester
+                if (downFocusRequester != null) down = downFocusRequester
+            }
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp)
+            .padding(horizontal = 14.dp, vertical = 9.dp)
     )
 }
 
@@ -912,6 +1137,7 @@ private fun IconChip(
     icon: ImageVector,
     label: String,
     focusRequester: FocusRequester? = null,
+    downFocusRequester: FocusRequester? = null,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -922,6 +1148,7 @@ private fun IconChip(
             .background(CardBg)
             .border(2.dp, if (focused) Color.White else Color.Transparent, CircleShape)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusProperties { if (downFocusRequester != null) down = downFocusRequester }
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -930,9 +1157,9 @@ private fun IconChip(
     }
 }
 
-/** The time in the middle of the header, in this device's 12/24-hour form. */
+/** The time at the start of the header, in this device's 12/24-hour form. */
 @Composable
-private fun HeaderClock() {
+private fun HeaderClock(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val format = remember(context) { DateFormat.getTimeFormat(context) }
     var time by remember(format) { mutableStateOf(format.format(Date())) }
@@ -946,10 +1173,58 @@ private fun HeaderClock() {
     }
     Text(
         time,
-        color = Color.White.copy(alpha = 0.9f),
-        fontSize = 20.sp,
-        fontWeight = FontWeight.Medium
+        color = Color(0xFF9A9AA5),
+        fontSize = 15.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = modifier
     )
+}
+
+/** The account pill at the end of the header: avatar, then the name or "Sign in". */
+@Composable
+private fun AccountChip(
+    label: String,
+    signedIn: Boolean,
+    downFocusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val initial = label.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(if (focused) Color(0xFF303036) else CardBg)
+            .border(2.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
+            .focusProperties { if (downFocusRequester != null) down = downFocusRequester }
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick)
+            .padding(start = 6.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(if (signedIn) YtRed else Color(0xFF34343A)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                if (signedIn) initial else "?",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Text(
+            label,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }
 
 @Composable
@@ -1003,8 +1278,14 @@ private fun YouTubeItemMenuDialog(
     NuvioDialog(
         onDismiss = onClose,
         title = if (creatingPlaylist) "New playlist" else menu.item.title,
-        subtitle = if (creatingPlaylist) "The video is added to it" else menu.item.author,
-        width = 560.dp
+        subtitle = when {
+            creatingPlaylist -> "The video is added to it"
+            // A channel card's own title is its channel name; videos carry the author.
+            menu.item.kind == YtKind.CHANNEL ->
+                menu.item.author?.takeIf { it.isNotBlank() } ?: menu.item.title
+            else -> menu.item.author
+        },
+        width = 480.dp
     ) {
         if (creatingPlaylist) {
             OutlinedTextField(
@@ -1032,7 +1313,10 @@ private fun YouTubeItemMenuDialog(
                 keyboard?.hide()
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
                 if (isVideo && !hasChannel && menu.loadingChannel) {
                     Text("Looking up the channel…", color = Color.Gray, fontSize = 14.sp)
                 }
@@ -1045,7 +1329,7 @@ private fun YouTubeItemMenuDialog(
                 if (menu.item.kind == YtKind.PLAYLIST) {
                     MenuRow("Open playlist", firstRow, onClick = onOpenItem)
                     MenuRow(
-                        if (menu.pinned) "Unpin from the YouTube page" else "Pin to the YouTube page",
+                        if (menu.pinned) "Unpin from the OneTube page" else "Pin to the OneTube page",
                         enabled = !menu.busy,
                         onClick = onTogglePinned
                     )
@@ -1169,8 +1453,35 @@ private fun looksLikeYouTubeTime(value: String): Boolean =
         value.contains("today", ignoreCase = true) ||
         Regex("\\b(19|20)\\d{2}\\b").containsMatchIn(value)
 
+/** Small edge chevrons, so a row with more cards off-screen says so without a "See all" button. */
 @Composable
-private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifier, requestInitialFocus: Boolean = false, onInitialFocus: () -> Unit = {}, onFocused: () -> Unit, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+private fun BoxScope.RowScrollCues(state: LazyListState) {
+    if (state.canScrollBackward) RowScrollCue(Alignment.CenterStart, Icons.AutoMirrored.Filled.KeyboardArrowLeft)
+    if (state.canScrollForward) RowScrollCue(Alignment.CenterEnd, Icons.AutoMirrored.Filled.KeyboardArrowRight)
+}
+
+@Composable
+private fun BoxScope.RowScrollCue(alignment: Alignment, icon: ImageVector) {
+    Box(
+        Modifier
+            .align(alignment)
+            .padding(horizontal = 4.dp)
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Color(0xB3000000)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.92f),
+            modifier = Modifier.size(23.dp)
+        )
+    }
+}
+
+@Composable
+private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifier, requestInitialFocus: Boolean = false, upFocusRequester: FocusRequester? = null, externalFocusRequester: FocusRequester? = null, onInitialFocus: () -> Unit = {}, onFocused: () -> Unit, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     var focused by remember(item.videoId) { mutableStateOf(false) }
     var opened by remember(item.videoId) { mutableStateOf(false) }
     // OK is held down on this poster (and whether that already counted as a long press).
@@ -1190,7 +1501,8 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
     }
     // The side menu covers the page, so a preview should not keep playing behind it.
     val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
-    val focusRequester = remember { FocusRequester() }
+    val localFocusRequester = remember { FocusRequester() }
+    val focusRequester = externalFocusRequester ?: localFocusRequester
     LaunchedEffect(requestInitialFocus) {
         if (requestInitialFocus) {
             kotlinx.coroutines.yield()
@@ -1208,8 +1520,9 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
     Column(
         modifier
             .focusRequester(focusRequester)
-            .clip(RoundedCornerShape(10.dp))
-            .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(10.dp))
+            .focusProperties { if (upFocusRequester != null) up = upFocusRequester }
+            .clip(RoundedCornerShape(14.dp))
+            .border(3.dp, if (focused) Color.White else Color.Transparent, RoundedCornerShape(14.dp))
             .onFocusChanged {
                 focused = it.isFocused
                 if (!it.isFocused) {
@@ -1245,17 +1558,50 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
                 true
             }
             .clickable { opened = true; onClick() }
-            .background(if (focused) Color(0xFF34343A) else CardBg)
+            .background(if (focused) Color(0xFF2E2E34) else CardBg)
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(if (item.isShorts) 9f / 16f else 16f / 9f)) {
+        // Shorts keep the regular 16:9 card shape: the vertical thumbnail is letterboxed
+        // instead of making the whole row taller.
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
             AsyncImage(
                 model = item.thumbnail,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = if (item.isShorts) ContentScale.Fit else ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
             if (focused && !opened && !sidebarExpanded && item.kind == YtKind.VIDEO && YouTubeSettings.videoPreviews(context)) {
                 YouTubeThumbnailPreview(item, viewModel)
+            }
+            // With previews off, the focused card still needs a clear "press OK to play" cue.
+            if (focused && !opened && item.kind == YtKind.VIDEO && !YouTubeSettings.videoPreviews(context)) {
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xB3000000)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
+            if (watched in 5..94 && item.kind == YtKind.VIDEO && !item.isLive) {
+                Text(
+                    "Resume",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(Color(0xCC000000), RoundedCornerShape(5.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                )
             }
             if (watched > 0 && item.kind == YtKind.VIDEO && !item.isLive) {
                 Box(
@@ -1290,12 +1636,14 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
                 YouTubeLoadingGlow(Modifier.fillMaxSize())
             }
         }
-        Column(Modifier.padding(10.dp)) {
+        Column(Modifier.padding(horizontal = 11.dp, vertical = 10.dp)) {
             // Two lines reserved, so the info below has room and sits at the same height on every card.
             Text(
                 item.title,
                 color = Color.White,
-                fontSize = 14.sp,
+                fontSize = 14.5.sp,
+                lineHeight = 19.sp,
+                fontWeight = FontWeight.Medium,
                 minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -1325,13 +1673,13 @@ private fun ItemCard(item: YtItem, viewModel: YouTubeViewModel, modifier: Modifi
                 .distinctBy { youtubeInfoKey(it) }
                 .joinToString("  ·  ")
             if (!channelText.isNullOrBlank()) {
-                Text(channelText, color = Color(0xFF8A8A92), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(channelText, color = Color(0xFF9A9AA5), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else {
                 // Keep the two-line info block even when the feed has no channel line.
                 Spacer(Modifier.height(16.dp))
             }
             if (detailText.isNotBlank()) {
-                Text(detailText, color = Color(0xFF8A8A92), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(detailText, color = Color(0xFF7E7E8A), fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else {
                 Spacer(Modifier.height(16.dp))
             }

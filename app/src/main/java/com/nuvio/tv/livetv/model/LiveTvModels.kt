@@ -106,6 +106,31 @@ data class PlaylistSource(
     }
 }
 
+/** One Live TV (`tv`) catalog of an installed addon, switched on for the guide. */
+data class AddonChannelSource(
+    /** Stable id: the addon's manifest URL plus the catalog id. */
+    val id: String,
+    val addonBaseUrl: String,
+    val addonName: String,
+    val addonLogo: String? = null,
+    val catalogId: String,
+    val catalogName: String,
+    val enabled: Boolean = true,
+    val lastUpdatedMs: Long = 0L,
+    val lastError: String? = null,
+    val channelCount: Int = 0
+)
+
+/** Where an addon-backed channel's stream comes from; resolved when the channel is opened. */
+data class AddonChannelRef(
+    val addonBaseUrl: String,
+    val addonName: String,
+    val addonLogo: String? = null,
+    val catalogId: String,
+    val channelId: String,
+    val channelType: String = "tv"
+)
+
 /** A user-added XMLTV guide (plain or .gz). */
 data class EpgSource(
     val id: String,
@@ -142,7 +167,9 @@ data class LiveChannel(
     val headers: Map<String, String> = emptyMap(),
     val catchup: CatchupInfo? = null,
     /** Protected (DRM) stream details from the playlist, e.g. MPEG-DASH with a license. */
-    val drm: DrmInfo? = null
+    val drm: DrmInfo? = null,
+    /** Set for a channel from an addon: its stream is looked up when the channel is opened. */
+    val addon: AddonChannelRef? = null
 )
 
 /**

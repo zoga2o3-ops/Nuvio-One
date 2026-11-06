@@ -131,6 +131,12 @@ internal fun LayoutContinueWatchingSection(
             )
         }
         SettingsToggleRow(
+            title = stringResource(R.string.layout_cw_episode_count),
+            subtitle = stringResource(R.string.layout_cw_episode_count_sub),
+            checked = uiState.showContinueWatchingEpisodeCount,
+            onToggle = { onEvent(LayoutSettingsEvent.SetShowContinueWatchingEpisodeCount(!uiState.showContinueWatchingEpisodeCount)) }
+        )
+        SettingsToggleRow(
             title = stringResource(R.string.layout_next_up_furthest_episode),
             subtitle = stringResource(R.string.layout_next_up_furthest_episode_sub),
             checked = uiState.nextUpFromFurthestEpisode,

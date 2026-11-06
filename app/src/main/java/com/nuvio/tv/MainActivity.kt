@@ -1265,7 +1265,7 @@ open class MainActivity : ComponentActivity() {
                                 add(if (line) item.copy(sectionStart = true) else item)
                             }
                             // YouTube fork: its own section after the Live TV pages.
-                            add(DrawerItem(route = Screen.YouTube.route, label = "YouTube", icon = Icons.Default.PlayCircle, sectionStart = true))
+                            add(DrawerItem(route = Screen.YouTube.route, label = "OneTube", icon = Icons.Default.PlayCircle, sectionStart = true))
                             add(
                                 DrawerItem(
                                     route = Screen.Settings.route,

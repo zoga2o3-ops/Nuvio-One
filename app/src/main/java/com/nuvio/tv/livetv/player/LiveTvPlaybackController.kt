@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -71,7 +72,8 @@ data class LiveTrackOption(
 @OptIn(UnstableApi::class)
 @Singleton
 class LiveTvPlaybackController @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val addonStreamResolver: AddonChannelStreamResolver
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -82,6 +84,7 @@ class LiveTvPlaybackController @Inject constructor(
     val state: StateFlow<LivePlaybackState> = _state.asStateFlow()
 
     private var currentChannel: LiveChannel? = null
+    private var addonResolveJob: Job? = null
 
     // ---------------------------------------------------------------- pause and rewind
 
@@ -599,6 +602,53 @@ class LiveTvPlaybackController @Inject constructor(
     /** The catch-up now playing has actually started (pictures moving), at least once. */
     @Volatile private var archiveStarted = false
 
+    private fun resolveAddonAndPlay(
+        channel: LiveChannel,
+        catchupTitle: String?,
+        fallback: String?,
+        fallbacks: List<String>,
+        catchupStartMs: Long?,
+        catchupLeadMs: Long,
+        catchupPrimaryUrl: String?
+    ) {
+        addonResolveJob?.cancel()
+        currentChannel = channel
+        currentUrl = null
+        _state.value = LivePlaybackState(channelKey = channel.key, isBuffering = true)
+        addonResolveJob = scope.launch {
+            val result = addonStreamResolver.resolve(channel)
+            if (!isActive || _state.value.channelKey != channel.key) return@launch
+            result.onSuccess { sources ->
+                val first = sources.firstOrNull() ?: return@onSuccess
+                val resolved = channel.copy(
+                    url = first.url,
+                    headers = channel.headers + first.headers,
+                    addon = null
+                )
+                // Try the addon's other links if this one is refused. Only links with the
+                // same headers are safe to hand to the player (headers are per media).
+                val sameHeaders = sources.drop(1)
+                    .filter { it.headers == first.headers }
+                    .map { it.url }
+                addonResolveJob = null
+                play(
+                    resolved,
+                    overrideUrl = null,
+                    catchupTitle = catchupTitle,
+                    fallback = fallback,
+                    fallbacks = fallbacks + sameHeaders,
+                    catchupStartMs = catchupStartMs,
+                    catchupLeadMs = catchupLeadMs,
+                    catchupPrimaryUrl = catchupPrimaryUrl
+                )
+            }.onFailure { error ->
+                val message = error.message ?: "Couldn't find a stream for ${channel.name}."
+                _state.value = LivePlaybackState(channelKey = channel.key, error = message)
+                com.nuvio.tv.livetv.record.LiveTvNotice.show(message)
+            }
+        }
+    }
+
     fun play(
         channel: LiveChannel,
         overrideUrl: String? = null,
@@ -612,6 +662,26 @@ class LiveTvPlaybackController @Inject constructor(
         /** Catch-up: the link the app built first (the others are other kinds of the same request). */
         catchupPrimaryUrl: String? = null
     ) {
+        // Add-on channels have no URL until their stream is looked up. Keep the guide and
+        // player on the channel while that happens, then play the resolved link.
+        if (overrideUrl == null && channel.addon != null) {
+            resolveAddonAndPlay(
+                channel, catchupTitle, fallback, fallbacks, catchupStartMs, catchupLeadMs, catchupPrimaryUrl
+            )
+            return
+        }
+        // A rewind/pause buffer has already turned an add-on channel into a real URL.
+        if (overrideUrl != null && channel.addon != null) {
+            play(
+                channel.copy(url = overrideUrl, addon = null),
+                overrideUrl = overrideUrl, catchupTitle = catchupTitle, fallback = fallback,
+                fallbacks = fallbacks, catchupStartMs = catchupStartMs,
+                catchupLeadMs = catchupLeadMs, catchupPrimaryUrl = catchupPrimaryUrl
+            )
+            return
+        }
+        addonResolveJob?.cancel()
+        addonResolveJob = null
         // Something chosen to play (back from the background through a launcher row, say):
         // that wins over picking up what was on before.
         resumeAfterBackground = null

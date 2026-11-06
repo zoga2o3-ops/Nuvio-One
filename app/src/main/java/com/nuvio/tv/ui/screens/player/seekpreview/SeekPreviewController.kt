@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItemStoryboard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +47,9 @@ class SeekPreviewController(
     private val url: String,
     private val headers: Map<String, String>,
     private val releaseAfterScrub: Boolean = false,
+    private val storyboard: MediaItemStoryboard? = null,
+    private val storyboardVideoId: String? = null,
+    private val keepAlive: Boolean = false,
 ) {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val decodeDispatcher = Dispatchers.IO.limitedParallelism(1)
@@ -81,7 +85,8 @@ class SeekPreviewController(
         }
         requests.value = bucket
         if (worker == null) worker = scope.launch { decodeRequests() }
-        scheduleRelease()
+        // Storyboards hold no decoder, so they stay warm for the whole player session.
+        if (!keepAlive) scheduleRelease()
     }
 
     /** Opens the hidden player ahead of a scrub, if nothing is being asked for already. */
@@ -94,6 +99,7 @@ class SeekPreviewController(
     fun endScrub() {
         frame = null
         requests.value = null
+        if (keepAlive) return
         if (releaseAfterScrub) {
             releaseJob?.cancel()
             releaseConnection()
@@ -158,7 +164,11 @@ class SeekPreviewController(
     private fun decodeFrame(positionMs: Long): ImageBitmap? {
         if (!sourceOpened) {
             sourceOpened = true
-            source = openSeekPreviewFrameSource(context, url, headers)
+            source = if (storyboard != null && storyboardVideoId != null) {
+                openYouTubeStoryboardFrameSource(context, storyboard, storyboardVideoId)
+            } else {
+                openSeekPreviewFrameSource(context, url, headers)
+            }
         }
         val active = source ?: throw UnsupportedSource
         return active.frameAt(positionMs, FrameMaxWidthPx)
@@ -199,23 +209,85 @@ private fun bucketFor(positionMs: Long, durationMs: Long): Long {
 
 /** The one controller for the stream being played, kept between the control bar and the quick seek bar so the hidden player stays warm. */
 private object SharedSeekPreview {
-    private var controller: SeekPreviewController? = null
-    private var key: Triple<String, Map<String, String>, Boolean>? = null
+    private data class Key(
+        val url: String,
+        val headers: Map<String, String>,
+        val releaseAfterScrub: Boolean,
+        val storyboardVideoId: String?,
+        val keepAlive: Boolean,
+    )
 
-    fun obtain(context: Context, url: String, headers: Map<String, String>, releaseAfterScrub: Boolean): SeekPreviewController {
-        val wanted = Triple(url, headers, releaseAfterScrub)
+    private var controller: SeekPreviewController? = null
+    private var key: Key? = null
+
+    fun obtain(
+        context: Context,
+        url: String,
+        headers: Map<String, String>,
+        releaseAfterScrub: Boolean,
+        storyboard: MediaItemStoryboard?,
+        storyboardVideoId: String?,
+        keepAlive: Boolean,
+    ): SeekPreviewController {
+        val wanted = Key(url, headers, releaseAfterScrub, storyboardVideoId, keepAlive)
         controller?.takeIf { key == wanted }?.let { return it }
         controller?.dispose()
-        return SeekPreviewController(context, url, headers, releaseAfterScrub).also {
+        return SeekPreviewController(
+            context,
+            url,
+            headers,
+            releaseAfterScrub,
+            storyboard,
+            storyboardVideoId,
+            keepAlive,
+        ).also {
             controller = it
             key = wanted
         }
     }
+
+    fun dispose() {
+        controller?.dispose()
+        controller = null
+        key = null
+    }
+}
+
+/** Releases the shared preview player/cache when the player screen closes. */
+internal fun disposeSeekPreview(context: Context? = null) {
+    SharedSeekPreview.dispose()
+    // A storyboard close deletes its own video folder; this also clears any folder left behind
+    // by a previous player session (or a playback that never got as far as opening a source).
+    context?.let { YouTubeStoryboardCache.cleanup(it) }
 }
 
 /** A preview controller for [url], or null when there is none to make. */
 @Composable
-fun rememberSeekPreviewController(url: String?, headers: Map<String, String>, releaseAfterScrub: Boolean = false): SeekPreviewController? {
+fun rememberSeekPreviewController(
+    url: String?,
+    headers: Map<String, String>,
+    releaseAfterScrub: Boolean = false,
+    storyboard: MediaItemStoryboard? = null,
+    storyboardVideoId: String? = null,
+    keepAlive: Boolean = false,
+): SeekPreviewController? {
     val context = LocalContext.current
-    return remember(url, headers, releaseAfterScrub) { url?.let { SharedSeekPreview.obtain(context.applicationContext, it, headers, releaseAfterScrub) } }
+    return remember(url, headers, releaseAfterScrub, storyboard, storyboardVideoId, keepAlive) {
+        if (url == null) {
+            // Turning previews off (or moving to a live stream) should not leave the hidden
+            // player holding a decoder in the background.
+            SharedSeekPreview.dispose()
+            null
+        } else {
+            SharedSeekPreview.obtain(
+                context.applicationContext,
+                url,
+                headers,
+                releaseAfterScrub,
+                storyboard,
+                storyboardVideoId,
+                keepAlive,
+            )
+        }
+    }
 }

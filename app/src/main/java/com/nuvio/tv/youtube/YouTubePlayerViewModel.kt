@@ -197,7 +197,7 @@ class YouTubePlayerViewModel @Inject constructor(
     private fun act(okMessage: String, call: (YtVideoInfo) -> Observable<Void>, apply: (YtVideoInfo) -> YtVideoInfo) {
         val info = _state.value.info ?: return
         if (!_state.value.signedIn) {
-            _state.update { it.copy(message = "Sign in to YouTube first, with the account button on the YouTube page.") }
+            _state.update { it.copy(message = "Sign in to OneTube first, with the account button on the OneTube page.") }
             return
         }
         viewModelScope.launch {
@@ -264,7 +264,7 @@ class YouTubePlayerViewModel @Inject constructor(
             return
         }
         YouTubeSettings.hideChannel(context, id, info.author.ifBlank { "This channel" })
-        _state.update { it.copy(message = "Hidden: ${info.author}. Bring it back in Settings, then YouTube.") }
+        _state.update { it.copy(message = "Hidden: ${info.author}. Bring it back in Settings, then OneTube.") }
     }
 
     // ---- playlists ----
@@ -272,7 +272,7 @@ class YouTubePlayerViewModel @Inject constructor(
     fun loadPlaylists() {
         val info = _state.value.info ?: return
         if (!_state.value.signedIn) {
-            _state.update { it.copy(message = "Sign in to YouTube first, with the account button on the YouTube page.") }
+            _state.update { it.copy(message = "Sign in to OneTube first, with the account button on the OneTube page.") }
             return
         }
         _state.update { it.copy(playlists = null, loading = true, message = null) }
@@ -347,7 +347,7 @@ class YouTubePlayerViewModel @Inject constructor(
      */
     fun toggleCommentLike(comment: YtComment) {
         if (!_state.value.signedIn) {
-            _state.update { it.copy(message = "Sign in to YouTube first, with the account button on the YouTube page.") }
+            _state.update { it.copy(message = "Sign in to OneTube first, with the account button on the OneTube page.") }
             return
         }
         val key = comment.replyKey
@@ -424,7 +424,12 @@ class YouTubePlayerViewModel @Inject constructor(
             _state.update { s ->
                 s.copy(
                     relatedLoading = false,
-                    related = result.getOrNull().orEmpty().distinctBy { it.videoId },
+                    related = result.getOrNull().orEmpty().distinctBy { item ->
+                        when (item.kind) {
+                            YtKind.CHANNEL -> "c:" + (item.channelId ?: item.title)
+                            else -> "v:" + (item.videoId ?: item.title)
+                        }
+                    },
                     message = if (result.isFailure) "Couldn't load related videos." else null
                 )
             }
@@ -437,6 +442,23 @@ class YouTubePlayerViewModel @Inject constructor(
     }
 
     private fun MediaItem.toRelated(): YtItem? {
+        if (type == MediaItem.TYPE_CHANNEL) {
+            val id = channelId ?: reloadPageKey ?: return null
+            return YtItem(
+                kind = YtKind.CHANNEL,
+                videoId = null,
+                title = title.orEmpty(),
+                author = author,
+                meta = secondTitle?.toString()?.takeIf { it.isNotBlank() },
+                thumbnail = cardImageUrl,
+                badge = badgeText,
+                isLive = false,
+                channelId = id,
+                percentWatched = 0,
+                source = this
+            )
+        }
+        if (type == MediaItem.TYPE_PLAYLIST) return null
         val id = videoId ?: return null
         if (isLive) return null
         return YtItem(

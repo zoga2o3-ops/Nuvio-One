@@ -395,7 +395,12 @@ class SportsRepository @Inject constructor(
         var lastKick = -1
         var lastFixtures = 0L
         while (true) {
-            val active = foreground.value && (settings.value.showInSidebar || viewers.value > 0)
+            val s = settings.value
+            val f = follows.value
+            // Goal cards need fresh scores even when the Sports page is off in the side menu
+            // or the user is elsewhere in the app.
+            val wantsScoring = s.scoringAlerts && (f.teams.isNotEmpty() || f.leagues.isNotEmpty())
+            val active = foreground.value && (s.showInSidebar || viewers.value > 0 || wantsScoring)
             if (active) runCatching { updateOnce(System.currentTimeMillis()) }.onFailure { Log.w(TAG, "Sports update failed", it) }
             if (active) {
                 val force = forceExtras.also { forceExtras = false }
@@ -432,10 +437,18 @@ class SportsRepository @Inject constructor(
         // through the shared cache in nuvio-data instead, so "every league, not just your
         // region's" costs nothing extra against ESPN itself (see fetchViaSharedCache below).
         fun fastLeague(l: League) = isMine(l, f) || l.id in playingLeagues || SportsCatalog.shown(l, s)
+        // A followed team's game can be live before the scoreboard cache shows it as LIVE (the
+        // cache may be from before kick-off). Use the season/schedule data too, so a game that
+        // has started pulls scores straight away instead of waiting up to half an hour.
+        fun possiblyLive(ev: SportsEvent): Boolean =
+            (ev.state == GameState.LIVE || ev.state == GameState.PRE) && ev.hasTime &&
+                now >= ev.startMs - 15 * MINUTE && now <= ev.startMs + 4 * HOUR
+        val liveLeagues = known.value.asSequence().filter(::possiblyLive).map { it.leagueId }.toSet()
         val due = allEspnLeagues().filter { l ->
             val d = data[l.id]
             val age = now - (d?.fetchedAt ?: 0L)
-            val live = d?.events?.any { it.state == GameState.LIVE || (it.state == GameState.PRE && it.startMs in (now - 15 * MINUTE)..(now + 10 * MINUTE)) } == true
+            val live = l.id in liveLeagues ||
+                d?.events?.any { it.state == GameState.LIVE || (it.state == GameState.PRE && it.startMs in (now - 15 * MINUTE)..(now + 10 * MINUTE)) } == true
             val mine = isMine(l, f)
             when {
                 force -> age > 15_000
@@ -1452,11 +1465,22 @@ class SportsRepository @Inject constructor(
         }
     }
 
-    fun toggleTeam(team: TeamInfo) = updateFollows { f ->
-        val had = f.followedTeam(team)
-        if (had != null) f.copy(teams = f.teams - had)
-        // Just the team (its league isn't followed with it: following the NFL is a separate choice).
-        else f.copy(teams = f.teams + FollowedTeam(team.leagueId, team.id, team.name, team.abbr, team.color, team.logo), setUp = true)
+    fun toggleTeam(team: TeamInfo) {
+        val following = follows.value.followedTeam(team) == null
+        updateFollows { f ->
+            val had = f.followedTeam(team)
+            if (had != null) f.copy(teams = f.teams - had)
+            // Just the team (its league isn't followed with it: following the NFL is a separate choice).
+            else f.copy(teams = f.teams + FollowedTeam(team.leagueId, team.id, team.name, team.abbr, team.color, team.logo), setUp = true)
+        }
+        // Following a team is how people ask for its goal cards. Turn the alerts on unless
+        // they've already chosen a setting (unfollowing never changes it).
+        if (following) enableScoringAlerts()
+    }
+
+    /** Turns on scoring alerts if they're off: the picker promises them when you follow a team. */
+    private fun enableScoringAlerts() {
+        if (!settings.value.scoringAlerts) updateSettings { it.copy(scoringAlerts = true) }
     }
 
     /** Moves a row of My Sports up ([by] -1) or down (+1). */
@@ -1477,8 +1501,12 @@ class SportsRepository @Inject constructor(
         else f.copy(pins = f.pins + leagueId, unpinned = f.unpinned - leagueId, setUp = true)
     }
 
-    fun toggleLeague(leagueId: String) = updateFollows { f ->
-        f.copy(leagues = if (leagueId in f.leagues) f.leagues - leagueId else f.leagues + leagueId, setUp = true)
+    fun toggleLeague(leagueId: String) {
+        val following = leagueId !in follows.value.leagues
+        updateFollows { f ->
+            f.copy(leagues = if (leagueId in f.leagues) f.leagues - leagueId else f.leagues + leagueId, setUp = true)
+        }
+        if (following) enableScoringAlerts()
     }
 
     fun addWord(word: String) {

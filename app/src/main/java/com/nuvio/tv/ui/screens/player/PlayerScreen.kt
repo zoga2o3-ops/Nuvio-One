@@ -237,6 +237,8 @@ fun PlayerScreen(
     onYouTubeSubscribe: (() -> Unit)? = null,
     onYouTubeChannel: (() -> Unit)? = null,
     youtubeChannelImage: String? = null,
+    /** YouTube fork: the channel name, shown above the video title in the controls. */
+    youtubeChannelName: String? = null,
     /** YouTube fork: the live chat button (null when the stream has no chat), and whether chat is showing. */
     onYouTubeChat: (() -> Unit)? = null,
     youtubeChatOn: Boolean = false,
@@ -306,6 +308,7 @@ fun PlayerScreen(
     val containerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
     val progressBarFocusRequester = remember { FocusRequester() }
+    val youtubeActionsFocusRequester = remember { FocusRequester() }
     val episodesFocusRequester = remember { FocusRequester() }
     val chaptersFocusRequester = remember { FocusRequester() }
     val streamsFocusRequester = remember { FocusRequester() }
@@ -602,6 +605,14 @@ fun PlayerScreen(
         }
     }
 
+    // Close the seek-preview source and delete its OneTube storyboard cache when the player closes.
+    val seekPreviewContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    DisposableEffect(Unit) {
+        onDispose {
+            com.nuvio.tv.ui.screens.player.seekpreview.disposeSeekPreview(seekPreviewContext)
+        }
+    }
+
     // Frame rate matching lifecycle.
     val activity = LocalContext.current as? android.app.Activity
     LaunchedEffect(activity) {
@@ -665,9 +676,9 @@ fun PlayerScreen(
             // Wait for AnimatedVisibility animation to complete before focusing play/pause button
             kotlinx.coroutines.delay(250)
             try {
-                // YouTube: land on the seek bar first, so Down walks through the bar and the
-                // YouTube row before it can reach the recommendations page.
-                if (YouTubePageScrollUi.ENABLED && showYouTubeButton) progressBarFocusRequester.requestFocus()
+                // YouTube: land on the action row above the seek bar, so its panel and
+                // channel buttons are always reachable with Up/Down.
+                if (showYouTubeButton) youtubeActionsFocusRequester.requestFocus()
                 else playPauseFocusRequester.requestFocus()
             } catch (e: Exception) {
                 // Focus requester may not be ready yet
@@ -995,7 +1006,8 @@ fun PlayerScreen(
                                     viewModel.onEvent(PlayerEvent.OnToggleControls)
                                 } else {
                                     try {
-                                        progressBarFocusRequester.requestFocus()
+                                        if (showYouTubeButton) youtubeActionsFocusRequester.requestFocus()
+                                        else progressBarFocusRequester.requestFocus()
                                     } catch (_: Exception) {
                                         val skipVisible = skipButtonActuallyVisible
                                         if (skipVisible) {
@@ -1760,6 +1772,7 @@ fun PlayerScreen(
                 },
                 playPauseFocusRequester = playPauseFocusRequester,
                 progressBarFocusRequester = progressBarFocusRequester,
+                youtubeActionsFocusRequester = youtubeActionsFocusRequester,
                 streamInfoFocusRequester = streamInfoFocusRequester,
                 reportCodeVisible = reportCodeVisible,
                 progressBarUpFocusRequester = when {
@@ -1792,6 +1805,7 @@ fun PlayerScreen(
                 onYouTubeSubscribe = onYouTubeSubscribe,
                 onYouTubeChannel = onYouTubeChannel,
                 youtubeChannelImage = youtubeChannelImage,
+                youtubeChannelName = youtubeChannelName,
                 onYouTubeChat = onYouTubeChat,
                 youtubeChatOn = youtubeChatOn,
                 onYouTubeLoop = onYouTubeLoop,
@@ -2969,6 +2983,7 @@ private fun PlayerControlsOverlay(
     viewModel: PlayerViewModel,
     playPauseFocusRequester: FocusRequester,
     progressBarFocusRequester: FocusRequester,
+    youtubeActionsFocusRequester: FocusRequester,
     streamInfoFocusRequester: FocusRequester,
     progressBarUpFocusRequester: FocusRequester? = null,
     onPlayPause: () -> Unit,
@@ -2991,6 +3006,7 @@ private fun PlayerControlsOverlay(
     onYouTubeSubscribe: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
     youtubeChannelImage: String?,
+    youtubeChannelName: String?,
     onYouTubeChat: (() -> Unit)?,
     youtubeChatOn: Boolean,
     onYouTubeLoop: (() -> Unit)?,
@@ -3039,11 +3055,12 @@ private fun PlayerControlsOverlay(
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val isLivePlayback = playbackTimeline.isLive || youtubeLive
-    val youtubeActionsFocusRequester = remember { FocusRequester() }
-    val progressUpTarget = if (isLivePlayback) {
-        progressBarUpFocusRequester ?: playPauseFocusRequester
-    } else {
-        progressBarFocusRequester
+    val progressUpTarget = when {
+        // YouTube's action row sits above the seek bar; Up should always reach it, including
+        // on live streams where the seek bar itself is not a focus stop.
+        showYouTubeButton -> youtubeActionsFocusRequester
+        isLivePlayback -> progressBarUpFocusRequester ?: playPauseFocusRequester
+        else -> progressBarFocusRequester
     }
     // Down past the play-bar buttons opens the YouTube recommendations overlay.
     val onMainDown: () -> Unit = if (YouTubePageScrollUi.ENABLED && showYouTubeButton) {
@@ -3112,6 +3129,18 @@ private fun PlayerControlsOverlay(
                         uiState.title
                     }
 
+                    youtubeChannelName?.takeIf { it.isNotBlank() }?.let { channelName ->
+                        Text(
+                            text = channelName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        )
+                    }
+
                     Text(
                         text = displayName,
                         modifier = Modifier.reportRightEdge("name", titleRights),
@@ -3177,7 +3206,7 @@ private fun PlayerControlsOverlay(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         ControlButton(
-                            Icons.Default.PlayCircle, contentDescription = "YouTube", onClick = onShowYouTubePanel,
+                            Icons.Default.PlayCircle, contentDescription = "OneTube", onClick = onShowYouTubePanel,
                             focusRequester = youtubeActionsFocusRequester,
                             downFocusRequester = progressBarFocusRequester,
                             onFocused = onResetHideTimer
@@ -3424,20 +3453,17 @@ private fun PlayerControlsOverlay(
                             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.xs),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // A vertical video (a Short) keeps its own shape; there is nothing to cycle.
-                            if (!uiState.isPortraitVideo) {
-                                ControlButton(
-                                    icon = Icons.Default.AspectRatio,
-                                    iconPainter = customAspectPainter,
-                                    contentDescription = stringResource(R.string.cd_aspect_ratio),
-                                    onClick = {
-                                        onToggleAspectRatio()
-                                    },
-                                    upFocusRequester = progressUpTarget,
-                                    onDownKey = onMainDown,
-                                    onFocused = onResetHideTimer
-                                )
-                            }
+                            ControlButton(
+                                icon = Icons.Default.AspectRatio,
+                                iconPainter = customAspectPainter,
+                                contentDescription = stringResource(R.string.cd_aspect_ratio),
+                                onClick = {
+                                    onToggleAspectRatio()
+                                },
+                                upFocusRequester = progressUpTarget,
+                                onDownKey = onMainDown,
+                                onFocused = onResetHideTimer
+                            )
                             ControlButton(
                                 icon = Icons.Default.SwapHoriz,
                                 contentDescription = stringResource(R.string.cd_switch_player_engine),
@@ -3518,26 +3544,42 @@ private fun PlayerControlsOverlay(
     }
 }
 
+/** Whether the experimental seek-bar thumbnails are turned on in Playback settings. */
+@Composable
+private fun rememberSeekPreviewEnabled(viewModel: PlayerViewModel): Boolean =
+    remember(viewModel) {
+        viewModel.uiState.map { it.seekPreviewEnabled }.distinctUntilChanged()
+    }.collectAsState(initial = false).value
+
 /** The preview picture controller for the stream being played, fed by the scrub position while you hold left or right. */
 @Composable
-private fun rememberScrubPreview(viewModel: PlayerViewModel, durationMs: Long, isLive: Boolean, warmPositionMs: Long? = null): Pair<com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController?, Long?> {
+private fun rememberScrubPreview(viewModel: PlayerViewModel, durationMs: Long, isLive: Boolean, warmPositionMs: Long? = null, enabled: Boolean = false): Pair<com.nuvio.tv.ui.screens.player.seekpreview.SeekPreviewController?, Long?> {
     val scrubPosition by remember(viewModel) {
         viewModel.uiState.map { it.pendingPreviewSeekPosition }.distinctUntilChanged()
     }.collectAsState(initial = null)
-    val streamUrl = viewModel.getCurrentStreamUrl().takeIf { it.isNotBlank() && !isLive }
+    val streamUrl = viewModel.getCurrentStreamUrl().takeIf { enabled && it.isNotBlank() && !isLive }
     val isYouTube = viewModel.isYouTubePlayback()
+    val youtubeVideoId = if (isYouTube) viewModel.youtubeVideoId() else null
+    val storyboard = remember(youtubeVideoId) {
+        youtubeVideoId?.let(com.nuvio.tv.youtube.YouTubeStoryboards::get)
+    }
     val controller = com.nuvio.tv.ui.screens.player.seekpreview.rememberSeekPreviewController(
         url = streamUrl,
         headers = remember(streamUrl) { viewModel.getCurrentHeaders() },
-        releaseAfterScrub = isYouTube
+        // A storyboard source has no decoder and can stay warm for the whole player session.
+        releaseAfterScrub = isYouTube && storyboard == null,
+        storyboard = storyboard,
+        storyboardVideoId = youtubeVideoId,
+        keepAlive = storyboard != null
     )
     LaunchedEffect(controller, scrubPosition, durationMs) {
         val target = scrubPosition
         if (target != null) controller?.request(target, durationMs) else controller?.endScrub()
     }
-    // Start the hidden player as soon as the bar is on screen, so the first picture is not a long wait.
-    LaunchedEffect(controller) {
-        if (!isYouTube && warmPositionMs != null && controller != null) {
+    // Start the hidden player (or download the first storyboard sheet) as soon as the bar is on
+    // screen, so the first picture is not a long wait.
+    LaunchedEffect(controller, storyboard) {
+        if (enabled && warmPositionMs != null && controller != null && (!isYouTube || storyboard != null)) {
             kotlinx.coroutines.delay(800)
             controller.warmUp(warmPositionMs, durationMs)
         }
@@ -3594,7 +3636,14 @@ private fun PlayerControlsProgressBarHost(
     forceLive: Boolean = false
 ) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
-    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, playbackTimeline.isLive, warmPositionMs = playbackTimeline.currentPosition)
+    val seekPreviewEnabled = rememberSeekPreviewEnabled(viewModel)
+    val (previewController, scrubPosition) = rememberScrubPreview(
+        viewModel,
+        playbackTimeline.duration,
+        playbackTimeline.isLive,
+        warmPositionMs = playbackTimeline.currentPosition,
+        enabled = seekPreviewEnabled
+    )
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column {
@@ -4084,7 +4133,13 @@ private fun SeekOverlay(
 private fun SeekOverlayHost(viewModel: PlayerViewModel, chapters: List<PlayerChapter>, forceLive: Boolean = false) {
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val live = playbackTimeline.isLive || forceLive
-    val (previewController, scrubPosition) = rememberScrubPreview(viewModel, playbackTimeline.duration, live)
+    val seekPreviewEnabled = rememberSeekPreviewEnabled(viewModel)
+    val (previewController, scrubPosition) = rememberScrubPreview(
+        viewModel,
+        playbackTimeline.duration,
+        live,
+        enabled = seekPreviewEnabled
+    )
 
     SeekOverlay(
         currentPosition = playbackTimeline.currentPosition,

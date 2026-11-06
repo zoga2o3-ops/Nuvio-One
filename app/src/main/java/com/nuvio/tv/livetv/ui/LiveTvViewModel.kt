@@ -169,8 +169,10 @@ class LiveTvViewModel @Inject constructor(
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    private val hasSources: StateFlow<Boolean> = prefs.playlists.map { it.isNotEmpty() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    private val hasSources: StateFlow<Boolean> =
+        combine(prefs.playlists, prefs.addonChannelSources) { playlists, addons ->
+            playlists.isNotEmpty() || addons.any { it.enabled }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     /**
      * Channels with the user's renames and renumbering applied. Worked out once for the whole
@@ -488,6 +490,12 @@ class LiveTvViewModel @Inject constructor(
     /** Channels already tried in a row of backup switches (cleared when you change channel). */
     private val backupTried = HashSet<String>()
     private var switchingToBackup = false
+    /** Set when playback moved to a backup channel: the guide should follow it. */
+    private val _focusChannelRequest = MutableStateFlow<String?>(null)
+    val focusChannelRequest: StateFlow<String?> = _focusChannelRequest
+    fun consumeFocusChannelRequest() {
+        _focusChannelRequest.value = null
+    }
 
     /**
      * Switches from a channel that won't play to another one with the same name (a different
@@ -509,6 +517,7 @@ class LiveTvViewModel @Inject constructor(
             .filter { it.key !in backupTried }
             // Local stations: "FOX (WNYW)" isn't a backup for "FOX (KTTV)".
             .filter { c -> val a = stationNote(failed.name); val b = stationNote(c.name); a == null || b == null || a == b }
+            .filter { it.key !in user.hiddenChannels && it.groupId !in user.hiddenGroups }
             .filter { !com.nuvio.tv.livetv.parental.ParentalControls.isLocked(it.groupId, it.group, s, user.lockedGroups) }
             .sortedBy { if (it.sourceId != failed.sourceId) 0 else 1 }
             .firstOrNull() ?: return false
@@ -516,6 +525,8 @@ class LiveTvViewModel @Inject constructor(
         com.nuvio.tv.livetv.record.LiveTvNotice.show("${failed.name} isn't working right now. Switched to ${pick.name} from ${pick.group}.")
         switchingToBackup = true
         try { preview(pick) } finally { switchingToBackup = false }
+        // The preview/full-screen player switched channels; move the guide with it too.
+        _focusChannelRequest.value = pick.key
         return true
     }
 
@@ -894,13 +905,17 @@ class LiveTvViewModel @Inject constructor(
      * sort through every channel twice a minute while Home was open).
      */
     private val homeRowChannels = combine(displayChannels, userState, settings) { channels, user, s ->
-        if (!s.homeRowEnabled || channels.isEmpty()) return@combine emptyList<LiveChannel>() to s
+        if (!s.homeRowEnabled) return@combine emptyList<LiveChannel>() to s
+        // Add-on channels (Stremio TV catalogs such as the CNCVerse bridge) belong to the Live TV
+        // guide, not Nuvio's Home row. Keep them out of Favorites, Recently watched and All here.
+        val homeChannels = channels.filter { it.addon == null }
+        if (homeChannels.isEmpty()) return@combine emptyList<LiveChannel>() to s
         val groupId = when (s.homeRowSource) {
             "favorites", "" -> ChannelGroup.FAVORITES
             "recent" -> ChannelGroup.RECENT
             else -> s.homeRowSource
         }
-        buildUi(channels, user, s, groupId, "", true, exactGroup = true).channels to s
+        buildUi(homeChannels, user, s, groupId, "", true, exactGroup = true).channels to s
     }.flowOn(Dispatchers.Default).distinctUntilChanged()
 
     val homeRow: StateFlow<List<HomeRowEntry>> = combine(
@@ -934,15 +949,20 @@ class LiveTvViewModel @Inject constructor(
      */
     private val homeRowKeys: kotlinx.coroutines.flow.Flow<List<String>> =
         combine(displayChannels, userState, settings) { channels, user, s ->
-            if (!s.homeRowEnabled || channels.isEmpty()) emptyList()
+            if (!s.homeRowEnabled) emptyList()
             else {
-                val groupId = when (s.homeRowSource) {
-                    "favorites", "" -> ChannelGroup.FAVORITES
-                    "recent" -> ChannelGroup.RECENT
-                    else -> s.homeRowSource
+                // Same rule as the home row: add-on channels stay in the guide only.
+                val homeChannels = channels.filter { it.addon == null }
+                if (homeChannels.isEmpty()) emptyList()
+                else {
+                    val groupId = when (s.homeRowSource) {
+                        "favorites", "" -> ChannelGroup.FAVORITES
+                        "recent" -> ChannelGroup.RECENT
+                        else -> s.homeRowSource
+                    }
+                    val limit = if (s.homeRowLimit > 0) s.homeRowLimit * 3 else 200
+                    buildUi(homeChannels, user, s, groupId, "", true, exactGroup = true).channels.take(limit).map { it.key }
                 }
-                val limit = if (s.homeRowLimit > 0) s.homeRowLimit * 3 else 200
-                buildUi(channels, user, s, groupId, "", true, exactGroup = true).channels.take(limit).map { it.key }
             }
         }.flowOn(Dispatchers.Default).distinctUntilChanged()
 
@@ -1316,9 +1336,11 @@ class LiveTvViewModel @Inject constructor(
     fun renameGroup(groupId: String, name: String?) = viewModelScope.launch { prefs.setGroupName(groupId, name) }
 
     /** Playlist id -> name, for the playlist headings in the group list. */
-    val playlistNames: StateFlow<Map<String, String>> = prefs.playlists
-        .map { list -> list.associate { it.id to it.name } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    val playlistNames: StateFlow<Map<String, String>> =
+        combine(prefs.playlists, repository.channels) { list, channels ->
+            list.associate { it.id to it.name } +
+                channels.associate { it.sourceId to it.sourceName }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Playlists folded away in the group list (kept while the app is open). */
     val collapsedPlaylists = session.collapsedPlaylists

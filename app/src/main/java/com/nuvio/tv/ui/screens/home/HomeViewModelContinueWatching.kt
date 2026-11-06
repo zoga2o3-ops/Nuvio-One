@@ -108,6 +108,26 @@ internal data class CwMetaSummary(
     }
 
     /**
+     * Regular episodes after the latest episode the user has watched, or null when the addon
+     * has no episode list. Earlier unwatched episodes are ignored: someone who jumped to a
+     * later episode should see what is left from that point, not the whole back catalogue.
+     */
+    fun remainingEpisodeCount(watched: Set<Pair<Int, Int>>): Int? {
+        val episodes = videos.mapNotNull { video ->
+            val season = video.season
+            val episode = video.episode
+            if (season != null && season > 0 && episode != null) season to episode else null
+        }.distinct()
+        if (episodes.isEmpty()) return null
+        val order = compareBy<Pair<Int, Int>>({ it.first }, { it.second })
+        val latestWatched = watched
+            .filter { it.first > 0 }
+            .maxWithOrNull(order)
+            ?: return episodes.size
+        return episodes.count { order.compare(it, latestWatched) > 0 }.coerceAtLeast(0)
+    }
+
+    /**
      * Returns the start-of-day (00:00 UTC) epochMs of the earliest upcoming season's
      * first episode release date minus 7 days, or null if no upcoming seasons are known.
      * Subtracts 7 days so revalidation triggers a week before the premiere,
@@ -1571,6 +1591,26 @@ private suspend fun HomeViewModel.enrichVisibleContinueWatchingItems(
 
     val metaCache = cwMetaCache
     val enrichmentSemaphore = Semaphore(CW_MAX_ENRICHMENT_CONCURRENCY)
+    // One read for the whole row; used to turn "episodes in the series" into "episodes left".
+    val watchedEpisodesByShow = if (finalItems.any { item ->
+            when (item) {
+                is ContinueWatchingItem.InProgress -> isSeriesTypeCW(item.progress.contentType)
+                is ContinueWatchingItem.NextUp -> isSeriesTypeCW(item.info.contentType)
+            }
+        }
+    ) {
+        runCatching { watchProgressRepository.getWatchedShowEpisodes() }.getOrDefault(emptyMap())
+    } else {
+        emptyMap()
+    }
+    val watchedCounts = watchedEpisodesByShow.mapValues { it.value.size }
+    if (watchedCounts != cwLastWatchedEpisodeCounts) {
+        cwLastWatchedEpisodeCounts = watchedCounts
+        // The number of watched episodes changed: rebuild the enriched cards so the
+        // "episodes left" badge is not stale.
+        cwEnrichedNextUpOverlay.clear()
+        cwEnrichedInProgressOverlay.clear()
+    }
     val enrichedItems = finalItems
         .mapIndexed { index, item ->
             async(Dispatchers.IO) {
@@ -1592,7 +1632,12 @@ private suspend fun HomeViewModel.enrichVisibleContinueWatchingItems(
                                     )
                                 )
                             } else {
-                                enrichInProgressItem(item, metaCache, debug)
+                                enrichInProgressItem(
+                                    item,
+                                    metaCache,
+                                    watchedEpisodesByShow[item.progress.contentId].orEmpty(),
+                                    debug
+                                )
                             }
                         }
                         is ContinueWatchingItem.NextUp -> {
@@ -1628,7 +1673,12 @@ private suspend fun HomeViewModel.enrichVisibleContinueWatchingItems(
                                     item.copy(info = overlay)
                                 }
                             } else {
-                                enrichNextUpItem(item, metaCache, debug)
+                                enrichNextUpItem(
+                                    item,
+                                    metaCache,
+                                    watchedEpisodesByShow[item.info.contentId].orEmpty(),
+                                    debug
+                                )
                             }
                         }
                     }
@@ -1928,6 +1978,7 @@ private suspend fun HomeViewModel.buildNextUpItem(
 private suspend fun HomeViewModel.enrichInProgressItem(
     item: ContinueWatchingItem.InProgress,
     metaCache: MutableMap<String, CwMetaSummary?>,
+    watchedEpisodes: Set<Pair<Int, Int>> = emptySet(),
     debug: CwDebugSession? = null
 ): ContinueWatchingItem.InProgress = coroutineScope {
     val shouldEnrichTmdb = currentTmdbSettings.enabled && currentTmdbSettings.enrichContinueWatching
@@ -1944,6 +1995,11 @@ private suspend fun HomeViewModel.enrichInProgressItem(
     val meta = resolveMetaForProgress(item.progress, metaCache, debug)
     if (meta == null) {
         return@coroutineScope item
+    }
+    val remainingEpisodes = if (isSeriesTypeCW(item.progress.contentType)) {
+        meta.remainingEpisodeCount(watchedEpisodes)
+    } else {
+        null
     }
     val video = resolveVideoForProgress(item.progress, meta)
     val genres = meta.genres.take(3)
@@ -2015,13 +2071,15 @@ private suspend fun HomeViewModel.enrichInProgressItem(
         contentLanguage = tmdbData?.contentLanguage
             ?: normalizeLanguageCode(meta.language)
             ?: countryToLanguageCode(meta.country)
-            ?: item.contentLanguage
+            ?: item.contentLanguage,
+        remainingEpisodes = remainingEpisodes
     )
 }
 
 private suspend fun HomeViewModel.enrichNextUpItem(
     item: ContinueWatchingItem.NextUp,
     metaCache: MutableMap<String, CwMetaSummary?>,
+    watchedEpisodes: Set<Pair<Int, Int>> = emptySet(),
     debug: CwDebugSession? = null
 ): ContinueWatchingItem.NextUp = coroutineScope {
     val progressSeed = item.info.toProgressSeed()
@@ -2037,6 +2095,11 @@ private suspend fun HomeViewModel.enrichNextUpItem(
     } else null
 
     val meta = resolveMetaForProgress(progressSeed, metaCache, debug) ?: return@coroutineScope item
+    val remainingEpisodes = if (isSeriesTypeCW(progressSeed.contentType)) {
+        meta.remainingEpisodeCount(watchedEpisodes)
+    } else {
+        null
+    }
     val video = resolveNextUpVideoFromMeta(progressSeed, meta)
 
     val tmdbData = if (shouldEnrichTmdb) {
@@ -2119,7 +2182,8 @@ private suspend fun HomeViewModel.enrichNextUpItem(
             ?: normalizeLanguageCode(meta.language)
             ?: countryToLanguageCode(meta.country)
             ?: item.info.contentLanguage,
-        imdbRating = episodeRating
+        imdbRating = episodeRating,
+        remainingEpisodes = remainingEpisodes
     )
     if (shouldTraceNextUpSeries(progressSeed)) {
         logNextUpDecision(

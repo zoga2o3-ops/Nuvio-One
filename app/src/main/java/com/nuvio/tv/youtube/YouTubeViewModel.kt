@@ -11,6 +11,7 @@ import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import com.liskovsoft.youtubeapi.service.internal.MediaServiceData
+import com.nuvio.tv.ui.screens.player.seekpreview.YouTubeStoryboardCache
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -186,6 +187,9 @@ class YouTubeViewModel @Inject constructor(
         }
         selectTab(YouTubeSettings.lastTab(context))
         YouTubeMpdServer.attach(context.cacheDir)
+        // A killed process can leave sprite sheets behind; they are only useful while a
+        // player is open, so sweep them before a new one starts.
+        YouTubeStoryboardCache.cleanup(context)
     }
 
     // ---- feeds ----
@@ -443,6 +447,15 @@ class YouTubeViewModel @Inject constructor(
     private fun toRows(groups: List<MediaGroup>?): List<YtRow> =
         groups.orEmpty().map { YtRow(it.title.orEmpty(), toItems(it), it, it.nextPageKey != null) }.filter { it.items.isNotEmpty() }
 
+    /** Home follows SmartTube's useful order; unknown rows keep their place after the known ones. */
+    private fun orderedHomeRows(rows: List<YtRow>): List<YtRow> {
+        val priority = listOf("recommended", "recently uploaded", "continue watching", "trending", "live", "music")
+        return rows.sortedBy { row ->
+            val title = row.title.lowercase()
+            priority.indexOfFirst { title.contains(it) }.let { if (it < 0) priority.size else it }
+        }
+    }
+
     /**
      * Loads a page made of rows. YouTube sends it in batches of rows, and SmartTube keeps taking batches until
      * there are none left; so the first batch shows straight away, and the rest are added underneath as they come.
@@ -463,12 +476,19 @@ class YouTubeViewModel @Inject constructor(
                     for (attempt in 0 until 3) {
                         try {
                             source().blockingForEach { groups ->
-                                val batch = toRows(groups)
-                                if (batch.isEmpty()) return@blockingForEach
+                                val incoming = toRows(groups)
+                                if (incoming.isEmpty()) return@blockingForEach
+                                val batch = if (label == YtTab.HOME.title) orderedHomeRows(incoming) else incoming
                                 val firstEver = !got
                                 got = true
                                 _state.update { s ->
-                                    s.copy(loading = false, grid = emptyList(), canLoadMore = false, rows = if (firstEver) batch else s.rows + batch)
+                                    val rows = if (firstEver) batch else s.rows + batch
+                                    s.copy(
+                                        loading = false,
+                                        grid = emptyList(),
+                                        canLoadMore = false,
+                                        rows = if (label == YtTab.HOME.title) orderedHomeRows(rows) else rows
+                                    )
                                 }
                                 if (firstEver) {
                                     // The first lookup after the app starts is slow, so do it while you're still choosing.
@@ -510,7 +530,7 @@ class YouTubeViewModel @Inject constructor(
                 if (attempt < 2) Thread.sleep(1500L * (attempt + 1))
             }
         }
-        throw last ?: IllegalStateException("No answer from YouTube")
+        throw last ?: IllegalStateException("No answer from OneTube")
     }
 
     private sealed interface Feed {
@@ -813,7 +833,7 @@ class YouTubeViewModel @Inject constructor(
         _menu.update { current ->
             current?.copy(
                 pinned = !menu.pinned,
-                message = if (menu.pinned) "Removed from the YouTube page" else "Pinned to the YouTube page"
+                message = if (menu.pinned) "Removed from the OneTube page" else "Pinned to the OneTube page"
             )
         }
     }
@@ -925,6 +945,17 @@ class YouTubeViewModel @Inject constructor(
             Log.i(TAG, "lookup with client=${info.clientInfo?.clientName} at ${since()}ms")
         }
         if (info.isUnplayable) error(friendlyReason(info.playabilityReason))
+        // The seek preview uses YouTube's sprite sheets, so it has no need for a second decoder.
+        // Some playback clients omit storyboards from their response; fetch those in the background
+        // through the older video-info path rather than delaying playback.
+        if (info.isLive) {
+            YouTubeStoryboards.clear(videoId)
+        } else {
+            val directStoryboard = runCatching { info.createStoryboard() }.getOrNull()
+            Log.i(TAG, "storyboard video=$videoId direct=${directStoryboard != null}")
+            YouTubeStoryboards.put(videoId, directStoryboard)
+            if (directStoryboard == null) YouTubeStoryboards.ensure(videoId)
+        }
         Log.i(TAG, "formats video=$videoId dash=${info.containsDashFormats()} " +
             "sabr=${info.containsSabrFormats()} hls=${info.containsHlsUrl()} " +
             "adaptive=${info.adaptiveFormats?.size} urlFormats=${info.urlFormats?.size ?: 0} " +
@@ -943,7 +974,7 @@ class YouTubeViewModel @Inject constructor(
                 ?: info.hlsManifestUrl
                 ?: info.dashManifestUrl
                 ?: info.urlFormats?.firstOrNull()?.url
-        } ?: error("YouTube didn't return a stream for this video. Try again in a moment.")
+        } ?: error("OneTube didn't return a stream for this video. Try again in a moment.")
         Log.i(TAG, "ready $videoId after ${since()}ms")
         // Stream URLs are tied to the client that asked for them, so the player has to present
         // the same user-agent.
@@ -1183,7 +1214,7 @@ class YouTubeViewModel @Inject constructor(
         return when {
             "age" in r || "confirm your age" in r || "inappropriate" in r ->
                 if (signedIn) "This video is age-restricted, and your account can't play it."
-                else "This video is age-restricted. Sign in to YouTube to watch it."
+                else "This video is age-restricted. Sign in to OneTube to watch it."
             "country" in r || "region" in r || "location" in r -> "This video isn't available in your country."
             "private" in r -> "This video is private."
             "member" in r || "join this channel" in r -> "This video is for channel members only."
@@ -1191,7 +1222,7 @@ class YouTubeViewModel @Inject constructor(
             "copyright" in r -> "This video was removed over a copyright claim."
             "removed" in r || "terminated" in r || "no longer available" in r || "unavailable" in r ->
                 "This video has been removed or isn't available."
-            "sign in" in r -> "YouTube wants you to sign in to watch this one."
+            "sign in" in r -> "OneTube wants you to sign in to watch this one."
             reason.isNullOrBlank() -> "This video can't be played."
             else -> reason
         }

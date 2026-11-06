@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Divider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -52,6 +53,7 @@ import com.nuvio.tv.domain.model.LibrarySourceMode
 import com.nuvio.tv.domain.model.MetaPreview
 import com.nuvio.tv.ui.components.ErrorState
 import com.nuvio.tv.ui.components.LoadingIndicator
+import com.nuvio.tv.ui.components.LocalShowContinueWatchingEpisodeCount
 import com.nuvio.tv.ui.components.LocalStartupLoadingState
 import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.shouldShowHomeStartupLoader
@@ -537,6 +539,9 @@ private fun ClassicHomeRoute(
 ) {
     val focusState by viewModel.focusState.collectAsStateWithLifecycle()
     val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
+    CompositionLocalProvider(
+        LocalShowContinueWatchingEpisodeCount provides uiState.showContinueWatchingEpisodeCount
+    ) {
     ClassicHomeContent(
         uiState = uiState,
         posterCardStyle = posterCardStyle,
@@ -574,6 +579,7 @@ private fun ClassicHomeRoute(
             { catalogKey: String -> viewModel.requestLazyCatalogLoad(catalogKey) }
         }
     )
+    }
 }
 
 @Composable
@@ -593,6 +599,9 @@ private fun GridHomeRoute(
 ) {
     val gridFocusState by viewModel.gridFocusState.collectAsStateWithLifecycle()
     val scrollToTopTrigger by viewModel.scrollToTopTrigger.collectAsStateWithLifecycle()
+    CompositionLocalProvider(
+        LocalShowContinueWatchingEpisodeCount provides uiState.showContinueWatchingEpisodeCount
+    ) {
     GridHomeContent(
         onFocusedRowKeyChanged = remember(viewModel) {
             { key: String? -> viewModel.setLiveFocusedRowKey(key) }
@@ -626,6 +635,7 @@ private fun GridHomeRoute(
             }
         }
     )
+    }
 }
 
 @Composable
@@ -676,6 +686,9 @@ private fun ModernHomeRoute(
             viewModel.preloadAdjacentItem(item)
         }
     }
+    CompositionLocalProvider(
+        LocalShowContinueWatchingEpisodeCount provides uiState.showContinueWatchingEpisodeCount
+    ) {
     ModernHomeContent(
         uiState = uiState,
         modernPresentation = modernPresentation,
@@ -709,6 +722,7 @@ private fun ModernHomeRoute(
             { catalogKey: String -> viewModel.requestLazyCatalogLoad(catalogKey) }
         }
     )
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)

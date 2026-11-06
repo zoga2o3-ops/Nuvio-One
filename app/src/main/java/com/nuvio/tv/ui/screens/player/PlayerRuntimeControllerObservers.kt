@@ -343,6 +343,7 @@ internal fun PlayerRuntimeController.observeSubtitleSettings() {
                     subtitleStyle = settings.subtitleStyle,
                     loadingOverlayEnabled = settings.loadingOverlayEnabled,
                     showPlayerLoadingStatus = settings.showPlayerLoadingStatus,
+                    seekPreviewEnabled = settings.seekPreviewEnabled,
                     playbackIssueReportsEnabled = settings.playbackIssueReportsEnabled,
                     showLoadingOverlay = shouldShowOverlay,
                     loadingIssueReportVisible = if (settings.playbackIssueReportsEnabled) {

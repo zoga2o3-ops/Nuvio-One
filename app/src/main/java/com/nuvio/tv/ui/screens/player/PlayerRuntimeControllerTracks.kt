@@ -389,7 +389,7 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         com.nuvio.tv.youtube.YouTubeSettings.playbackSpeed(context).takeIf { it > 0f && it != 1f }?.let { speed ->
             onEvent(PlayerEvent.OnSetPlaybackSpeed(speed))
         }
-        val preferred = com.nuvio.tv.youtube.YouTubeSettings.preferredHeight(context)
+        val preferred = com.nuvio.tv.youtube.YouTubeSettings.effectivePreferredHeight(context)
         if (preferred > 0) {
             val height = videoQualities.map { it.height }.firstOrNull { it <= preferred }
                 ?: videoQualities.last().height

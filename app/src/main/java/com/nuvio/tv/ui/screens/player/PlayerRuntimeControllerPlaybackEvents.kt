@@ -1841,6 +1841,10 @@ fun PlayerRuntimeController.onEvent(
             }
         }
         is PlayerEvent.OnSelectVideoQuality -> {
+            if (com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)) {
+                com.nuvio.tv.youtube.YouTubeSettings.onUserSelectedQuality(context, event.height)
+                applyYouTubeCodecPreference()
+            }
             selectVideoQuality(event.height)
             _uiState.update { it.copy(showQualityOverlay = false, selectedVideoQualityHeight = event.height) }
             scheduleHideControls()
@@ -2172,8 +2176,6 @@ fun PlayerRuntimeController.onEvent(
         }
         PlayerEvent.OnToggleAspectRatio -> {
             val state = _uiState.value
-            // A vertical video (a Short) is fixed to its own shape.
-            if (state.isPortraitVideo) return
             if (state.tunnelingEnabled) {
                 val fill = !state.tunneledSurfaceFill
                 val label = PlayerDisplayModeUtils.resizeModeLabel(

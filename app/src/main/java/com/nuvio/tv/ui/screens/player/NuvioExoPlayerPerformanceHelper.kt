@@ -353,12 +353,12 @@ object NuvioExoPlayerPerformanceHelper {
      * boost codec operating rate for the fastest possible seek, or `null` when
      * performance mode is off.
      */
-    fun buildScrubbingParams(): ScrubbingModeParameters? {
+    fun buildScrubbingParams(allowSkippingMediaCodecFlush: Boolean = true): ScrubbingModeParameters? {
         if (!enabled) return null
         return ScrubbingModeParameters.Builder()
             .setDisabledTrackTypes(setOf(C.TRACK_TYPE_AUDIO, C.TRACK_TYPE_METADATA))
             .setShouldIncreaseCodecOperatingRate(true)
-            .setAllowSkippingMediaCodecFlush(true)
+            .setAllowSkippingMediaCodecFlush(allowSkippingMediaCodecFlush)
             .setShouldEnableDynamicScheduling(true)
             .build()
     }

@@ -84,6 +84,8 @@ data class PlayerUiState(
     val playbackSpeed: Float = 1f,
     val loadingOverlayEnabled: Boolean = true,
     val showPlayerLoadingStatus: Boolean = false,
+    /** Experimental seek-bar thumbnails, off unless the viewer turns them on. */
+    val seekPreviewEnabled: Boolean = false,
     val playbackIssueReportsEnabled: Boolean = false,
     val showLoadingOverlay: Boolean = true,
     val loadingMessage: String? = null,
@@ -305,9 +307,9 @@ data class TrackInfo(
     val sampleRate: Int? = null
 )
 
-/** The aspect the picture uses: a vertical video keeps its own shape, whatever the setting says. */
+/** The aspect the picture uses. Portrait videos follow the same setting so the More menu can change them. */
 internal val PlayerUiState.effectiveAspectMode: AspectMode
-    get() = if (isPortraitVideo) AspectMode.ORIGINAL else aspectMode
+    get() = aspectMode
 
 data class NextEpisodeInfo(
     val videoId: String,

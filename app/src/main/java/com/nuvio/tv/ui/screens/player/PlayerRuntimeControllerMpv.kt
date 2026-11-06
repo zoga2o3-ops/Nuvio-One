@@ -1,6 +1,7 @@
 package com.nuvio.tv.ui.screens.player
 
 import android.util.Log
+import androidx.media3.exoplayer.ScrubbingModeParameters
 import androidx.media3.exoplayer.SeekParameters
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import kotlinx.coroutines.CancellationException
@@ -619,6 +620,19 @@ internal fun PlayerRuntimeController.hasActivePlayIntent(): Boolean {
 }
 
 /**
+ * Ends scrubbing mode even if ExoPlayer never leaves STATE_READY (an in-buffer seek often
+ * doesn't fire onPlaybackStateChanged). Leaving it on disables audio/metadata and can leave
+ * the video renderer in a strange state after a seek.
+ */
+internal fun PlayerRuntimeController.clearScrubbingMode() {
+    scrubbingModeResetJob?.cancel()
+    scrubbingModeResetJob = null
+    if (!isScrubbingModeActive) return
+    isScrubbingModeActive = false
+    _exoPlayer?.setScrubbingModeParameters(ScrubbingModeParameters.Builder().build())
+}
+
+/**
  * [exact] makes the mpv seek exact even when the file was loaded with `hr-seek=no`, where a plain
  * seek lands on a keyframe; ExoPlayer takes its precision from [seekParameters] alone.
  */
@@ -653,9 +667,18 @@ internal fun PlayerRuntimeController.seekPlaybackTo(
                     seekBufferingUiJob?.cancel()
                     _uiState.update { it.copy(isBuffering = true) }
                 }
-                NuvioExoPlayerPerformanceHelper.buildScrubbingParams()?.let { params ->
+                NuvioExoPlayerPerformanceHelper.buildScrubbingParams(
+                    // YouTube VODs skip this: some TV decoders show the previous frame after
+                    // a seek when the MediaCodec flush is skipped.
+                    allowSkippingMediaCodecFlush = !com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(contentId)
+                )?.let { params ->
                     isScrubbingModeActive = true
                     player.setScrubbingModeParameters(params)
+                    scrubbingModeResetJob?.cancel()
+                    scrubbingModeResetJob = scope.launch {
+                        delay(1_500L)
+                        clearScrubbingMode()
+                    }
                 }
             }
             player.setSeekParameters(seekParameters)

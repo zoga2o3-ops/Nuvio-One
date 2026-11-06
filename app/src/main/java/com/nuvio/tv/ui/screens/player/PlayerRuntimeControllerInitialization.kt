@@ -27,7 +27,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.ScrubbingModeParameters
 import androidx.media3.exoplayer.ForwardingRenderer
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.audio.AudioRendererEventListener
@@ -1257,12 +1256,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                             playbackAnalyticsDiagnostics.onRebufferEnded(this@apply, rebufferTotalMs, lastRebufferMs)
                         }
 
-                        if (isScrubbingModeActive) {
-                            isScrubbingModeActive = false
-                            _exoPlayer?.setScrubbingModeParameters(
-                                ScrubbingModeParameters.Builder().build()
-                            )
-                        }
+                        clearScrubbingMode()
 
                         if (playbackState == Player.STATE_BUFFERING && !hasRenderedFirstFrame) {
                             _uiState.update { state ->

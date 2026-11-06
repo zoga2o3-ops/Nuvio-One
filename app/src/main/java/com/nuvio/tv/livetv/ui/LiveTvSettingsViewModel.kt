@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.livetv.data.LiveTvPreferences
 import com.nuvio.tv.livetv.data.LiveTvRepository
 import com.nuvio.tv.livetv.data.LiveTvStatus
+import com.nuvio.tv.domain.model.Addon
+import com.nuvio.tv.domain.model.CatalogDescriptor
+import com.nuvio.tv.livetv.model.AddonChannelSource
 import com.nuvio.tv.livetv.model.EpgSource
 import com.nuvio.tv.livetv.model.LiveTvSettings
 import com.nuvio.tv.livetv.model.LiveUserState
@@ -24,13 +27,18 @@ class LiveTvSettingsViewModel @Inject constructor(
     val cloudSync: com.nuvio.tv.livetv.sync.LiveTvCloudSync,
     val onDemand: com.nuvio.tv.livetv.ondemand.OnDemandRepository,
     private val posterResolver: com.nuvio.tv.livetv.data.LiveTvPosterResolver,
-    private val matcher247: com.nuvio.tv.livetv.data.LiveTv247Matcher
+    private val matcher247: com.nuvio.tv.livetv.data.LiveTv247Matcher,
+    private val addonRepository: com.nuvio.tv.domain.repository.AddonRepository
 ) : ViewModel() {
 
     val playlists: StateFlow<List<PlaylistSource>> =
         prefs.playlists.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val epgSources: StateFlow<List<EpgSource>> =
         prefs.epgSources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val addonChannelSources: StateFlow<List<AddonChannelSource>> =
+        prefs.addonChannelSources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val installedAddons: StateFlow<List<Addon>> =
+        addonRepository.getInstalledAddons().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val settings: StateFlow<LiveTvSettings> =
         prefs.settings.stateIn(viewModelScope, SharingStarted.Eagerly, LiveTvSettings())
     val userState: StateFlow<LiveUserState> =
@@ -98,6 +106,31 @@ class LiveTvSettingsViewModel @Inject constructor(
         if (enabled && pl != null && pl.isXtream && pl.importVod) onDemand.refreshNow(id) else onDemand.refreshSoon()
     }
     fun movePlaylist(id: String, delta: Int) = viewModelScope.launch { repository.movePlaylist(id, delta) }
+
+    /** Turns one addon's Live TV catalog on or off in the guide. */
+    fun setAddonCatalogEnabled(addon: Addon, catalog: CatalogDescriptor, enabled: Boolean) {
+        val sourceId = "${addon.baseUrl}|${catalog.id}"
+        viewModelScope.launch {
+            prefs.updateAddonChannelSources { list ->
+                val existing = list.firstOrNull { it.id == sourceId }
+                when {
+                    existing != null -> list.map {
+                        if (it.id == sourceId) it.copy(enabled = enabled) else it
+                    }
+                    enabled -> list + AddonChannelSource(
+                        id = sourceId,
+                        addonBaseUrl = addon.baseUrl,
+                        addonName = addon.displayName,
+                        addonLogo = addon.logo,
+                        catalogId = catalog.id,
+                        catalogName = catalog.name
+                    )
+                    else -> list
+                }
+            }
+            repository.refreshAddonChannelsNow()
+        }
+    }
 
     fun addEpg(name: String, url: String) = viewModelScope.launch { repository.addEpg(name, url) }
     fun saveEpg(source: EpgSource) = viewModelScope.launch { repository.updateEpg(source) }
