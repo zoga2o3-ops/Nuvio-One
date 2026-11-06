@@ -25,6 +25,7 @@ class SettingsCatalogTest {
                 SettingsCategory.CONTENT_DISCOVERY,
                 SettingsCategory.PLAYBACK,
                 SettingsCategory.LIVE_TV,
+                SettingsCategory.ON_DEMAND,
                 SettingsCategory.SPORTS,
                 SettingsCategory.YOUTUBE,
                 SettingsCategory.CALENDAR,

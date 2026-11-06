@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -37,7 +38,7 @@ import javax.inject.Singleton
 
 @Singleton
 class LiveTvPreferences @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val profileManager: com.nuvio.tv.core.profile.ProfileManager
 ) {
     private val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
@@ -532,7 +533,9 @@ class LiveTvPreferences @Inject constructor(
             vodGroupNames = decodeStringMap(p[Keys.vodGroupNames]),
             vodSorts = decodeStringMap(p[Keys.vodSorts])
         )
-    }.distinctUntilChanged()
+    // Read off the main thread: this runs on every settings change, and on a slow box with
+    // memory nearly full it used to hold up the screen until Android closed the app.
+    }.flowOn(Dispatchers.Default).distinctUntilChanged()
 
     suspend fun currentPlaylists(): List<PlaylistSource> = playlists.first()
     suspend fun currentEpgSources(): List<EpgSource> = epgSources.first()
@@ -1259,6 +1262,7 @@ class LiveTvPreferences @Inject constructor(
         return runCatching { decodePlaylists(raw(Keys.playlists.name)).isNotEmpty() }.getOrDefault(false) ||
             runCatching { decodeEpgs(raw(Keys.epgs.name)).isNotEmpty() }.getOrDefault(false) ||
             runCatching { decodeAddonChannels(raw(Keys.addonChannels.name)).isNotEmpty() }.getOrDefault(false)
+
     }
 
     /** Replaces this TV's Live TV setup with [data] from [exportForSync], keeping per-TV state. */

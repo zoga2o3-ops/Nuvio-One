@@ -741,7 +741,11 @@ class LiveTvRepository @Inject constructor(
         prefs.currentPlaylists().filter { it.liveEnabled }.forEach { pl ->
             val f = playlistFile(pl.id)
             sb.append(pl.id).append(':').append(pl.name.hashCode()).append(':').append(pl.userAgent.hashCode())
-                .append(':').append(f.length()).append(':').append(contentStamp(f)).append(',')
+                .append(':').append(f.length()).append(':').append(contentStamp(f))
+            // M3U links: the chosen stream format changes the channel links (Auto adds nothing,
+            // so lists saved before this setting existed stay valid).
+            if (!pl.isXtream && pl.streamFormat != "auto") sb.append(":fmt=").append(pl.streamFormat)
+            sb.append(',')
         }
         prefs.currentAddonChannelSources().filter { it.enabled }.forEach { src ->
             sb.append("addon:").append(src.id).append(':').append(src.lastUpdatedMs).append(',')
@@ -1738,7 +1742,7 @@ class LiveTvRepository @Inject constructor(
                     // it, with "Group by playlist").
                     group = groupTitle,
                     number = number,
-                    url = e.url,
+                    url = pl.m3uStreamLink(e.url),
                     headers = headers,
                     catchup = e.catchup,
                     drm = e.drm

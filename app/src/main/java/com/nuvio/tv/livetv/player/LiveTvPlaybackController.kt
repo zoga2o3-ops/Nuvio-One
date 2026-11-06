@@ -1986,7 +1986,7 @@ class LiveTvPlaybackController @Inject constructor(
             .setDefaultRequestProperties(headers.filterKeys { it != "User-Agent" })
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
+            .setReadTimeoutMs(20_000))
         val item = buildMediaItem(url, isLive)
         // Closed captions: TV channels usually carry them inside the video (CEA-608/708) without
         // announcing them, so the player never offered them and Subtitles only showed "Off".
@@ -2030,7 +2030,7 @@ class LiveTvPlaybackController @Inject constructor(
             .setDefaultRequestProperties(headers.filterKeys { it != "User-Agent" })
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(20_000)
+            .setReadTimeoutMs(20_000))
         val itemBuilder = buildMediaItem(url, isLive).buildUpon()
         if (drm.manifestType == "mpd" || url.lowercase().contains(".mpd")) itemBuilder.setMimeType(MimeTypes.APPLICATION_MPD)
         if (drm.manifestType == "hls") itemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -2104,7 +2104,8 @@ class LiveTvPlaybackController @Inject constructor(
         val lower = url.lowercase().substringBefore('?')
         when {
             forcedMime != null -> builder.setMimeType(forcedMime)
-            lower.endsWith(".m3u8") || lower.contains("/hls/") || lower.contains("m3u8") -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
+            lower.endsWith(".m3u8") || lower.contains("/hls/") || lower.contains("m3u8") ||
+                com.nuvio.tv.livetv.model.PlaylistSource.asksForHls(url) -> builder.setMimeType(MimeTypes.APPLICATION_M3U8)
             lower.endsWith(".mpd") -> builder.setMimeType(MimeTypes.APPLICATION_MPD)
             lower.endsWith(".ts") -> builder.setMimeType(MimeTypes.VIDEO_MP2T)
         }

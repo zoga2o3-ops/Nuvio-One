@@ -81,6 +81,8 @@ import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.ui.platform.LocalConfiguration
@@ -342,10 +344,12 @@ fun HeroContentSection(
                         }
 
                         if (showRandomEpisodeButton) {
-                            ShuffleButton(
-                                active = episodeShuffle.enabled,
-                                pending = shuffleActionPending,
-                                onClick = onRandomEpisodeClick,
+                            ActionIconButton(
+                                icon = if (episodeShuffle.enabled) Icons.Default.Stop else Icons.Default.Shuffle,
+                                contentDescription = stringResource(
+                                    if (episodeShuffle.enabled) R.string.shuffle_stop else R.string.random_episode_title
+                                ),
+                                onClick = { if (!shuffleActionPending) onRandomEpisodeClick() },
                                 focusRequester = randomEpisodeFocusRequester,
                                 onFocused = onHeroActionFocused
                             )

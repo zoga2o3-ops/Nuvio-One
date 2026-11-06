@@ -51,11 +51,13 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
@@ -173,6 +175,7 @@ private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec
     SettingsCategory.DEBUG -> SettingsSectionSpec(category, stringResource(R.string.settings_debug), Icons.Default.BugReport, destination = SettingsSectionDestination.Inline)
     // Live TV fork
     SettingsCategory.LIVE_TV -> SettingsSectionSpec(category, "Live TV", Icons.Default.LiveTv, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.ON_DEMAND -> SettingsSectionSpec(category, "On Demand", Icons.Default.Movie, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SPORTS -> SettingsSectionSpec(category, "Sports", Icons.Default.EmojiEvents, destination = SettingsSectionDestination.Inline)
     SettingsCategory.YOUTUBE -> SettingsSectionSpec(category, "OneTube", Icons.Default.PlayCircle, destination = SettingsSectionDestination.Inline)
     SettingsCategory.SIDE_MENU -> SettingsSectionSpec(category, "Menu & Features", Icons.Default.Menu, destination = SettingsSectionDestination.Inline)
@@ -260,6 +263,7 @@ fun SettingsScreen(
             SettingsCategory.INTEGRATION to FocusRequester(),
             SettingsCategory.TRACKING to FocusRequester(),
             SettingsCategory.LIVE_TV to FocusRequester(),
+            SettingsCategory.ON_DEMAND to FocusRequester(),
             SettingsCategory.SPORTS to FocusRequester(),
             SettingsCategory.YOUTUBE to FocusRequester(),
             SettingsCategory.SIDE_MENU to FocusRequester(),
@@ -1025,6 +1029,14 @@ private fun SettingsDetailPane(
         SettingsCategory.YOUTUBE -> YouTubeSettingsContent(
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.YOUTUBE]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.ON_DEMAND -> LiveTvSettingsContent(
+            page = LiveTvPage.ON_DEMAND,
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.ON_DEMAND]
             } else {
                 null
             }
