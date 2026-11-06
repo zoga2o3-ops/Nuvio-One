@@ -37,6 +37,7 @@ data class MusicAccountPlaylist(
 object MusicAccountRepository {
     private const val TAG = "MusicAccount"
     private const val CACHE_MS = 60_000L
+    private const val MAX_PAGES = 300
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val groupItems = ConcurrentHashMap<String, MediaItem>()
@@ -82,18 +83,32 @@ object MusicAccountRepository {
     }
 
     fun playlistSongs(playlistId: String): Result<List<Song>> = runCatching {
-        val group = service().contentService.getPlaylist(playlistId)
+        var group = service().contentService.getPlaylist(playlistId)
             ?: error("This playlist couldn't be opened.")
-        group.mediaItems.orEmpty().mapNotNull { it.toSong() }
+        val songs = mutableListOf<Song>()
+        var pages = 0
+        while (true) {
+            group.mediaItems.orEmpty().mapNotNullTo(songs) { it.toSong() }
+            if (group.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
+            group = runCatching { service().contentService.continueGroup(group) }.getOrNull() ?: break
+        }
+        songs
     }
 
     /** Opens a shelf card that was stored while the account home was loaded. */
     fun groupSongs(key: String): Result<List<Song>> = runCatching {
         val source = groupItems[key]
             ?: error("This shelf has expired. Reload Home and try again.")
-        val group = service().contentService.getGroup(source)
+        var group = service().contentService.getGroup(source)
             ?: error("This shelf couldn't be opened.")
-        group.mediaItems.orEmpty().mapNotNull { it.toSong() }
+        val songs = mutableListOf<Song>()
+        var pages = 0
+        while (true) {
+            group.mediaItems.orEmpty().mapNotNullTo(songs) { it.toSong() }
+            if (group.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
+            group = runCatching { service().contentService.continueGroup(group) }.getOrNull() ?: break
+        }
+        songs
     }
 
     /** Best-effort sync of the heart to the account's Liked Music. The local like is immediate. */
@@ -141,10 +156,17 @@ object MusicAccountRepository {
     }
 
     private fun loadPlaylists(): List<MusicAccountPlaylist> {
-        val group = service().contentService.getPlaylistsObserve()
+        var group = service().contentService.getPlaylistsObserve()
             .timeout(20, TimeUnit.SECONDS)
             .blockingFirst()
-        return group?.mediaItems.orEmpty()
+        val items = mutableListOf<MediaItem>()
+        var pages = 0
+        while (group != null) {
+            items += group.mediaItems.orEmpty()
+            if (group.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
+            group = runCatching { service().contentService.continueGroup(group) }.getOrNull()
+        }
+        return items
             .mapNotNull { item ->
                 val id = item.playlistId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
                 if (item.title.orEmpty().contains("liked", ignoreCase = true)) {

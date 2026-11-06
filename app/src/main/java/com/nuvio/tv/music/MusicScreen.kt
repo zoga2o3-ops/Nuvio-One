@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
@@ -81,6 +80,8 @@ import com.nuvio.tv.LocalOpenSidebar
 /** One density scale for the whole Music section. */
 private const val MUSIC_UI_SCALE = 0.88f
 
+private data class MusicVideoRequest(val video: Song, val startPositionMs: Long)
+
 /**
  * The Music section: YouTube Music browsing, search and an audio-first player, in BitChord's
  * Apple-Music-inspired layout.
@@ -101,6 +102,7 @@ fun MusicScreen(
     val account by accountViewModel.state.collectAsState()
     val context = LocalContext.current
     var showNowPlaying by remember { mutableStateOf(false) }
+    var musicVideo by remember { mutableStateOf<MusicVideoRequest?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showDownloads by remember { mutableStateOf(false) }
     var showParty by remember { mutableStateOf(false) }
@@ -195,6 +197,9 @@ fun MusicScreen(
 
     fun selectTab(tab: MusicTab) {
         openPlaylistId = null
+        showIntegrations = false
+        showWebDav = false
+        showNavidrome = false
         viewModel.selectTab(tab)
     }
 
@@ -223,7 +228,11 @@ fun MusicScreen(
                 onOpenAccount = { showAccount = true },
                 onOpenSettings = { showSettings = true },
                 onOpenParty = { showParty = true },
-                onOpenIntegrations = { showIntegrations = true },
+                onOpenIntegrations = {
+                    showIntegrations = true
+                    showWebDav = false
+                    showNavidrome = false
+                },
                 onOpenNuvioMenu = { openNuvioSidebar() },
                 initialFocus = topNavFocus
             )
@@ -245,6 +254,41 @@ fun MusicScreen(
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
+                    showWebDav -> MusicWebDavScreen(
+                        onClose = {
+                            showWebDav = false
+                            showIntegrations = true
+                        },
+                        onPlay = { songs, index ->
+                            showWebDav = false
+                            showIntegrations = false
+                            MusicPlayer.playQueue(songs, index)
+                            showNowPlaying = true
+                        }
+                    )
+                    showNavidrome -> MusicNavidromeScreen(
+                        onClose = {
+                            showNavidrome = false
+                            showIntegrations = true
+                        },
+                        onPlay = { songs, index ->
+                            showNavidrome = false
+                            showIntegrations = false
+                            MusicPlayer.playQueue(songs, index)
+                            showNowPlaying = true
+                        }
+                    )
+                    showIntegrations -> MusicIntegrationsScreen(
+                        onClose = { showIntegrations = false },
+                        onOpenWebDav = {
+                            showIntegrations = false
+                            showWebDav = true
+                        },
+                        onOpenNavidrome = {
+                            showIntegrations = false
+                            showNavidrome = true
+                        }
+                    )
                     state.detail.open -> MusicDetailScreen(
                         state = state.detail,
                         onBack = viewModel::closeDetail,
@@ -329,7 +373,7 @@ fun MusicScreen(
                             viewModel.openDetail(
                                 browseId = "account:playlist:${playlist.id}",
                                 title = playlist.title,
-                                subtitle = "Music account",
+                                subtitle = "YouTube Music account",
                                 thumbnailUrl = playlist.thumbnailUrl,
                                 type = BrowseType.PLAYLIST
                             )
@@ -345,7 +389,8 @@ fun MusicScreen(
                             play(recents.map { it.toSong() }, index)
                         },
                         onOpenPlaylist = { playlist -> openPlaylistId = playlist.id },
-                        onOpenDownloads = { showDownloads = true }
+                        onOpenDownloads = { showDownloads = true },
+                        onPlayDownloaded = { songs, index -> play(songs, index) }
                     )
                     state.tab == MusicTab.LOCAL -> MusicLocalScreen(
                         onPlay = { songs, index -> play(songs, index) }
@@ -383,7 +428,25 @@ fun MusicScreen(
         MusicOverlayDialog(onDismiss = { showNowPlaying = false }) {
             MusicNowPlayingScreen(
                 onClose = { showNowPlaying = false },
-                onOpenSettings = { showSettings = true }
+                onOpenSettings = { showSettings = true },
+                onOpenMusicVideo = { video, startPositionMs ->
+                    MusicPlayer.pause()
+                    musicVideo = MusicVideoRequest(video, startPositionMs)
+                    showNowPlaying = false
+                }
+            )
+        }
+    }
+
+    musicVideo?.let { request ->
+        MusicOverlayDialog(onDismiss = { musicVideo = null }) {
+            MusicVideoPlayerScreen(
+                video = request.video,
+                startPositionMs = request.startPositionMs,
+                onClose = {
+                    musicVideo = null
+                    showNowPlaying = true
+                }
             )
         }
     }
@@ -410,48 +473,6 @@ fun MusicScreen(
     if (showParty) {
         MusicOverlayDialog(onDismiss = { showParty = false }) {
             MusicPartyScreen(onClose = { showParty = false })
-        }
-    }
-
-    if (showWebDav) {
-        MusicOverlayDialog(onDismiss = { showWebDav = false }) {
-            MusicWebDavScreen(
-                onClose = { showWebDav = false },
-                onPlay = { songs, index ->
-                    showWebDav = false
-                    MusicPlayer.playQueue(songs, index)
-                    showNowPlaying = true
-                }
-            )
-        }
-    }
-
-    if (showIntegrations) {
-        MusicOverlayDialog(onDismiss = { showIntegrations = false }) {
-            MusicIntegrationsScreen(
-                onClose = { showIntegrations = false },
-                onOpenWebDav = {
-                    showIntegrations = false
-                    showWebDav = true
-                },
-                onOpenNavidrome = {
-                    showIntegrations = false
-                    showNavidrome = true
-                }
-            )
-        }
-    }
-
-    if (showNavidrome) {
-        MusicOverlayDialog(onDismiss = { showNavidrome = false }) {
-            MusicNavidromeScreen(
-                onClose = { showNavidrome = false },
-                onPlay = { songs, index ->
-                    showNavidrome = false
-                    MusicPlayer.playQueue(songs, index)
-                    showNowPlaying = true
-                }
-            )
         }
     }
 
@@ -782,7 +803,7 @@ private fun NowPlayingChip(
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(horizontal = 5.dp),
+            .padding(start = 5.dp, end = 11.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         MusicArtwork(
@@ -810,11 +831,9 @@ private fun NowPlayingChip(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            Icons.Default.GraphicEq,
-            contentDescription = null,
-            tint = MusicPalette.accentTeal,
-            modifier = Modifier.size(11.dp)
+        MusicPlayingIndicator(
+            playing = playback.isPlaying,
+            modifier = Modifier.width(13.dp)
         )
     }
 }
@@ -865,14 +884,14 @@ private fun MusicAccountButton(name: String?, avatar: String?, onClick: () -> Un
         if (avatar != null) {
             AsyncImage(
                 model = avatar,
-                contentDescription = name ?: "Music account",
+                contentDescription = name ?: "YouTube Music account",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize().clip(CircleShape)
             )
         } else {
             Icon(
                 Icons.Default.AccountCircle,
-                contentDescription = if (name == null) "Sign in to music" else name,
+                contentDescription = if (name == null) "Sign in to YouTube Music" else name,
                 tint = if (focused) MusicPalette.text else MusicPalette.textSecondary,
                 modifier = Modifier.size(20.dp)
             )

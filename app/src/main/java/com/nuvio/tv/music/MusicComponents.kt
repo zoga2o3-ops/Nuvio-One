@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +31,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
@@ -46,14 +50,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
@@ -771,5 +787,158 @@ internal fun formatMusicTime(milliseconds: Long): String {
         "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%d:%02d".format(minutes, seconds)
+    }
+}
+
+/**
+ * A TV text field that does not open the keyboard just because it received focus. The remote
+ * lands on the field first, and Center starts editing.
+ */
+/** The three dancing bars in the now-playing chip. Static when playback is paused. */
+@Composable
+internal fun MusicPlayingIndicator(playing: Boolean, modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "nowPlayingIndicator")
+    val fast by transition.animateFloat(
+        initialValue = 0.30f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(420, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "indicatorFast"
+    )
+    val medium by transition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(360, delayMillis = 70, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "indicatorMedium"
+    )
+    val slow by transition.animateFloat(
+        initialValue = 0.38f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(520, delayMillis = 140, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "indicatorSlow"
+    )
+    val bars = if (playing) listOf(fast, medium, slow) else listOf(0.42f, 0.72f, 0.52f)
+    Row(
+        modifier = modifier.height(14.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        bars.forEach { fraction ->
+            Box(
+                Modifier
+                    .width(2.5.dp)
+                    .fillMaxHeight(fraction.coerceIn(0.2f, 1f))
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MusicPalette.accentTeal)
+            )
+        }
+    }
+}
+
+@Composable
+internal fun MusicTextField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    password: Boolean = false,
+    fontSize: TextUnit = 13.sp,
+    onDone: () -> Unit = {}
+) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    var focused by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+
+    Column(modifier) {
+        Text(
+            text = label,
+            color = MusicPalette.textMuted,
+            fontSize = 10.sp,
+            letterSpacing = 1.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(5.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MusicPalette.backgroundTop)
+                .border(
+                    2.dp,
+                    if (focused) MusicPalette.accent else MusicPalette.border,
+                    RoundedCornerShape(10.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 11.dp)
+        ) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                readOnly = !editing,
+                textStyle = TextStyle(
+                    color = MusicPalette.text,
+                    fontSize = fontSize,
+                    fontFamily = MusicSans
+                ),
+                cursorBrush = SolidColor(MusicPalette.accent),
+                visualTransformation = if (password) {
+                    PasswordVisualTransformation()
+                } else {
+                    VisualTransformation.None
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    keyboard?.hide()
+                    editing = false
+                    onDone()
+                }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged {
+                        focused = it.isFocused
+                        if (!it.isFocused) {
+                            editing = false
+                            keyboard?.hide()
+                        }
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent false
+                        }
+                        when {
+                            !editing && (event.key == Key.DirectionCenter || event.key == Key.Enter) -> {
+                                editing = true
+                                keyboard?.show()
+                                true
+                            }
+                            editing && event.key == Key.Back -> {
+                                editing = false
+                                keyboard?.hide()
+                                true
+                            }
+                            else -> false
+                        }
+                    },
+                decorationBox = { inner ->
+                    if (value.isEmpty()) {
+                        Text(
+                            text = placeholder,
+                            color = MusicPalette.textMuted,
+                            fontSize = 12.sp
+                        )
+                    }
+                    inner()
+                }
+            )
+        }
     }
 }

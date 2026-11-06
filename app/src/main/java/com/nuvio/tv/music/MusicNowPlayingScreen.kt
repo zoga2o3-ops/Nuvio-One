@@ -1,6 +1,9 @@
 package com.nuvio.tv.music
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,10 +54,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,17 +74,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -88,11 +94,10 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -112,6 +117,7 @@ private enum class NowPlayingTab(val label: String) {
 internal fun MusicNowPlayingScreen(
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenMusicVideo: (Song, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by MusicPlayer.state.collectAsState()
@@ -149,10 +155,16 @@ internal fun MusicNowPlayingScreen(
     var lyricsExpanded by remember { mutableStateOf(false) }
     var nowTab by remember { mutableStateOf(NowPlayingTab.LYRICS) }
 
+    DisposableEffect(Unit) {
+        MusicPlayer.setFastProgress(true)
+        onDispose { MusicPlayer.setFastProgress(false) }
+    }
+
     LaunchedEffect(song?.videoId) {
         lyricsExpanded = false
         nowTab = NowPlayingTab.LYRICS
         lyricsViewModel.load(song)
+        MusicPlayer.prepareVideoForCurrentTrack()
     }
 
     LaunchedEffect(showPlaylistPicker) {
@@ -358,7 +370,7 @@ internal fun MusicNowPlayingScreen(
                         Spacer(Modifier.height(10.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             MusicActionChip(
                                 icon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -410,6 +422,19 @@ internal fun MusicNowPlayingScreen(
                                 active = state.repeatMode != RepeatMode.OFF,
                                 onClick = { MusicPlayer.cycleRepeat() }
                             )
+                            if (state.videoAvailable && state.videoSong != null && song?.localUri == null) {
+                                MusicActionChip(
+                                    icon = Icons.Default.Videocam,
+                                    label = "Music video",
+                                    active = false,
+                                    onClick = {
+                                        state.videoSong?.let { video ->
+                                            MusicPlayer.pause()
+                                            onOpenMusicVideo(video, MusicPlayer.videoStartPositionMs())
+                                        }
+                                    }
+                                )
+                            }
                         }
 
                         Spacer(Modifier.height(8.dp))
@@ -893,6 +918,15 @@ private fun LyricsPanel(
                     contentPadding = PaddingValues(bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
+                    if (!timed) {
+                        item(key = "lyrics-untimed") {
+                            Text(
+                                text = "Lyrics aren't time-synced for this track.",
+                                color = MusicPalette.textMuted,
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
                     itemsIndexed(
                         items = lyrics.lines,
                         key = { index, line -> "$index:${line.timeMs}" }
@@ -901,95 +935,92 @@ private fun LyricsPanel(
                             Spacer(Modifier.height(if (expanded) 16.dp else 10.dp))
                         } else {
                             val isCurrent = index == current
+                            val nextLineTime = lyrics.lines.getOrNull(index + 1)?.timeMs
                             val baseColor = when {
-                                isCurrent -> Color.White
                                 !timed -> Color.White.copy(alpha = 0.62f)
-                                timed && line.timeMs < positionMs -> Color.White.copy(alpha = 0.20f)
+                                line.timeMs < positionMs -> Color.White.copy(alpha = 0.20f)
                                 else -> Color.White.copy(alpha = 0.36f)
                             }
-                            val lineText = if (isCurrent && line.isWordSynced) {
-                                buildAnnotatedString {
-                                    var cursor = 0
-                                    line.wordSpans.forEachIndexed { wordIndex, span ->
-                                        val start = span.first.coerceIn(0, line.text.length)
-                                        val end = (span.last + 1).coerceIn(start, line.text.length)
-                                        if (start > cursor) {
-                                            append(line.text.substring(cursor, start))
+                            // A left-to-right wipe instead of a whole-line fill. Word timings
+                            // drive it where the provider has them; line-synced lyrics sweep
+                            // across their own slot up to the next stamp.
+                            val sweepTarget = if (isCurrent) {
+                                if (line.isWordSynced) {
+                                    line.revealedChars(positionMs) /
+                                        line.text.length.coerceAtLeast(1)
+                                } else {
+                                    val start = line.timeMs
+                                    val end = line.sungUntilMs ?: nextLineTime ?: (start + 4_000L)
+                                    (positionMs - start).toFloat() /
+                                        (end - start).coerceAtLeast(1L)
+                                }.coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
+                            // The player reports position twice a second; tween between
+                            // those updates so the wipe travels instead of stepping.
+                            val sweep by animateFloatAsState(
+                                targetValue = sweepTarget,
+                                animationSpec = tween(durationMillis = 200, easing = LinearEasing),
+                                label = "lyric-sweep"
+                            )
+                            val fontSize = when {
+                                isCurrent && expanded -> 38.sp
+                                isCurrent -> 22.sp
+                                expanded -> 24.sp
+                                else -> 16.sp
+                            }
+                            val lineHeight = if (expanded) 44.sp else 24.sp
+                            val weight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                            var textLayout by remember(line.text, fontSize, expanded) {
+                                mutableStateOf<TextLayoutResult?>(null)
+                            }
+                            Box(Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = line.text,
+                                    color = if (isCurrent) {
+                                        Color.White.copy(alpha = 0.38f)
+                                    } else {
+                                        baseColor
+                                    },
+                                    fontFamily = if (expanded) MusicDisplay else null,
+                                    fontSize = fontSize,
+                                    fontWeight = weight,
+                                    lineHeight = lineHeight,
+                                    onTextLayout = { textLayout = it },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                val layout = textLayout
+                                if (isCurrent && layout != null) {
+                                    Canvas(Modifier.matchParentSize()) {
+                                        val totalChars = line.text.length.coerceAtLeast(1)
+                                        val revealed = sweep * totalChars
+                                        for (lineIndex in 0 until layout.lineCount) {
+                                            val start = layout.getLineStart(lineIndex)
+                                            val end = layout.getLineEnd(lineIndex, visibleEnd = true)
+                                            if (end <= start) continue
+                                            val lineFraction = (
+                                                (revealed - start) / (end - start).toFloat()
+                                                ).coerceIn(0f, 1f)
+                                            if (lineFraction <= 0f) continue
+                                            val left = layout.getLineLeft(lineIndex)
+                                            val right = layout.getLineRight(lineIndex)
+                                            clipRect(
+                                                left = left,
+                                                top = layout.getLineTop(lineIndex),
+                                                right = left + (right - left) * lineFraction,
+                                                bottom = layout.getLineBottom(lineIndex)
+                                            ) {
+                                                drawText(
+                                                    layout,
+                                                    color = MusicPalette.accentTeal,
+                                                    topLeft = Offset.Zero
+                                                )
+                                            }
                                         }
-                                        val word = line.words[wordIndex]
-                                        val sung = positionMs >= word.startMs
-                                        withStyle(
-                                            SpanStyle(
-                                                color = if (sung) {
-                                                    MusicPalette.accentTeal
-                                                } else {
-                                                    Color.White.copy(alpha = 0.48f)
-                                                },
-                                                fontWeight = if (sung) {
-                                                    FontWeight.Bold
-                                                } else {
-                                                    FontWeight.Medium
-                                                }
-                                            )
-                                        ) {
-                                            append(line.text.substring(start, end))
-                                        }
-                                        cursor = end
-                                    }
-                                    if (cursor < line.text.length) {
-                                        append(line.text.substring(cursor))
                                     }
                                 }
-                            } else {
-                                buildAnnotatedString { append(line.text) }
                             }
-                            Text(
-                                text = lineText,
-                                color = if (isCurrent) {
-                                    MusicPalette.accentTeal
-                                } else {
-                                    baseColor
-                                },
-                                fontFamily = if (expanded) MusicDisplay else null,
-                                fontSize = when {
-                                    isCurrent && expanded -> 38.sp
-                                    isCurrent -> 22.sp
-                                    expanded -> 24.sp
-                                    else -> 16.sp
-                                },
-                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                lineHeight = if (expanded) 44.sp else 24.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .drawBehind {
-                                        if (isCurrent) {
-                                            drawRoundRect(
-                                                color = MusicPalette.accentTeal.copy(alpha = 0.13f),
-                                                cornerRadius = CornerRadius(10.dp.toPx())
-                                            )
-                                            drawRoundRect(
-                                                color = MusicPalette.accentTeal,
-                                                size = Size(3.dp.toPx(), size.height),
-                                                cornerRadius = CornerRadius(2.dp.toPx())
-                                            )
-                                        }
-                                    }
-                                    .padding(
-                                        start = if (isCurrent) 16.dp else 8.dp,
-                                        end = 8.dp,
-                                        top = if (isCurrent) {
-                                            if (expanded) 7.dp else 3.dp
-                                        } else {
-                                            0.dp
-                                        },
-                                        bottom = if (isCurrent) {
-                                            if (expanded) 7.dp else 3.dp
-                                        } else {
-                                            0.dp
-                                        }
-                                    )
-                            )
                         }
                     }
                 }
@@ -1028,9 +1059,9 @@ private fun MusicActionChip(
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .padding(horizontal = 7.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
             icon,

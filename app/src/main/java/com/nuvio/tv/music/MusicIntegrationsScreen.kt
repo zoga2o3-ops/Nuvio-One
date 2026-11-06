@@ -91,14 +91,12 @@ internal fun MusicIntegrationsScreen(
         MusicWebDav.init(context)
         MusicNavidrome.init(context)
         MusicScrobbler.init(context)
-        withFrameNanos { }
-        runCatching { closeFocus.requestFocus() }
     }
 
     BackHandler(onBack = onClose)
 
     Box(Modifier.fillMaxSize().background(MusicPalette.background)) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 20.dp)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 8.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -387,65 +385,14 @@ private fun IntegrationField(
     modifier: Modifier = Modifier,
     password: Boolean = false
 ) {
-    val keyboard = LocalSoftwareKeyboardController.current
-    var focused by remember { mutableStateOf(false) }
-    Column(modifier) {
-        Text(
-            text = label,
-            color = MusicPalette.textMuted,
-            fontSize = 10.sp,
-            letterSpacing = 1.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(5.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(MusicPalette.backgroundTop)
-                .border(
-                    2.dp,
-                    if (focused) MusicPalette.accent else MusicPalette.border,
-                    RoundedCornerShape(10.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 11.dp)
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = MusicPalette.text,
-                    fontSize = 13.sp,
-                    fontFamily = MusicSans
-                ),
-                cursorBrush = SolidColor(MusicPalette.accent),
-                visualTransformation = if (password) {
-                    PasswordVisualTransformation()
-                } else {
-                    VisualTransformation.None
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged {
-                        focused = it.isFocused
-                        if (it.isFocused) keyboard?.show() else keyboard?.hide()
-                    },
-                decorationBox = { inner ->
-                    if (value.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            color = MusicPalette.textMuted,
-                            fontSize = 12.sp
-                        )
-                    }
-                    inner()
-                }
-            )
-        }
-    }
+    MusicTextField(
+        label = label,
+        value = value,
+        placeholder = placeholder,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        password = password
+    )
 }
 
 @Composable

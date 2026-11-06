@@ -89,9 +89,6 @@ private fun MoodList(
     modifier: Modifier = Modifier
 ) {
     val firstMoodFocus = remember { FocusRequester() }
-    LaunchedEffect(state.sections) {
-        runCatching { firstMoodFocus.requestFocus() }
-    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(top = 22.dp, bottom = 24.dp),

@@ -66,7 +66,10 @@ object MusicPlayer {
         val shuffle: Boolean = false,
         val error: String? = null,
         val sleepTimerMinutes: Int? = null,
-        val sleepTimerRemainingMs: Long? = null
+        val sleepTimerRemainingMs: Long? = null,
+        val videoAvailable: Boolean = false,
+        val videoLoading: Boolean = false,
+        val videoSong: Song? = null
     ) {
         val upNext: List<Song>
             get() = if (queue.isEmpty() || index < 0) emptyList()
@@ -84,12 +87,16 @@ object MusicPlayer {
     private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var resolutionJob: Job? = null
     private var prefetchJob: Job? = null
+    private var videoJob: Job? = null
     private var tickerJob: Job? = null
     private var fadeJob: Job? = null
     private var fadeOutStarted = false
+    @Volatile private var fastProgress = false
     private var sleepTimerEndsAt: Long? = null
     /** The queue before shuffle; used to restore the original order. */
     private var originalQueue: List<Song> = emptyList()
+    private var resolvedVideoSong: Song? = null
+    private var videoPreparedFor: String? = null
 
     /** Playhead to restore when the persisted queue is started again. */
     private var resumeVideoId: String? = null
@@ -101,6 +108,11 @@ object MusicPlayer {
 
     val mediaSession: MediaSession? get() = session
     val isPlayingNow: Boolean get() = player?.isPlaying == true
+
+    /** Lyrics and the seek bar run at 5 Hz while the player screen is open. */
+    fun setFastProgress(enabled: Boolean) {
+        fastProgress = enabled
+    }
 
     /** Safe to call from the service and from the screens; only builds the player once. */
     @Synchronized
@@ -473,9 +485,58 @@ object MusicPlayer {
         }
     }
 
+    /** Looks up the official video for the current track once Now Playing is open. */
+    fun prepareVideoForCurrentTrack() {
+        val song = _state.value.song ?: return
+        if (videoPreparedFor == song.videoId) return
+        videoJob?.cancel()
+        videoPreparedFor = song.videoId
+        resolvedVideoSong = null
+        _state.update {
+            it.copy(videoAvailable = false, videoLoading = false, videoSong = null)
+        }
+        if (song.localUri != null ||
+            song.videoId.startsWith("local:") ||
+            song.videoId.startsWith("webdav:") ||
+            song.videoId.startsWith("navidrome:")
+        ) {
+            return
+        }
+        if (song.isVideo) {
+            resolvedVideoSong = song
+            _state.update { it.copy(videoAvailable = true, videoSong = song) }
+            return
+        }
+        _state.update { it.copy(videoLoading = true) }
+        videoJob = scope.launch {
+            val video = withContext(Dispatchers.IO) {
+                runCatching { YtMusicRepository.resolveVideo(song) }.getOrNull()
+            }
+            if (_state.value.song?.videoId != song.videoId) return@launch
+            resolvedVideoSong = video
+            _state.update {
+                it.copy(
+                    videoAvailable = video != null,
+                    videoLoading = false,
+                    videoSong = video
+                )
+            }
+        }
+    }
+
+    /** Where to start the video so it lands on the moment the song is at. */
+    fun videoStartPositionMs(): Long {
+        val current = _state.value
+        val song = current.song ?: return 0L
+        val video = resolvedVideoSong ?: return current.positionMs
+        val map = YtMusicRepository.versionTimeMap(song.videoId, video.videoId)
+        return map?.map(current.positionMs) ?: current.positionMs
+    }
+
     fun stop() {
         resolutionJob?.cancel()
         prefetchJob?.cancel()
+        videoJob?.cancel()
         fadeJob?.cancel()
         fadeOutStarted = false
         sleepTimerEndsAt = null
@@ -490,6 +551,7 @@ object MusicPlayer {
         persistQueue()
         resolutionJob?.cancel()
         prefetchJob?.cancel()
+        videoJob?.cancel()
         tickerJob?.cancel()
         fadeJob?.cancel()
         tickerJob = null
@@ -509,6 +571,9 @@ object MusicPlayer {
     private fun playCurrent() {
         val song = _state.value.queue.getOrNull(_state.value.index) ?: return
         val p = player ?: return
+        videoJob?.cancel()
+        resolvedVideoSong = null
+        videoPreparedFor = null
         if (resumeVideoId != null && resumeVideoId != song.videoId) {
             resumeVideoId = null
             resumePositionMs = 0L
@@ -526,7 +591,10 @@ object MusicPlayer {
                     isPlaying = false,
                     positionMs = 0L,
                     durationMs = song.durationMillis(),
-                    error = null
+                    error = null,
+                    videoAvailable = false,
+                    videoLoading = false,
+                    videoSong = null
                 )
             }
             persistQueue()
@@ -843,7 +911,7 @@ object MusicPlayer {
                         _state.update { it.copy(sleepTimerRemainingMs = remaining) }
                     }
                 }
-                delay(500L)
+                delay(if (fastProgress) 200L else 500L)
             }
         }
     }

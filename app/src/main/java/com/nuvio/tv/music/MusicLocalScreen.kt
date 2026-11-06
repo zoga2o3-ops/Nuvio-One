@@ -91,10 +91,6 @@ internal fun MusicLocalScreen(
     }
 
     val scanFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        runCatching { scanFocus.requestFocus() }
-    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

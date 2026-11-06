@@ -75,12 +75,6 @@ internal fun MusicSearchScreen(
     var boxFocused by remember { mutableStateOf(false) }
     val playback by MusicPlayer.state.collectAsState()
 
-    LaunchedEffect(Unit) {
-        // Wait for the screen's focus targets to be attached, otherwise the request is lost and
-        // the remote lands on the filter row instead of the search box.
-        withFrameNanos { }
-        runCatching { boxFocus.requestFocus() }
-    }
     LaunchedEffect(editing) {
         if (editing) runCatching { textFocus.requestFocus() }
     }

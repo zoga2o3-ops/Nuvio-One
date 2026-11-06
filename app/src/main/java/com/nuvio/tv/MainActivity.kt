@@ -1754,7 +1754,7 @@ private fun LegacySidebarScaffold(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = { drawerValue ->
-            if (showSidebar && !(currentRoute == Screen.Music.route && drawerValue == DrawerValue.Closed)) {
+            if (showSidebar) {
                 val drawerWidth = if (drawerValue == DrawerValue.Open) openDrawerWidth else closedDrawerWidth
                 Box(
                     modifier = Modifier
@@ -1944,7 +1944,7 @@ private fun LegacySidebarScaffold(
         }
     ) {
         val contentStartPadding by animateDpAsState(
-            targetValue = if (showSidebar && !sidebarCollapsed && currentRoute != Screen.Music.route) {
+            targetValue = if (showSidebar && !sidebarCollapsed) {
                 NuvioLayout.tokens.sidebarContentOffset
             } else {
                 NuvioTheme.spacing.none
@@ -2492,8 +2492,7 @@ private fun ModernSidebarScaffold(
             }
         }
 
-        if (showSidebar && (sidebarVisible || sidebarShowExpandedPanel) &&
-            !(currentRoute == Screen.Music.route && !isSidebarExpanded)) {
+        if (showSidebar && (sidebarVisible || sidebarShowExpandedPanel)) {
             val panelShape = RoundedCornerShape(sidebarTokens.panelRadius)
             val showExpandedPanel = isSidebarExpanded || sidebarShowExpandedPanel
 

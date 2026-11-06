@@ -331,68 +331,16 @@ private fun WebDavField(
     modifier: Modifier = Modifier,
     password: Boolean = false
 ) {
-    val keyboard = LocalSoftwareKeyboardController.current
-    var focused by remember { mutableStateOf(false) }
-    Column(modifier) {
-        Text(
-            text = label,
-            color = MusicPalette.textMuted,
-            fontSize = 10.sp,
-            letterSpacing = 1.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(5.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(MusicPalette.backgroundTop)
-                .border(
-                    2.dp,
-                    if (focused) MusicPalette.accent else MusicPalette.border,
-                    RoundedCornerShape(10.dp)
-                )
-                .padding(horizontal = 12.dp, vertical = 11.dp)
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = TextStyle(
-                    color = MusicPalette.text,
-                    fontSize = 14.sp,
-                    fontFamily = MusicSans
-                ),
-                cursorBrush = SolidColor(MusicPalette.accent),
-                visualTransformation = if (password) {
-                    PasswordVisualTransformation()
-                } else {
-                    VisualTransformation.None
-                },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = {
-                    keyboard?.hide()
-                    onDone()
-                }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged {
-                        focused = it.isFocused
-                        if (it.isFocused) keyboard?.show() else keyboard?.hide()
-                    },
-                decorationBox = { inner ->
-                    if (value.isEmpty()) {
-                        Text(
-                            text = placeholder,
-                            color = MusicPalette.textMuted,
-                            fontSize = 13.sp
-                        )
-                    }
-                    inner()
-                }
-            )
-        }
-    }
+    MusicTextField(
+        label = label,
+        value = value,
+        placeholder = placeholder,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        password = password,
+        fontSize = 14.sp,
+        onDone = onDone
+    )
 }
 
 @Composable
