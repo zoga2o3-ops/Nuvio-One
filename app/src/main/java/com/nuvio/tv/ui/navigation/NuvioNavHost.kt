@@ -1704,6 +1704,12 @@ private fun PlaybackNavHost(
             )
         }
 
+        composable(Screen.Music.route) {
+            // Music fork: YouTube Music browsing and the audio-first player. The host rail is
+            // hidden behind Music's own rail, and Left opens Nuvio's menu over it.
+            com.nuvio.tv.music.MusicScreen()
+        }
+
         composable(Screen.Calendar.route) {
             // Live TV fork: when your shows' new episodes and your movies come out.
             com.nuvio.tv.livetv.calendar.CalendarScreen(
