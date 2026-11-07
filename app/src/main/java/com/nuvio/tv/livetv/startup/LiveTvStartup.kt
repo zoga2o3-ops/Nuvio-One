@@ -85,7 +85,7 @@ object StartPage {
     private val ROUTES = setOf(
         Screen.LiveTv.route, Screen.OnDemand.route, Screen.Sports.route,
         Screen.Calendar.route, Screen.Library.route, Screen.Search.route,
-        Screen.YouTube.route
+        Screen.YouTube.route, Screen.Music.route
     )
 
     /** The page to open on, or null for Home. */
@@ -98,7 +98,8 @@ object StartPage {
         val off = com.nuvio.tv.livetv.calendar.SideMenuPages.hidden(s.sideMenuHidden)
         // Only pages that are switched on (Settings → Menu & Features); otherwise Home.
         return when (s.openOn) {
-            "YOUTUBE" -> Screen.YouTube.route
+            "YOUTUBE" -> Screen.YouTube.route.takeIf { com.nuvio.tv.livetv.calendar.SideMenuPages.YOUTUBE !in off }
+            "MUSIC" -> Screen.Music.route.takeIf { com.nuvio.tv.livetv.calendar.SideMenuPages.MUSIC !in off }
             "LIVE_TV" -> Screen.LiveTv.route.takeIf { s.showInSidebar }
             "ON_DEMAND" -> Screen.OnDemand.route.takeIf { s.onDemandEnabled && s.onDemandInSidebar }
             "SPORTS" -> Screen.Sports.route.takeIf { sportsOn }

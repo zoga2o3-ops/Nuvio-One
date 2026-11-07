@@ -1255,6 +1255,10 @@ open class MainActivity : ComponentActivity() {
                             pages.RECORDINGS -> if (recordingsInSidebar) DrawerItem(route = Screen.Recordings.route, label = "Recordings", icon = Icons.Default.RadioButtonChecked, badge = recordingNow) else null
                             pages.SPORTS -> if (sportsInSidebar) DrawerItem(route = Screen.Sports.route, label = "Sports", icon = Icons.Default.EmojiEvents) else null
                             pages.ON_DEMAND -> if (onDemandInSidebar) DrawerItem(route = Screen.OnDemand.route, label = "On Demand", icon = Icons.Default.VideoLibrary) else null
+                            // YouTube fork: OneTube and Music are ordinary menu pages now, so
+                            // Menu & Features can switch them off and move them like the rest.
+                            pages.YOUTUBE -> if (id !in hiddenPages) DrawerItem(route = Screen.YouTube.route, label = "OneTube", icon = Icons.Default.PlayCircle, sectionStart = true) else null
+                            pages.MUSIC -> if (id !in hiddenPages) DrawerItem(route = Screen.Music.route, label = "Music", icon = Icons.Default.LibraryMusic) else null
                             else -> null
                         }
                         buildList {
@@ -1266,9 +1270,6 @@ open class MainActivity : ComponentActivity() {
                                 if (id in pages.LIVE_FAMILY) lineDone = true
                                 add(if (line) item.copy(sectionStart = true) else item)
                             }
-                            // YouTube fork: its own section after the Live TV pages.
-                            add(DrawerItem(route = Screen.YouTube.route, label = "OneTube", icon = Icons.Default.PlayCircle, sectionStart = true))
-                            add(DrawerItem(route = Screen.Music.route, label = "Music", icon = Icons.Default.LibraryMusic))
                             add(
                                 DrawerItem(
                                     route = Screen.Settings.route,

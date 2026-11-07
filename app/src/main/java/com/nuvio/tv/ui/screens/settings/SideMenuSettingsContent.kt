@@ -146,12 +146,23 @@ fun SideMenuSettingsContent(initialFocusRequester: FocusRequester? = null) {
             else "Off the menu only: recording still works, and Recordings is always in Live TV (● by the guide's ⚙)",
             s.recordingsInSidebar
         ) { update { it.copy(recordingsInSidebar = !it.recordingsInSidebar) } }
+        SideMenuPages.YOUTUBE -> PageRow(
+            "OneTube",
+            "The OneTube YouTube section: Home, subscriptions, search, playlists and playback",
+            id !in hidden
+        ) { setHidden(id, id !in hidden) }
+        SideMenuPages.MUSIC -> PageRow(
+            "Music",
+            "YouTube Music browsing, playback, lyrics, downloads, library and party",
+            id !in hidden
+        ) { setHidden(id, id !in hidden) }
         else -> PageRow(id, "", true) {}
     }
 
     val startChoices = buildList {
         add("HOME" to "Home")
-        add("YOUTUBE" to "OneTube")
+        if (SideMenuPages.YOUTUBE !in hidden) add("YOUTUBE" to "OneTube")
+        if (SideMenuPages.MUSIC !in hidden) add("MUSIC" to "Music")
         if (s.showInSidebar) add("LIVE_TV" to "Live TV")
         if (sportsSettings.showInSidebar) add("SPORTS" to "Sports")
         if (s.onDemandEnabled && s.onDemandInSidebar && onDemandHas) add("ON_DEMAND" to "On Demand")
