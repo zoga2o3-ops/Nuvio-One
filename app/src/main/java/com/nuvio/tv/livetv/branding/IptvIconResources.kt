@@ -20,7 +20,7 @@ import com.nuvio.tv.ui.screens.settings.iconResource
 import com.nuvio.tv.ui.theme.NuvioTheme
 
 /**
- * The "+ IPTV" icon and banner for each icon color (they live in the fork's resources, so they
+ * The Nuvio One Live TV icon and banner for each icon color (they live in the fork's resources, so they
  * are looked up by name and fall back to Nuvio's originals if missing).
  */
 object IptvIconResources {
