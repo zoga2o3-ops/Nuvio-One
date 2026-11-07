@@ -295,6 +295,8 @@ data class LiveTvSettings(
     val markPlayingChannel: Boolean = true,
     val showChannelLogos: Boolean = true,
     val showPreview: Boolean = true,
+    /** Keep the guide's preview window silent. Full-screen playback still has sound. */
+    val mutePreview: Boolean = true,
     val showProgramDetails: Boolean = true,
     val showFavoritesGroup: Boolean = true,
     val showRecentGroup: Boolean = true,

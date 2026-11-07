@@ -66,6 +66,7 @@ class LiveTvPreferences @Inject constructor(
         val markPlaying = booleanPreferencesKey("mark_playing_channel")
         val showLogos = booleanPreferencesKey("show_channel_logos")
         val showPreview = booleanPreferencesKey("show_preview")
+        val mutePreview = booleanPreferencesKey("mute_preview")
         val showDetails = booleanPreferencesKey("show_program_details")
         val showFavGroup = booleanPreferencesKey("show_favorites_group")
         val showRecentGroup = booleanPreferencesKey("show_recent_group")
@@ -348,6 +349,7 @@ class LiveTvPreferences @Inject constructor(
             markPlayingChannel = p[Keys.markPlaying] ?: d.markPlayingChannel,
             showChannelLogos = p[Keys.showLogos] ?: d.showChannelLogos,
             showPreview = p[Keys.showPreview] ?: d.showPreview,
+            mutePreview = p[Keys.mutePreview] ?: d.mutePreview,
             showProgramDetails = p[Keys.showDetails] ?: d.showProgramDetails,
             showFavoritesGroup = p[Keys.showFavGroup] ?: d.showFavoritesGroup,
             showRecentGroup = p[Keys.showRecentGroup] ?: d.showRecentGroup,
@@ -642,6 +644,7 @@ class LiveTvPreferences @Inject constructor(
         p[Keys.markPlaying] = s.markPlayingChannel
         p[Keys.showLogos] = s.showChannelLogos
         p[Keys.showPreview] = s.showPreview
+        p[Keys.mutePreview] = s.mutePreview
         p[Keys.showDetails] = s.showProgramDetails
         p[Keys.showFavGroup] = s.showFavoritesGroup
         p[Keys.showRecentGroup] = s.showRecentGroup

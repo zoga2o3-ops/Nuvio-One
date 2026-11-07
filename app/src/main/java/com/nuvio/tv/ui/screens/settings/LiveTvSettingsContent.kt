@@ -771,6 +771,12 @@ internal fun LiveTvSettingsContent(
                         { update { it.copy(showPreview = !it.showPreview) } }
                     )
                     SettingsToggleRow(
+                        "Mute Preview Sound",
+                        "Keeps the guide's preview window silent. Full-screen playback still has sound.",
+                        s.mutePreview,
+                        { update { it.copy(mutePreview = !it.mutePreview) } }
+                    )
+                    SettingsToggleRow(
                         "Smaller Info Panel & Preview",
                         "Shrinks the top of the guide to about two-thirds of its height, so more channels fit",
                         s.smallHeader,
