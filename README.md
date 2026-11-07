@@ -1,8 +1,8 @@
 <div align="center">
 
-# Nuvio + IPTV + 1Tube
+# Nuvio One
 
-**Movies and shows, live TV, sports and YouTube in one app for Google TV, Android TV and Fire TV.**
+**Movies and shows, live TV, sports, YouTube and music in one app for Google TV, Android TV and Fire TV.**
 
 [![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/NuvioPlusIPTV-1T?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
 [![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/NuvioPlusIPTV-1T/total?style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
