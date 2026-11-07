@@ -1,9 +1,9 @@
 # Porting the Music section
 
-The Music work lives in the `music-work` worktree at `H:\NuvioYouTubeFork\nuvio-music`.
-It is intentionally isolated from the rest of Nuvio: almost every new file is under
-`com.nuvio.tv.music` or `com.music.bitchord`, so the other branch mainly needs a small set
-of integration edits.
+The Music section is merged into the `livetv-addons-work` branch. The original work was
+developed in the `music-work` worktree at `H:\NuvioYouTubeFork\nuvio-music`, isolated from
+the rest of Nuvio: almost every new file is under `com.nuvio.tv.music` or
+`com.music.bitchord`, so the other branch mainly needed a small set of integration edits.
 
 ## What to bring over
 
@@ -21,7 +21,6 @@ Copy these paths unchanged:
 | `app/src/main/res/drawable/ic_music_notification.xml` | Playback/download/party notification icon. |
 | `design/music-ui/` | The Aurora design reference (not compiled). |
 | `docs/MUSIC.md` | Feature, limits and manual test notes. |
-| `docs/MUSIC-PORTING.md` | This guide. |
 
 ## Shared-file edits
 

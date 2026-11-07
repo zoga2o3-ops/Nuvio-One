@@ -1,54 +1,68 @@
-# Nuvio + IPTV 1.1.0-beta.9.3
+# Nuvio One 1.1.0-beta.11.1
 
-## What's new
+> Nuvio + IPTV + 1Tube is now Nuvio One.
 
-### Nuvio Account Sync
-- **Your Live TV setup now follows your Nuvio account.** Sign in on a new TV and your playlists, guides, favorites and settings come back by themselves, and changes stay in sync between your TVs
-- Your saved setup is encrypted. Manage it in **Settings → Live TV → Nuvio Account Sync**: Sync Now, Restore Earlier Copy, Turn Off or Delete Saved Setup
-- **Import from Google Drive** moves your Drive backup over in one step
+## Music
 
-### Live TV
-- Live TV opens on the last group you watched
-- New groups you add to a playlist show up next to their neighbours, not at the bottom
-- Guide channel numbers are right-aligned, and the number and group columns are only as wide as they need to be
-- In the full-screen overlay, scrolling the groups only moves the highlight, and it opens on the playing channel's group
-- **Start in Full Screen** works on every launch and starts smoothly
-- **Catch-up:** skips load faster and land where you aimed
-- **Match frame rate** now handles 59.94 Hz
-- New look for the game card in the guide: flat team-colour halves with the score in the middle
+Nuvio One now includes a full Music section:
 
-### Sports
-- New **League Networks** page: each league's own channel in one place (NFL RedZone, NBA TV, MLB Network, Golf Channel, Tennis Channel and more), with the option to pick a different channel by hand
-- Every Sports page has the same top bar, with the video window below it
-- Fights are matched by both fighters' names, boxing cards stay on longer, scheduled fights are no longer hidden, and the same event under different names shows once
-- My Sports **Live & Upcoming** includes the leagues on your top bar
+- **YouTube Music** - sign in for playlists, liked songs and a personalised home. Likes sync across devices.
+- **Spotify playlists** - import a public playlist by pasting its link.
+- **Navidrome and WebDAV** - connect your own music server and stream your collection.
+- **Local music** - play music from the TV, a USB drive or a network share.
+- **Downloads and offline playback** - download tracks and keep listening without a connection.
+- **Synced lyrics and music videos** - follow the lyrics, then jump between the song and its video.
+- **Playlists, queue, radio and shuffle** - build a collection and control what plays next.
+- **Explore and search** - browse moods and genres, or find any track.
+- **Last.fm scrobbling** and **Party mode** for listening together.
+- **Remote-first layout** - top tabs, Up Next and straightforward Back navigation.
 
-### Calendar
-- Game cards look like the Sports hub's, five across in Month view
-- **Following** tab with an info bar. Watch live, Record and Remind are in the hold-OK menu, for games too
-- Times use each network's own time zone
-- Each profile has its own followed and hidden shows
+## OneTube and YouTube
 
-### Menu & Features
-- **How the Menu Looks:** a line above Live TV, and **Shrink the Menu to Fit**
-- Pages are turned on or off per profile
-- On Demand can be **On**, **Off the menu only** or **Off**
+- Fixed YouTube sign-in.
+- The OneTube header now stays visible while a tab loads, and only collapses when you scroll down. Switching tabs no longer hides it.
+- Removed the duplicate tab name next to the clock.
+- Fixed tab navigation: Down from a tab lands on the first card, including the Gaming tab's first row.
+- Improved focus across tabs, cards and the controls when returning from playback.
+- Search now opens and closes cleanly and returns focus to the right place.
+- The channel name is clearly shown above the video title.
+- The YouTube action buttons above the seek bar are reachable with Up.
+- Related videos now include CHANNEL cards, like the home tabs.
+- The Aspect Ratio button is available for Shorts and portrait videos through the More menu.
+- Seek previews now use storyboards, including older videos that only have the legacy preview.
+- The long-press menu now shows only the actions that are actually available.
+- Added the bug-report shortcut to the player.
+- Updated the clock setting description to match the OneTube header.
+- OneTube tabs can still be turned on or off and reordered in Settings.
 
-### On Demand
-- **Play Straight from My Provider:** Play skips the source list for titles opened from On Demand
-- Your provider's copies are listed best quality first, with quality tags
+## Continue Watching
 
-### Updates
-- Updates are checked after downloading, so a damaged download is never installed
+- Episodes now show an **N EP left** badge instead of a generic progress badge.
+- The setting is under **Settings -> Layout -> Continue Watching -> Show episodes left**.
+- The count only includes episodes after the latest watched episode.
+- Added **Mark as watched** to the Continue Watching menu.
+- Fixed the back-navigation and progress-threshold issues around binge watching.
 
-## Fixed
-- The app sometimes closing as it opened
-- Slowdowns, high processor use, and jerky video followed by the app closing on slower boxes. Finding channels for games is much faster and no longer runs while you watch full screen
-- **Guide groups:** no more jumpy or laggy scrolling, no tiles cut in half, and the groups line up with the channels
-- **Catch-up** no longer gets stuck reloading after a skip on some providers
-- Sports no longer shows "Finding channels…" on almost every visit
-- Wrong sport labels on some games, and Live / Final showing late
-- Hiding a playlist group no longer empties your own groups
-- A crash in Sports tables
-- The On Demand home screen, and skip controls on recordings that are still in progress
-- Fixes for pinned scoreboards and the info bar
+## Player and subtitles
+
+- Added a VLC playback option for streams that struggle in the default player.
+- Playback now ends cleanly on more devices when the video reaches the end, so watched progress, scrobbling and next episode still run.
+- Improved rendering for styled subtitles.
+- Playback now stays on the same player when a stream restarts.
+- Faster startup and source loading, with better memory use on lower-RAM TVs.
+- Fixed focus restoration when returning from add-ons and plugins.
+- Kept add-on episode numbers when the add-on provides them.
+- Streams from providers and plugins are grouped more clearly.
+
+## Live TV
+
+- New **Mute Preview Sound** setting under **Settings -> Live TV -> Guide Layout**. The guide preview stays silent by default; full-screen playback still has sound.
+- Add-on channel sources now sync with your playlists and logins.
+- The backup-channel list is smaller and opens right above its button.
+- Reordered channels stay beside their neighbours instead of dropping to the bottom.
+- The info bar while flipping channels is the same size as the normal one.
+
+## Good to know
+
+- Music works without an account for public browsing. Sign in for personalised YouTube Music shelves and likes.
+- Updating the app keeps your existing OneTube setup, CNCverse/add-on playlists and Live TV setup on your device.
