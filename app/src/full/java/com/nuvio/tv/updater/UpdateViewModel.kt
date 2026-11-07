@@ -80,6 +80,8 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates(force: Boolean, showNoUpdateFeedback: Boolean) {
+        // A download in progress owns the banner; a check now would reset it and hide the progress.
+        if (_uiState.value.isDownloading) return
         // YouTube fork: no update source is set, so there is nothing to check.
         if (BuildConfig.GITHUB_OWNER.isBlank() || BuildConfig.GITHUB_REPO.isBlank()) return
         if (!force && !_uiState.value.updateBannerEnabled) return

@@ -246,6 +246,28 @@ public class YouTubeAccountManager {
         setAccountManagerData(Helpers.mergeArray(mAccounts.toArray()));
     }
 
+    /**
+     * The accounts as one string that {@link #importAccounts(String)} can load again. Lets the app keep several
+     * separate sets of signed-in accounts and switch the engine between them.
+     */
+    public synchronized String exportAccounts() {
+        return Helpers.mergeArray(mAccounts.toArray());
+    }
+
+    /** Replaces every account with the set in [data] (from {@link #exportAccounts()}; null or empty means none). */
+    public synchronized void importAccounts(String data) {
+        mAccounts.clear();
+
+        if (data != null && !data.isEmpty()) {
+            for (String spec : Helpers.splitArray(data)) {
+                mAccounts.add(YouTubeAccount.from(spec));
+            }
+        }
+
+        persistAccounts();
+        onAccountChanged();
+    }
+
     private void restoreAccounts() {
         String data = getAccountManagerData();
 

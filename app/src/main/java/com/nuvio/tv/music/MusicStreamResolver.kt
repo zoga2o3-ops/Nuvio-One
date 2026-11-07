@@ -50,10 +50,14 @@ object MusicStreamResolver {
     @Volatile
     private var service: ServiceManager? = null
 
+    @Volatile
+    private var appContext: Context? = null
+
     @Synchronized
     fun init(context: Context) {
         if (service != null) return
         val app = context.applicationContext
+        appContext = app
         // MediaServiceCore reads its prefs through this singleton, so it must exist first.
         GlobalPreferences.instance(app)
         val manager = YouTubeServiceManager.instance()

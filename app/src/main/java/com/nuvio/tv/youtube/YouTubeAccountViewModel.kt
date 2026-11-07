@@ -57,12 +57,18 @@ class YouTubeAccountViewModel @Inject constructor(
     val state: StateFlow<YouTubeAccountState> = _state.asStateFlow()
 
     private var signIn: Disposable? = null
-    private var rawAccounts: List<Account> = emptyList()
+    /** The list's ids are made from each account's key, since the engine's own account id is the same for every profile. */
+    private var keyById: Map<Int, String> = emptyMap()
 
-    private val signInService by lazy {
-        GlobalPreferences.instance(context)
-        YouTubeServiceManager.instance().signInService
+    /** OneTube and Music each keep their own complete sign-in: their own accounts, profiles and choice. */
+    private var scope = AccountScope.ONETUBE
+
+    /** Set by the screen that shows this account (Music uses its own choice). Call before the first [refresh]. */
+    fun useScope(newScope: AccountScope) {
+        scope = newScope
     }
+
+    private val signInService get() = YouTubeAccountScopes.engine(context, scope).signInService
 
     private fun label(a: Account): String =
         a.name?.takeIf(String::isNotBlank) ?: a.email?.takeIf(String::isNotBlank) ?: "Account"
@@ -81,11 +87,13 @@ class YouTubeAccountViewModel @Inject constructor(
                 Schedulers.io().scheduleDirect({ check(attempt + 1) }, RECHECK_DELAY_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
                 return@scheduleDirect
             }
-            val list = runCatching { signInService.accounts.orEmpty() }.getOrDefault(emptyList())
-            rawAccounts = list
+            val list = runCatching { YouTubeAccountScopes.accounts(context, scope) }.getOrDefault(emptyList())
+            Log.i(TAG, "check $scope signed=$signed: ${YouTubeAccountScopes.describe(context)}")
+            keyById = list.associateBy({ YouTubeAccountScopes.keyOf(it).hashCode() }, { YouTubeAccountScopes.keyOf(it) })
             val items = list.map {
+                val key = YouTubeAccountScopes.keyOf(it)
                 YtAccount(
-                    id = it.id,
+                    id = key.hashCode(),
                     name = label(it),
                     // Only worth showing the email when the name is something else.
                     detail = it.email?.takeIf { e -> e.isNotBlank() && e != label(it) },
@@ -93,7 +101,7 @@ class YouTubeAccountViewModel @Inject constructor(
                     selected = it.isSelected
                 )
             }
-            val current = runCatching { signInService.selectedAccount }.getOrNull()
+            val current = list.firstOrNull { it.isSelected }
             val currentName = current?.name?.takeIf(String::isNotBlank)
                 ?: current?.email?.takeIf(String::isNotBlank)
             _state.update { it.copy(signedIn = signed, checked = true, accountName = currentName, accounts = items) }
@@ -112,8 +120,10 @@ class YouTubeAccountViewModel @Inject constructor(
                     _state.update { it.copy(code = null, error = e.message ?: "Couldn't start sign-in") }
                 },
                 {
-                    // Approved on the other device.
+                    // Approved on the other device. The new account is in this part's own set; keep a saved copy of it.
                     _state.update { it.copy(code = null) }
+                    runCatching { YouTubeAccountScopes.save(context, scope) }
+                        .onFailure { Log.e(TAG, "couldn't save the new sign-in", it) }
                     refresh()
                 }
             )
@@ -138,10 +148,8 @@ class YouTubeAccountViewModel @Inject constructor(
     /** Switches to another account or profile. [onDone] runs once it has taken effect. */
     fun selectAccount(id: Int, onDone: () -> Unit = {}) {
         Schedulers.io().scheduleDirect {
-            runCatching { rawAccounts.firstOrNull { it.id == id }?.let(signInService::selectAccount) }
+            runCatching { keyById[id]?.let { YouTubeAccountScopes.select(context, scope, it) } }
                 .onFailure { Log.e(TAG, "couldn't switch account", it) }
-            // The feeds and stream lookups belong to the account that was in use.
-            runCatching { YouTubeServiceManager.instance().invalidateCache() }
             refresh()
             onDone()
         }
@@ -149,9 +157,9 @@ class YouTubeAccountViewModel @Inject constructor(
 
     fun signOut(onDone: () -> Unit = {}) {
         Schedulers.io().scheduleDirect {
-            runCatching { signInService.selectedAccount?.let(signInService::removeAccount) }
+            // This part signs out of its current Google login; the other part keeps its own sign-in.
+            runCatching { YouTubeAccountScopes.signOut(context, scope) }
                 .onFailure { Log.e(TAG, "sign-out failed", it) }
-            runCatching { YouTubeServiceManager.instance().invalidateCache() }
             refresh()
             onDone()
         }

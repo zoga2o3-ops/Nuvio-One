@@ -1399,6 +1399,7 @@ class LiveTvViewModel @Inject constructor(
     }
 
     fun moveGroup(groupId: String, delta: Int) {
+        if (settings.value.groupSort != "custom") viewModelScope.launch { prefs.updateSettings { it.copy(groupSort = "custom") } }
         viewModelScope.launch { prefs.moveGroup(groupId, delta, uiState.value.orderableGroupIds) }
     }
 

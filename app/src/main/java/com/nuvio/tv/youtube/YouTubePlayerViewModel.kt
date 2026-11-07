@@ -126,10 +126,8 @@ class YouTubePlayerViewModel @Inject constructor(
     val chat: StateFlow<List<YtChatLine>> = _chat.asStateFlow()
     private var chatSubscription: Disposable? = null
 
-    private val service by lazy {
-        GlobalPreferences.instance(context)
-        YouTubeServiceManager.instance()
-    }
+    private val service: com.liskovsoft.mediaserviceinterfaces.ServiceManager
+        get() = YouTubeAccountScopes.engine(context, AccountScope.ONETUBE)
     private val media get() = service.mediaItemService
 
     private var videoId: String? = null

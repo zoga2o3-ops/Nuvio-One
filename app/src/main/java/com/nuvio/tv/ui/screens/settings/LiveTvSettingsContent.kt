@@ -205,6 +205,7 @@ private sealed interface LiveDialog {
     data object FutureDays : LiveDialog
     data object PastHours : LiveDialog
     data object SortChoice : LiveDialog
+    data object GroupSortChoice : LiveDialog
     data object HighlightChoice : LiveDialog
     data object CustomGroups : LiveDialog
     data object ConfirmRestore : LiveDialog
@@ -636,9 +637,7 @@ internal fun LiveTvSettingsContent(
                         title = "Group Order",
                         subtitle = "How the group list is sorted. Your order follows Reorder Groups; anything you haven't moved stays in playlist order.",
                         value = when (s.groupSort) { "playlist" -> "Playlist order"; "name" -> "Name (A–Z)"; else -> "Your order" },
-                        onClick = {
-                            update { st -> st.copy(groupSort = when (st.groupSort) { "custom" -> "playlist"; "playlist" -> "name"; else -> "custom" }) }
-                        }
+                        onClick = { dialog = LiveDialog.GroupSortChoice }
                     )
                     SubHeading("Channels in a Group")
                     SettingsActionRow(
@@ -769,12 +768,6 @@ internal fun LiveTvSettingsContent(
                         "The small video of the highlighted channel in the top-right corner",
                         s.showPreview,
                         { update { it.copy(showPreview = !it.showPreview) } }
-                    )
-                    SettingsToggleRow(
-                        "Mute Preview Sound",
-                        "Keeps the guide's preview window silent. Full-screen playback still has sound.",
-                        s.mutePreview,
-                        { update { it.copy(mutePreview = !it.mutePreview) } }
                     )
                     SettingsToggleRow(
                         "Smaller Info Panel & Preview",
@@ -2047,6 +2040,17 @@ internal fun LiveTvSettingsContent(
             options = FUTURE_DAYS.map { SettingsPickerOption(it, if (it == 1) "1 day" else "$it days") },
             selectedValue = s.epgFutureDays,
             onOptionSelected = { v -> viewModel.updateAndReloadEpg { it.copy(epgFutureDays = v) }; close() },
+            onDismiss = close
+        )
+        LiveDialog.GroupSortChoice -> SettingsSingleChoiceDialog(
+            title = "Group order",
+            options = listOf(
+                SettingsPickerOption("custom", "Your order", "Follows Reorder Groups; anything you haven't moved stays in playlist order"),
+                SettingsPickerOption("playlist", "Playlist order", "The groups in the order the playlist lists them"),
+                SettingsPickerOption("name", "Name (A–Z)")
+            ),
+            selectedValue = s.groupSort.takeIf { it == "playlist" || it == "name" } ?: "custom",
+            onOptionSelected = { v -> update { it.copy(groupSort = v) }; close() },
             onDismiss = close
         )
         LiveDialog.SortChoice -> SettingsSingleChoiceDialog(

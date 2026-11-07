@@ -104,10 +104,6 @@ fun LiveTvPlayerScreen(
 
     if (!embedded) PauseLiveTvInBackground(viewModel.playback)
 
-    LaunchedEffect(embedded) {
-        if (!embedded) viewModel.playback.setPreviewMuted(false)
-    }
-
     DisposableEffect(Unit) {
         viewModel.playback.attach()
         onDispose { viewModel.playback.detach() }

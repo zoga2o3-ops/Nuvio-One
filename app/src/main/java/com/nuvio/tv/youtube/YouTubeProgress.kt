@@ -46,8 +46,7 @@ object YouTubeProgress {
 
         worker.execute {
             runCatching {
-                GlobalPreferences.instance(app)
-                val service = YouTubeServiceManager.instance()
+                val service = YouTubeAccountScopes.engine(app, AccountScope.ONETUBE)
                 if (!service.signInService.isSigned) return@execute
                 service.mediaItemService.updateHistoryPosition(videoId, positionMs / 1000f)
                 Log.i(TAG, "reported $videoId at ${positionMs / 1000}s")

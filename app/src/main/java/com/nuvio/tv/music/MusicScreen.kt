@@ -99,6 +99,8 @@ fun MusicScreen(
     val playlists by MusicLibrary.playlists.collectAsState()
     val party by MusicPartyManager.state.collectAsState()
     val accountViewModel: YouTubeAccountViewModel = hiltViewModel()
+    // Music keeps its own YouTube profile choice, separate from OneTube's.
+    remember(accountViewModel) { accountViewModel.useScope(com.nuvio.tv.youtube.AccountScope.MUSIC) }
     val account by accountViewModel.state.collectAsState()
     val context = LocalContext.current
     var showNowPlaying by remember { mutableStateOf(false) }

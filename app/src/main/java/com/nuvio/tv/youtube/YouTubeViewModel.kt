@@ -164,11 +164,8 @@ class YouTubeViewModel @Inject constructor(
     private val _menu = MutableStateFlow<YtItemMenu?>(null)
     val menu: StateFlow<YtItemMenu?> = _menu.asStateFlow()
 
-    private val service by lazy {
-        // MediaServiceCore reads its prefs through this singleton, so it must exist first.
-        GlobalPreferences.instance(context)
-        YouTubeServiceManager.instance()
-    }
+    private val service: com.liskovsoft.mediaserviceinterfaces.ServiceManager
+        get() = YouTubeAccountScopes.engine(context, AccountScope.ONETUBE)
     private val content: ContentService get() = service.contentService
 
     /** The page being shown: pages opened from it go on top, and Back takes them off. */

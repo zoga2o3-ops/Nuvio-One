@@ -2567,7 +2567,8 @@ class LiveTvRepository @Inject constructor(
             } ?: if (info.has("user_info")) Unit else error("Not an Xtream API response")
 
             // 2. Categories
-            val categories = HashMap<String, String>()
+            // The provider's own category order: the groups follow it under "Playlist order".
+            val categories = LinkedHashMap<String, String>()
             runCatching {
                 val arr = org.json.JSONArray(getText("$api&action=get_live_categories", pl.userAgent))
                 for (i in 0 until arr.length()) {
@@ -2607,6 +2608,11 @@ class LiveTvRepository @Inject constructor(
         val user = java.net.URLEncoder.encode(pl.xtreamUsername.trim(), "UTF-8")
         val pass = java.net.URLEncoder.encode(pl.xtreamPassword.trim(), "UTF-8")
         var count = 0
+        // Channels come from the provider in stream order, which puts a group's first channel anywhere.
+        // They are kept per category and written in the provider's category order, so the groups
+        // list in the order the provider lists them. Channels without a known category go last.
+        val categoryOrder = HashMap<String, Int>().also { m -> categories.keys.forEachIndexed { i, id -> m[id] = i } }
+        val byCategory = java.util.TreeMap<Int, StringBuilder>()
         val request = Request.Builder().url(url).header("User-Agent", pl.userAgent.ifBlank { DEFAULT_UA }).build()
         http.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error(httpError(response.code))
@@ -2655,13 +2661,16 @@ class LiveTvRepository @Inject constructor(
                                 attr("catchup-days", f["tv_archive_duration"]?.takeIf { it != "0" } ?: "1")
                             }
                         }
-                        out.write("#EXTINF:-1$attrs,$title\n")
-                        out.write("$base/live/$user/$pass/$streamId.$ext\n")
+                        val section = byCategory.getOrPut(categoryOrder[f["category_id"]] ?: Int.MAX_VALUE) { StringBuilder() }
+                        section.append("#EXTINF:-1").append(attrs).append(',').append(title).append('\n')
+                        section.append(base).append("/live/").append(user).append('/').append(pass).append('/')
+                            .append(streamId).append('.').append(ext).append('\n')
                         count++
                         if (count % 500 == 0) setStatus(loading = true, message = "Loading channels from ${pl.name}… ${"%,d".format(count)}")
                     }
                     if (keyed) reader.endObject() else reader.endArray()
                 }
+                byCategory.values.forEach { out.append(it) }
             }
         }
         if (count == 0) {

@@ -39,6 +39,16 @@ public class YouTubeSignInService implements SignInService {
         });
     }
 
+    /** See {@link YouTubeAccountManager#exportAccounts()}. */
+    public String exportAccounts() {
+        return mAccountManager.exportAccounts();
+    }
+
+    /** See {@link YouTubeAccountManager#importAccounts(String)}. */
+    public void importAccounts(String data) {
+        mAccountManager.importAccounts(data);
+    }
+
     public static YouTubeSignInService instance() {
         if (sInstance == null) {
             sInstance = new YouTubeSignInService();

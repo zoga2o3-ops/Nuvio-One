@@ -7,6 +7,8 @@ import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import com.liskovsoft.youtubeapi.service.data.YouTubeMediaItem
+import com.nuvio.tv.youtube.AccountScope
+import com.nuvio.tv.youtube.YouTubeAccountScopes
 import com.music.bitchord.data.model.HomeShelf
 import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.ShelfLayout
@@ -53,14 +55,18 @@ object MusicAccountRepository {
         val playlists: List<MusicAccountPlaylist>
     )
 
+    @Volatile
+    private var appContext: Context? = null
+
     @Synchronized
     fun init(context: Context) {
+        appContext = context.applicationContext
         GlobalPreferences.instance(context.applicationContext)
         YouTubeServiceManager.instance()
     }
 
     fun isSignedIn(): Boolean =
-        runCatching { YouTubeServiceManager.instance().signInService.isSigned }
+        runCatching { service().signInService.isSigned }
             .getOrDefault(false)
 
     /** The account's personalised Music home, without the Liked Music row (Library shows it). */
@@ -136,10 +142,14 @@ object MusicAccountRepository {
         cachedAt = 0L
         // The shelf map stays: its keys are still valid for this screen session, and clearing
         // them here would break an account detail page opened after the next like.
-        runCatching { YouTubeServiceManager.instance().invalidateCache() }
+        runCatching { service().invalidateCache() }
     }
 
-    private fun service() = YouTubeServiceManager.instance()
+    /** The YouTube engine acting as the profile Music has chosen (OneTube keeps its own). */
+    private fun service(): com.liskovsoft.mediaserviceinterfaces.ServiceManager {
+        val context = checkNotNull(appContext) { "MusicAccountRepository.init() has not been called" }
+        return YouTubeAccountScopes.engine(context, AccountScope.MUSIC)
+    }
 
     private fun loadGroups(): List<MediaGroup> {
         val now = System.currentTimeMillis()
