@@ -100,7 +100,7 @@ Music has its own page in the side menu, with top tabs, an Up Next list and plai
 All of this comes from NuvioPlusIPTV and works as it does there. Here is what you get.
 
 ### Live TV
-- **TiviMate-style guide** with channels down the side, a timeline across and a "now" line, in four sizes. Browse by group, by playlist or by channel name. Playlist order follows your provider's own order. The preview and full screen both play sound.
+- **TiviMate-style guide** with channels down the side, a timeline across and a "now" line, in four sizes. Browse by group, by playlist or by channel name. Playlist order follows your provider's own order.
 - **Overlay mode:** press Left while watching for a see-through guide with the group's channels and the show details, and Right for a channel's full schedule.
 - **Your sources:** several M3U playlists and XMLTV guides merged into one, and Xtream Codes logins with choices for TV, movies and series, stream format and account details.
 - **Smart guide matching,** with **Assign EPG** to fix any single channel and time-shift settings for providers that are off.
