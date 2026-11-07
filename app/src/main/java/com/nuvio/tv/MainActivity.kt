@@ -54,6 +54,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.GridView
@@ -1203,6 +1204,7 @@ open class MainActivity : ComponentActivity() {
                             add(Screen.OnDemand.route)
                             add(Screen.Sports.route)
                             add(Screen.YouTube.route)
+                            add(Screen.Music.route)
                             add(Screen.Calendar.route)
                             add(Screen.Search.route)
                             add(Screen.Library.route)
@@ -1266,6 +1268,7 @@ open class MainActivity : ComponentActivity() {
                             }
                             // YouTube fork: its own section after the Live TV pages.
                             add(DrawerItem(route = Screen.YouTube.route, label = "OneTube", icon = Icons.Default.PlayCircle, sectionStart = true))
+                            add(DrawerItem(route = Screen.Music.route, label = "Music", icon = Icons.Default.LibraryMusic))
                             add(
                                 DrawerItem(
                                     route = Screen.Settings.route,
@@ -1588,6 +1591,10 @@ open class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        val music = com.nuvio.tv.music.MusicPlayer.state.value
+        if (music.isPlaying || music.isBuffering) {
+            com.nuvio.tv.music.MusicPlayer.pause()
+        }
         externalPlaybackTracker.onExternalPlayerCoveredApp()
         super.onStop()
         startupSyncService.stopPeriodicSurfacePulls()
@@ -1655,11 +1662,6 @@ private fun LegacySidebarScaffold(
     val liveTvFullscreen by com.nuvio.tv.livetv.ui.LiveTvFullscreen.active.collectAsState()
     val showSidebar = currentRoute in rootRoutes && !liveTvFullscreen
 
-    LaunchedEffect(currentRoute) {
-        longPressBackHeld.value = false
-        drawerState.setValue(DrawerValue.Closed)
-    }
-
     val sidebarTokens = NuvioComponents.tokens.sidebar
     val closedDrawerWidth = if (sidebarCollapsed) NuvioTheme.spacing.none else sidebarTokens.legacyCollapsedWidth
     val openDrawerWidth = sidebarTokens.legacyExpandedWidth
@@ -1674,6 +1676,10 @@ private fun LegacySidebarScaffold(
     // resets while the user navigates between drawer items.
     var legacyDrawerInteractionVersion by remember { mutableStateOf(0) }
 
+    LaunchedEffect(currentRoute) {
+        longPressBackHeld.value = false
+        drawerState.setValue(DrawerValue.Closed)
+    }
 
     BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Closed) {
         pendingSidebarFocusRequest = true

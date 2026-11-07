@@ -1,0 +1,478 @@
+package com.nuvio.tv.music
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.tv.material3.Icon
+import androidx.tv.material3.Text
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Last.fm scrobbling, Spotify playlist import and WebDAV in one place. */
+@Composable
+internal fun MusicIntegrationsScreen(
+    onClose: () -> Unit,
+    onOpenWebDav: () -> Unit,
+    onOpenNavidrome: () -> Unit
+) {
+    val context = LocalContext.current
+    val lastFm by MusicScrobbler.config.collectAsState()
+    val webDav by MusicWebDav.config.collectAsState()
+    val navidrome by MusicNavidrome.config.collectAsState()
+    val closeFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+
+    var apiKey by remember(lastFm.apiKey) { mutableStateOf(lastFm.apiKey) }
+    var secret by remember(lastFm.secret) { mutableStateOf(lastFm.secret) }
+    var sessionKey by remember(lastFm.sessionKey) { mutableStateOf(lastFm.sessionKey) }
+    var lastFmMessage by remember { mutableStateOf<String?>(null) }
+
+    var spotifyUrl by remember { mutableStateOf("") }
+    var importing by remember { mutableStateOf(false) }
+    var importProgress by remember { mutableStateOf<String?>(null) }
+    var importResult by remember { mutableStateOf<String?>(null) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    var phoneTarget by remember { mutableStateOf<MusicPhoneTarget?>(null) }
+
+    LaunchedEffect(Unit) {
+        MusicWebDav.init(context)
+        MusicNavidrome.init(context)
+        MusicScrobbler.init(context)
+    }
+
+    BackHandler(onBack = onClose)
+
+    Box(Modifier.fillMaxSize().background(MusicPalette.background)) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                IntegrationCloseButton(
+                    modifier = Modifier.focusRequester(closeFocus),
+                    onClick = onClose
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = "Integrations",
+                        color = MusicPalette.text,
+                        fontFamily = MusicDisplay,
+                        fontSize = 34.sp,
+                        lineHeight = 37.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Scrobbling, playlist import and your own server.",
+                        color = MusicPalette.textMuted,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                IntegrationCard(
+                    icon = Icons.Default.Album,
+                    tint = MusicPalette.accentTeal,
+                    title = "Navidrome",
+                    subtitle = if (navidrome.configured) {
+                        "Connected to ${navidrome.url}"
+                    } else {
+                        "Link a Navidrome / Subsonic music server."
+                    }
+                ) {
+                    IntegrationPill(
+                        icon = Icons.Default.Album,
+                        label = if (navidrome.configured) "Open Navidrome" else "Link Navidrome",
+                        primary = !navidrome.configured,
+                        onClick = onOpenNavidrome
+                    )
+                }
+
+                IntegrationCard(
+                    icon = Icons.Default.Favorite,
+                    tint = MusicPalette.accentCoral,
+                    title = "Last.fm",
+                    subtitle = when {
+                        lastFm.configured && lastFm.enabled -> "Scrobbling is on."
+                        lastFm.configured -> "Configured, currently off."
+                        else -> "Scrobble the music you play on this TV."
+                    }
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        IntegrationField(
+                            label = "API key",
+                            value = apiKey,
+                            placeholder = "Last.fm API key",
+                            onValueChange = { apiKey = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                        IntegrationField(
+                            label = "Shared secret",
+                            value = secret,
+                            placeholder = "Last.fm shared secret",
+                            onValueChange = { secret = it },
+                            password = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    IntegrationField(
+                        label = "Session key",
+                        value = sessionKey,
+                        placeholder = "Paste a Last.fm session key",
+                        onValueChange = { sessionKey = it },
+                        password = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Create an API account at last.fm/api/account/create, authorize " +
+                            "once, then paste the session key. Nothing is sent until scrobbling is on.",
+                        color = MusicPalette.textMuted,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                        IntegrationPill(
+                            icon = Icons.Default.Favorite,
+                            label = "Save",
+                            primary = true,
+                            onClick = {
+                                MusicScrobbler.save(context, apiKey, secret, sessionKey)
+                                lastFmMessage = "Last.fm details saved."
+                            }
+                        )
+                        IntegrationPill(
+                            icon = Icons.Default.QrCode2,
+                            label = "Link with phone",
+                            onClick = { phoneTarget = MusicPhoneTarget.LASTFM }
+                        )
+                        if (lastFm.configured) {
+                            IntegrationPill(
+                                icon = Icons.Default.Favorite,
+                                label = if (lastFm.enabled) "Turn scrobbling off" else "Turn scrobbling on",
+                                onClick = {
+                                    MusicScrobbler.setEnabled(context, !lastFm.enabled)
+                                    lastFmMessage = if (lastFm.enabled) {
+                                        "Scrobbling paused."
+                                    } else {
+                                        "Scrobbling is on."
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    lastFmMessage?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = it, color = MusicPalette.accentTeal, fontSize = 11.sp)
+                    }
+                }
+
+                IntegrationCard(
+                    icon = Icons.Default.MusicNote,
+                    tint = MusicPalette.accentTeal,
+                    title = "Spotify playlists",
+                    subtitle = "Import a public playlist by link; tracks are matched in the music catalogue."
+                ) {
+                    IntegrationField(
+                        label = "Playlist link",
+                        value = spotifyUrl,
+                        placeholder = "https://open.spotify.com/playlist/…",
+                        onValueChange = { spotifyUrl = it }
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IntegrationPill(
+                            icon = Icons.Default.MusicNote,
+                            label = if (importing) "Importing…" else "Import playlist",
+                            primary = true,
+                            enabled = !importing,
+                            onClick = {
+                                if (spotifyUrl.isBlank()) {
+                                    importError = "Paste a Spotify playlist link first."
+                                } else if (!importing) {
+                                    importing = true
+                                    importProgress = "Reading playlist…"
+                                    importResult = null
+                                    importError = null
+                                    scope.launch {
+                                        MusicSpotifyImport.import(
+                                            context,
+                                            spotifyUrl,
+                                            onProgress = { done, total ->
+                                                withContext(Dispatchers.Main) {
+                                                    importProgress = "Matched $done of $total tracks…"
+                                                }
+                                            }
+                                        ).fold(
+                                            onSuccess = { result ->
+                                                importProgress = null
+                                                importResult = "Imported ${result.imported} of " +
+                                                    "${result.total} tracks into " +
+                                                    "“${result.playlistName}”."
+                                                importing = false
+                                            },
+                                            onFailure = { error ->
+                                                importProgress = null
+                                                importError = error.message
+                                                    ?: "The playlist couldn't be imported."
+                                                importing = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                        IntegrationPill(
+                            icon = Icons.Default.QrCode2,
+                            label = "Link with phone",
+                            onClick = { phoneTarget = MusicPhoneTarget.SPOTIFY }
+                        )
+                    }
+                    importProgress?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = it, color = MusicPalette.textSecondary, fontSize = 11.sp)
+                    }
+                    importResult?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = it, color = MusicPalette.accentTeal, fontSize = 11.sp)
+                    }
+                    importError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = it, color = MusicPalette.error, fontSize = 11.sp)
+                    }
+                }
+
+                IntegrationCard(
+                    icon = Icons.Default.Cloud,
+                    tint = MusicPalette.accent,
+                    title = "WebDAV",
+                    subtitle = if (webDav.configured) {
+                        "Connected to ${webDav.url}"
+                    } else {
+                        "Stream a music folder from your own server."
+                    }
+                ) {
+                    IntegrationPill(
+                        icon = Icons.Default.Cloud,
+                        label = if (webDav.configured) "Open WebDAV" else "Set up WebDAV",
+                        onClick = onOpenWebDav
+                    )
+                }
+            }
+        }
+        phoneTarget?.let {
+            MusicPhoneLinkPanel(target = it, onClose = { phoneTarget = null })
+        }
+    }
+}
+
+@Composable
+private fun IntegrationCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MusicPalette.surface)
+            .border(1.dp, MusicPalette.border, RoundedCornerShape(18.dp))
+            .padding(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(tint.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
+            }
+            Spacer(Modifier.width(11.dp))
+            Column {
+                Text(
+                    text = title,
+                    color = MusicPalette.text,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(text = subtitle, color = MusicPalette.textSecondary, fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        content()
+    }
+}
+
+@Composable
+private fun IntegrationField(
+    label: String,
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    password: Boolean = false
+) {
+    MusicTextField(
+        label = label,
+        value = value,
+        placeholder = placeholder,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        password = password
+    )
+}
+
+@Composable
+private fun IntegrationPill(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+    primary: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                when {
+                    focused && enabled -> MusicPalette.text
+                    primary -> MusicPalette.accent
+                    else -> MusicPalette.surfaceRaised
+                }
+            )
+            .border(
+                2.dp,
+                if (focused && enabled) MusicPalette.text else MusicPalette.border,
+                RoundedCornerShape(50)
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 15.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = when {
+                !enabled -> MusicPalette.textMuted
+                focused -> MusicPalette.background
+                primary -> MusicPalette.background
+                else -> MusicPalette.text
+            },
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            text = label,
+            color = when {
+                !enabled -> MusicPalette.textMuted
+                focused -> MusicPalette.background
+                primary -> MusicPalette.background
+                else -> MusicPalette.text
+            },
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun IntegrationCloseButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (focused) Color.White else MusicPalette.surfaceRaised)
+            .border(
+                2.dp,
+                if (focused) Color.White else MusicPalette.border,
+                CircleShape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "Close integrations",
+            tint = if (focused) MusicPalette.background else MusicPalette.text,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}

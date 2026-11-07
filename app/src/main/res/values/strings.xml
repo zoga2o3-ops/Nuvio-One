@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Nuvio One</string>
+    <string name="music_downloads_channel_name">Music downloads</string>
+    <string name="music_party_channel_name">Music party</string>
     <string name="tv_channel_continue_watching">Continue Watching</string>
     <string name="type_movie">Movie</string>
     <string name="type_movies">Movies</string>
