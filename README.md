@@ -4,8 +4,8 @@
 
 **Movies and shows, live TV, sports, YouTube and music in one app for Google TV, Android TV and Fire TV.**
 
-[![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/NuvioPlusIPTV-1T?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
-[![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/NuvioPlusIPTV-1T/total?style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
+[![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/Nuvio-One?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
+[![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/Nuvio-One/total?style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 <a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-5F7FFF?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy me a coffee" /></a>
 
@@ -120,7 +120,7 @@ All of this comes from NuvioPlusIPTV and works as it does there. Here is what yo
 
 ## Installation
 
-1. Open the **[latest release](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)**.
+1. Open the **[latest release](https://github.com/zoga2o3-ops/Nuvio-One/releases)**.
 2. Download the APK for your device:
 
    | Device | APK |
@@ -151,7 +151,7 @@ Every button for the guide, full screen, Sports, On Demand and Recordings is lis
 
 ## Reporting bugs and asking for features
 
-Please look through the [existing issues](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/issues) first, then [open a new one](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/issues/new). Say which device you use, what you did and what happened. For YouTube problems, mention the video's title or link.
+Please look through the [existing issues](https://github.com/zoga2o3-ops/Nuvio-One/issues) first, then [open a new one](https://github.com/zoga2o3-ops/Nuvio-One/issues/new). Say which device you use, what you did and what happened. For YouTube problems, mention the video's title or link.
 
 If the app crashes, scan the QR code on the crash screen and paste the text into your report. If a playlist, guide or catch-up doesn't load, include **Settings → Live TV → Help → Start-Up Report** (usernames and passwords are hidden in it).
 
