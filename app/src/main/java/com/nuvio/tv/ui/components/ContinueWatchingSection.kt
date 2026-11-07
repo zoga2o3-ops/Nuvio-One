@@ -93,7 +93,7 @@ import androidx.compose.ui.text.TextStyle
 import com.nuvio.tv.domain.model.CardDepthStyle
 import kotlinx.coroutines.delay
 
-/** Whether the cards show the "N EP left" badge. Provided by the Home screen from Layout settings. */
+/** Whether the cards show the "# EP left" badge. Provided by the Home screen from Layout settings. */
 internal val LocalShowContinueWatchingEpisodeCount = androidx.compose.runtime.compositionLocalOf { true }
 
 private val BadgeShape = RoundedCornerShape(NuvioTheme.radii.xs)

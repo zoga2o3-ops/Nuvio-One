@@ -1,4 +1,4 @@
-# Nuvio One 1.1.0-beta.11.1
+# Nuvio One 1.1.0-beta.11.2
 
 > Nuvio + IPTV + 1Tube is now Nuvio One.
 
@@ -37,7 +37,7 @@ Nuvio One now includes a full Music section:
 
 ## Continue Watching
 
-- Episodes now show an **N EP left** badge instead of a generic progress badge.
+- Episodes now show a **# EP left** badge instead of a generic progress badge.
 - The setting is under **Settings -> Layout -> Continue Watching -> Show episodes left**.
 - The count only includes episodes after the latest watched episode.
 - Added **Mark as watched** to the Continue Watching menu.
