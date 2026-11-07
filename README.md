@@ -11,7 +11,7 @@
 
 Downloader code: 1795692
 
-[What is it](#what-is-it) · [1Tube (YouTube)](#1tube-youtube-built-in) · [Live TV, Sports and On Demand](#live-tv-sports-and-on-demand-from-nuvio--iptv) · [Install](#installation) · [Setup](#getting-started) · [Remote controls](CONTROLS.md) · [Bugs](#reporting-bugs-and-asking-for-features) · [Credits](#credits)
+[What is it](#what-is-it) · [OneTube (YouTube)](#onetube-youtube-built-in) · [Music](#music) · [Live TV, Sports and On Demand](#live-tv-sports-and-on-demand-from-nuvio--iptv) · [Install](#installation) · [Setup](#getting-started) · [Remote controls](CONTROLS.md) · [Bugs](#reporting-bugs-and-asking-for-features) · [Credits](#credits)
 
 </div>
 
@@ -19,17 +19,18 @@ Downloader code: 1795692
 
 ## What is it
 
-Nuvio + IPTV + 1Tube is a personal fork that puts three things in one TV app:
+Nuvio One is a personal fork that puts four things in one TV app:
 
 1. **[Nuvio](https://github.com/NuvioMedia/NuvioTV)**: the home screen, addons, Trakt and Simkl, your Nuvio account and its settings, and Nuvio's player.
 2. **IPTV**: a TiviMate-style Live TV guide, a Sports hub, catch-up, recordings and On Demand, from [NuvioPlusIPTV](https://github.com/homelessbrian/NuvioPlusIPTV) by homelessbrian.
-3. **1Tube**: a YouTube section of its own in the side menu, built into the app and played in Nuvio's own player. It's not a launcher and not a web view.
+3. **OneTube**: YouTube without the YouTube app, in a section of its own in the side menu, played in Nuvio's own player. It's not a launcher and not a web view, and you can use it without an account.
+4. **Music**: an ad-free music section with YouTube Music, your own music server, local files, downloads and synced lyrics.
 
-You sign in with your usual Nuvio account and everything you set up there carries over: TMDB, Trakt, Simkl, MDBList, Premiumize, ratings, trailers, intro skip, avatars and Drive backup. The app has its own package name, so it installs next to the official Nuvio and next to NuvioPlusIPTV without replacing either one.
+You sign in with your usual Nuvio account and everything you set up there carries over: TMDB, Trakt, Simkl, MDBList, Premiumize, ratings, trailers, intro skip, avatars and Drive backup. The app has its own package name, so it installs next to the official Nuvio without replacing it. (Nuvio One was called Nuvio + IPTV + 1Tube until 1.1.0-beta.11.2, and updates install straight over those versions.)
 
 ---
 
-## 1Tube: YouTube, built in
+## OneTube: YouTube, built in
 
 YouTube has its own page in the side menu. **Nothing from YouTube shows up on Nuvio's Home or in Continue Watching.** Your YouTube watching stays on the YouTube page.
 
@@ -42,7 +43,8 @@ YouTube has its own page in the side menu. **Nothing from YouTube shows up on Nu
 
 ### Accounts
 - **Sign in with a QR code:** scan it with your phone and approve. No typing on the TV.
-- **Several accounts and channel profiles:** the account button at the top left of the page switches between them.
+- **Several accounts and channel profiles:** the account button at the top of the page switches between them.
+- **Separate from Music:** OneTube and Music each keep their own YouTube sign-in and profile, so changing one never changes the other.
 - **Watch progress goes back to YouTube,** so History and the "resume" bar match what you see on other devices.
 
 ### Playing
@@ -72,7 +74,24 @@ Open the YouTube button in the player for:
 - **Hidden words and channels:** anything matching a word or phrase, or coming from a channel you hide, is removed from the feeds.
 
 ### How it works
-YouTube is handled by **MediaServiceCore**, the engine behind SmartTube, vendored in `mediaservicecore/`. The app plays through a small loopback server so Nuvio's ExoPlayer gets a proper DASH manifest. The 1Tube code lives in `app/src/main/java/com/nuvio/tv/youtube/`.
+YouTube is handled by **MediaServiceCore**, the engine behind SmartTube, vendored in `mediaservicecore/`. The app plays through a small loopback server so Nuvio's ExoPlayer gets a proper DASH manifest. The OneTube code lives in `app/src/main/java/com/nuvio/tv/youtube/`.
+
+---
+
+## Music
+
+Music has its own page in the side menu, with top tabs, an Up Next list and plain Back navigation for the remote.
+
+- **Ad-free** listening.
+- **YouTube Music:** sign in for your playlists, liked songs and a personalised home. Likes sync across your devices.
+- **Spotify playlists:** paste a public playlist's link to import it.
+- **Navidrome and WebDAV:** connect your own music server and stream your collection.
+- **Local music:** play from the TV, a USB drive or a network share.
+- **Downloads and offline playback.**
+- **Synced lyrics and music videos:** follow the lyrics, then jump between the song and its video.
+- **Playlists, queue, radio and shuffle,** plus **Explore** for moods and genres and a search for any track.
+- **Last.fm scrobbling** and **Party mode** for listening together.
+- **Its own YouTube sign-in,** separate from OneTube.
 
 ---
 
@@ -81,7 +100,7 @@ YouTube is handled by **MediaServiceCore**, the engine behind SmartTube, vendore
 All of this comes from NuvioPlusIPTV and works as it does there. Here is what you get.
 
 ### Live TV
-- **TiviMate-style guide** with channels down the side, a timeline across and a "now" line, in four sizes. Browse by group, by playlist or by channel name.
+- **TiviMate-style guide** with channels down the side, a timeline across and a "now" line, in four sizes. Browse by group, by playlist or by channel name. Playlist order follows your provider's own order. The preview and full screen both play sound.
 - **Overlay mode:** press Left while watching for a see-through guide with the group's channels and the show details, and Right for a channel's full schedule.
 - **Your sources:** several M3U playlists and XMLTV guides merged into one, and Xtream Codes logins with choices for TV, movies and series, stream format and account details.
 - **Smart guide matching,** with **Assign EPG** to fix any single channel and time-shift settings for providers that are off.
@@ -112,7 +131,7 @@ All of this comes from NuvioPlusIPTV and works as it does there. Here is what yo
 - Titles open on Nuvio's normal details page with your own addon artwork, and appear in Nuvio's stream list.
 
 ### Part of Nuvio, not bolted on
-- Live TV, On Demand, Sports, Recordings and YouTube sit in Nuvio's side menu, with their settings inside Nuvio's own Settings.
+- Live TV, On Demand, Sports, Recordings, OneTube and Music sit in Nuvio's side menu, with their settings inside Nuvio's own Settings.
 - Pick a **start page,** a **Home row** of favorite channels, and have live channels show up in Nuvio's search.
 - **Google Drive sync** of your Live TV and Sports setup.
 
@@ -140,10 +159,11 @@ It needs **Android 7.0 or newer** (Fire OS 6 or later).
 ## Getting started
 
 1. Open the app and **sign in with your Nuvio account** (or skip and add addons yourself).
-2. **YouTube:** open YouTube in the side menu, press **Sign in** and scan the QR code. You can use YouTube signed out too.
-3. **Live TV and Sports:** open **Settings → Live TV**, add an M3U playlist or Xtream Codes login, and optionally an EPG source. Then open Live TV, On Demand or Sports from the side menu. The first load can take a minute on large providers.
-4. **Settings → YouTube** has the tabs, SponsorBlock, DeArrow, quality, filters and hidden words.
-5. In **Sports**, press **Follow Teams & Leagues** to pick your teams.
+2. **OneTube:** open OneTube in the side menu, press **Sign in** and scan the QR code. You can use it signed out too.
+3. **Music:** open Music, and sign in to YouTube Music if you want your playlists and likes, or connect a music server or local folder.
+4. **Live TV and Sports:** open **Settings → Live TV**, add an M3U playlist or Xtream Codes login, and optionally an EPG source. Then open Live TV, On Demand or Sports from the side menu. The first load can take a minute on large providers.
+5. **Settings → YouTube** has the tabs, SponsorBlock, DeArrow, quality, filters and hidden words.
+6. In **Sports**, press **Follow Teams & Leagues** to pick your teams.
 
 Every button for the guide, full screen, Sports, On Demand and Recordings is listed in **[CONTROLS.md](CONTROLS.md)**.
 
@@ -151,7 +171,7 @@ Every button for the guide, full screen, Sports, On Demand and Recordings is lis
 
 ## Reporting bugs and asking for features
 
-Please look through the [existing issues](https://github.com/zoga2o3-ops/Nuvio-One/issues) first, then [open a new one](https://github.com/zoga2o3-ops/Nuvio-One/issues/new). Say which device you use, what you did and what happened. For YouTube problems, mention the video's title or link.
+Please look through the [existing issues](https://github.com/zoga2o3-ops/Nuvio-One/issues) first, then [open a new one](https://github.com/zoga2o3-ops/Nuvio-One/issues/new). Say which device you use, what you did and what happened. For OneTube or Music problems, mention the video's title or link.
 
 If the app crashes, scan the QR code on the crash screen and paste the text into your report. If a playlist, guide or catch-up doesn't load, include **Settings → Live TV → Help → Start-Up Report** (usernames and passwords are hidden in it).
 
@@ -168,15 +188,21 @@ No. It plays what you add yourself: your own playlists, guides, Xtream logins, a
 </details>
 
 <details>
-<summary><b>Will it replace my Nuvio or Nuvio + IPTV app?</b></summary>
+<summary><b>Will it replace my Nuvio app?</b></summary>
 
-No. It has its own package name and installs alongside both.
+No. It has its own package name and installs alongside it. It does replace older Nuvio + IPTV + 1Tube installs, keeping your data, because it is the same app under its new name.
 </details>
 
 <details>
 <summary><b>Does YouTube show up on Home or in Continue Watching?</b></summary>
 
-No. YouTube watching stays on the YouTube page and in your YouTube History.
+No. YouTube watching stays on the OneTube page and in your YouTube History.
+</details>
+
+<details>
+<summary><b>Do Music and OneTube share my YouTube sign-in?</b></summary>
+
+No. Each keeps its own sign-in and profile, even for the same Google account.
 </details>
 
 <details>
