@@ -1,15 +1,15 @@
 <div align="center">
 
-# Nuvio + IPTV + 1Tube
+# Nuvio One
 
-**Movies and shows, live TV, sports and YouTube in one app for Google TV, Android TV and Fire TV.**
+**Movies and shows, live TV, sports, YouTube and music in one app for Google TV, Android TV and Fire TV.**
 
 [![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/NuvioPlusIPTV-1T?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
 [![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/NuvioPlusIPTV-1T/total?style=for-the-badge)](https://github.com/zoga2o3-ops/NuvioPlusIPTV-1T/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 <a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-5F7FFF?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy me a coffee" /></a>
 
-Downloader code: 9692997
+Downloader code: 1795692
 
 [What is it](#what-is-it) · [1Tube (YouTube)](#1tube-youtube-built-in) · [Live TV, Sports and On Demand](#live-tv-sports-and-on-demand-from-nuvio--iptv) · [Install](#installation) · [Setup](#getting-started) · [Remote controls](CONTROLS.md) · [Bugs](#reporting-bugs-and-asking-for-features) · [Credits](#credits)
 
