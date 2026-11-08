@@ -55,6 +55,9 @@ class LiveTvPreferences @Inject constructor(
         produceFile = { context.preferencesDataStoreFile("live_tv_device") }
     )
 
+    /** Writes that must survive the screen that started them (see [saveGroupOrder]). */
+    private val writeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     private object Keys {
         val playlists = stringPreferencesKey("playlists")
         val epgs = stringPreferencesKey("epg_sources")
@@ -810,14 +813,22 @@ class LiveTvPreferences @Inject constructor(
         }
     }
 
-    /** Moves [groupId] within [currentOrder] (the order currently shown) and saves the result. */
-    suspend fun moveGroup(groupId: String, delta: Int, currentOrder: List<String>) {
-        val order = currentOrder.toMutableList()
-        val i = order.indexOf(groupId)
-        if (i < 0) return
-        order.removeAt(i)
-        order.add((i + delta).coerceIn(0, order.size), groupId)
-        store.edit { it[my(Keys.groupOrder)] = encodeStringList(order) }
+    /**
+     * Saves a whole group order and switches Group Order to "Your order" in one write.
+     *
+     * This runs on the preference singleton's own scope, not the guide's ViewModel scope: the
+     * viewer often presses Back once to finish reordering and again to leave the guide, and the
+     * ViewModel can be cleared before a viewModelScope write reaches DataStore.
+     */
+    fun saveGroupOrder(order: List<String>) {
+        if (order.isEmpty()) return
+        val orderKey = my(Keys.groupOrder)
+        writeScope.launch {
+            store.edit { p ->
+                p[orderKey] = encodeStringList(order)
+                p[Keys.groupSort] = "custom"
+            }
+        }
     }
 
     suspend fun createCustomGroup(name: String): String {

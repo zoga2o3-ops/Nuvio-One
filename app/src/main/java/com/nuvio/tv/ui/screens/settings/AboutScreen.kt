@@ -183,14 +183,12 @@ fun AboutSettingsContent(
                                 onClick = onNavigateToLicensesAttributions
                             )
 
-                            if (BuildConfig.DEBUG_REPORT_DISCORD_WEBHOOK.isNotBlank()) {
-                                SettingsActionRow(
-                                    title = stringResource(R.string.about_send_debug_report),
-                                    subtitle = stringResource(R.string.about_send_debug_report_subtitle),
-                                    leadingIcon = Icons.Default.BugReport,
-                                    onClick = { showDebugReportDialog = true }
-                                )
-                            }
+                            SettingsActionRow(
+                                title = stringResource(R.string.about_send_debug_report),
+                                subtitle = stringResource(R.string.about_send_debug_report_subtitle),
+                                leadingIcon = Icons.Default.BugReport,
+                                onClick = { showDebugReportDialog = true }
+                            )
                         }
                     }
                 }

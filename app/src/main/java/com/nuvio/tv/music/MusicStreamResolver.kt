@@ -4,11 +4,11 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.MimeTypes
-import com.liskovsoft.mediaserviceinterfaces.ServiceManager
 import com.liskovsoft.mediaserviceinterfaces.data.MediaItemFormatInfo
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
-import com.liskovsoft.youtubeapi.service.YouTubeServiceManager
 import com.liskovsoft.youtubeapi.service.internal.MediaServiceData
+import com.nuvio.tv.youtube.AccountScope
+import com.nuvio.tv.youtube.YouTubeAccountScopes
 import com.nuvio.tv.youtube.YouTubeMpdServer
 import java.util.concurrent.ConcurrentHashMap
 
@@ -48,26 +48,25 @@ object MusicStreamResolver {
     private val cache = ConcurrentHashMap<String, ResolvedMusicStream>()
 
     @Volatile
-    private var service: ServiceManager? = null
+    private var initialized = false
 
     @Volatile
     private var appContext: Context? = null
 
     @Synchronized
     fun init(context: Context) {
-        if (service != null) return
+        if (initialized) return
         val app = context.applicationContext
         appContext = app
         // MediaServiceCore reads its prefs through this singleton, so it must exist first.
         GlobalPreferences.instance(app)
-        val manager = YouTubeServiceManager.instance()
         runCatching { com.nuvio.tv.youtube.YouTubeContentRegion.apply(app) }
         runCatching {
             // VLC's adaptive HLS path crashes on YouTube manifests; same guard as the YouTube tab.
             MediaServiceData.instance().setFormatEnabled(MediaServiceData.FORMATS_EXTENDED_HLS, false)
         }
         YouTubeMpdServer.attach(app.cacheDir)
-        service = manager
+        initialized = true
     }
 
     /** A cached, still-valid stream for [videoId], if there is one. */
@@ -77,7 +76,10 @@ object MusicStreamResolver {
     /** Blocking; call from an IO dispatcher. */
     fun resolve(videoId: String): ResolvedMusicStream {
         cached(videoId)?.let { return it }
-        val manager = service ?: error("MusicStreamResolver.init() has not been called")
+        val context = appContext ?: error("MusicStreamResolver.init() has not been called")
+        // Music has its own YouTube sign-in. Make the engine hold Music's profiles before asking
+        // for the stream; otherwise it resolves with whichever profile OneTube used last.
+        val manager = YouTubeAccountScopes.engine(context, AccountScope.MUSIC)
 
         runCatching { manager.resetPlaybackClient() }
         var info = manager.mediaItemService.getFormatInfoObserve(videoId).blockingFirst()

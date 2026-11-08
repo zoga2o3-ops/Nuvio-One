@@ -110,4 +110,42 @@ Second<00:00:03.200><c> line</c>
         val ttml = "<tt><body><div><p begin=\"0s\" end=\"1s\">hi</p></div></body></tt>"
         assertEquals(ttml, YouTubeAutoCaptions.tidy(ttml))
     }
+
+    @Test
+    fun `a cue with the same Arabic line twice keeps one copy`() {
+        assertEquals(
+            "مرحبا",
+            YouTubeAutoCaptions.cleanRollingCue("مرحبا\nمرحبا", previousText = null)
+        )
+    }
+
+    @Test
+    fun `a rolling cue drops the previous line`() {
+        assertEquals(
+            "أهلا",
+            YouTubeAutoCaptions.cleanRollingCue(
+                "مرحبا\nأهلا",
+                previousText = "مرحبا"
+            )
+        )
+    }
+
+    @Test
+    fun `a manual two-line cue keeps both different lines`() {
+        assertEquals(
+            "مرحبا\nأهلا",
+            YouTubeAutoCaptions.cleanRollingCue(
+                "مرحبا\nأهلا",
+                previousText = "شيء آخر"
+            )
+        )
+    }
+
+    @Test
+    fun `a single held line is returned for the caller to merge`() {
+        assertEquals(
+            "مرحبا",
+            YouTubeAutoCaptions.cleanRollingCue("مرحبا", previousText = "مرحبا")
+        )
+    }
 }

@@ -76,6 +76,7 @@ import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 import com.nuvio.tv.youtube.YouTubeAccountViewModel
 import com.nuvio.tv.LocalOpenSidebar
+import com.nuvio.tv.LocalSidebarExpanded
 
 /** One density scale for the whole Music section. */
 private const val MUSIC_UI_SCALE = 0.88f
@@ -116,6 +117,7 @@ fun MusicScreen(
     var openPlaylistId by remember { mutableStateOf<String?>(null) }
     val topNavFocus = remember { FocusRequester() }
     val openNuvioSidebar = LocalOpenSidebar.current
+    val sidebarExpanded = LocalSidebarExpanded.current
     val openPlaylist = playlists.firstOrNull { it.id == openPlaylistId }
     val view = LocalView.current
 
@@ -202,8 +204,17 @@ fun MusicScreen(
         showIntegrations = false
         showWebDav = false
         showNavidrome = false
+        // Leave a mood/genre detail instead of keeping it as a hidden overlay that would
+        // swallow the first Back press on the new tab.
+        if (state.explore.selected != null) viewModel.closeMood()
+        if (state.detail.open) viewModel.closeDetail()
         viewModel.selectTab(tab)
     }
+
+    val musicOverlayOpen = showNowPlaying || state.detail.open ||
+        state.explore.selected != null || openPlaylistId != null ||
+        showSettings || showDownloads || showParty || showWebDav ||
+        showIntegrations || showNavidrome || showAccount || musicVideo != null
 
     BackHandler(
         enabled = showNowPlaying || state.detail.open ||
@@ -215,6 +226,13 @@ fun MusicScreen(
             openPlaylistId != null -> openPlaylistId = null
             else -> viewModel.closeMood()
         }
+    }
+
+    // Music is a menu page like Live TV/Sports. At its root, Back opens Nuvio's side menu
+    // instead of letting the navigation stack pop back to Home. Overlays and the open menu
+    // keep their own Back handling.
+    BackHandler(enabled = !musicOverlayOpen && !sidebarExpanded) {
+        openNuvioSidebar()
     }
 
     MusicTextTheme {

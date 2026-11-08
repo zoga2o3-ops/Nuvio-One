@@ -1682,7 +1682,16 @@ private fun LegacySidebarScaffold(
         drawerState.setValue(DrawerValue.Closed)
     }
 
-    BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Closed) {
+    BackHandler(
+        enabled = currentRoute in rootRoutes &&
+            currentRoute != Screen.Music.route &&
+            drawerState.currentValue == DrawerValue.Closed &&
+            !com.nuvio.tv.livetv.ui.LiveTvGuideBack.reorderActive
+    ) {
+        if (System.currentTimeMillis() < com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs) {
+            com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
+            return@BackHandler
+        }
         pendingSidebarFocusRequest = true
         drawerState.setValue(DrawerValue.Open)
     }
@@ -2240,7 +2249,17 @@ private fun ModernSidebarScaffold(
         }
     }
 
-    BackHandler(enabled = currentRoute in rootRoutes && !isSidebarExpanded && !sidebarCollapsePending) {
+    BackHandler(
+        enabled = currentRoute in rootRoutes &&
+            currentRoute != Screen.Music.route &&
+            !isSidebarExpanded &&
+            !sidebarCollapsePending &&
+            !com.nuvio.tv.livetv.ui.LiveTvGuideBack.reorderActive
+    ) {
+        if (System.currentTimeMillis() < com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs) {
+            com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
+            return@BackHandler
+        }
         isSidebarExpanded = true
         sidebarCollapsePending = false
         pendingSidebarFocusRequest = true

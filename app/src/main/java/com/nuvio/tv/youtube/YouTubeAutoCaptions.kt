@@ -23,6 +23,34 @@ object YouTubeAutoCaptions {
     fun looksAutomatic(file: String): Boolean =
         file.contains("<c>") || Regex("<\\d{2}:\\d{2}:\\d{2}\\.\\d{3}>").containsMatchIn(file)
 
+    /**
+     * Cleans one cue's text: repeated identical lines are collapsed, and when a rolling caption
+     * carries the previous cue's line(s) on top, only the new line is kept. A single held line is
+     * returned as it is so the caller can extend the previous cue instead of drawing it twice.
+     */
+    fun cleanRollingCue(text: String, previousText: String?): String {
+        val lines = text.replace("\r\n", "\n").replace('\r', '\n')
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (lines.isEmpty()) return ""
+        val unique = ArrayList<String>(lines.size)
+        for (line in lines) {
+            if (line !in unique) unique.add(line)
+        }
+        if (unique.size <= 1) return unique[0]
+        val previousLines = previousText
+            ?.replace("\r\n", "\n")
+            ?.replace('\r', '\n')
+            ?.split('\n')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            .orEmpty()
+        val kept = if (previousLines.isEmpty()) unique else unique.dropWhile { it in previousLines }
+        return if (kept.isEmpty()) unique[0] else kept.joinToString("\n")
+    }
+
     /** The captions in [file] (WebVTT) with only each caption's newest line. Anything else is returned as it is. */
     fun tidy(file: String): String {
         val text = file.replace("\r\n", "\n")

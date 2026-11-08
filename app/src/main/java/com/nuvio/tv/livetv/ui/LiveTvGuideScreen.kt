@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -339,6 +340,22 @@ fun LiveTvGuideScreen(
     var groupTicked by remember { mutableStateOf<Set<String>>(emptySet()) }
     var groupReorderFocus by remember { mutableStateOf<String?>(null) }
     var groupWorking by remember { mutableStateOf<List<ChannelGroup>>(emptyList()) }
+    // Back saves and closes Reorder groups, but leaving the guide another way (the menu, the
+    // player, a source change) must keep the order too.
+    val latestGroupWorking by rememberUpdatedState(groupWorking)
+    val latestGroupReorderMode by rememberUpdatedState(groupReorderMode)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (latestGroupReorderMode) {
+                viewModel.saveGroupOrder(latestGroupWorking.map { it.id })
+            }
+        }
+    }
+    // Let Back reach the guide's handler while reordering instead of the app shell opening its menu.
+    DisposableEffect(groupReorderMode) {
+        LiveTvGuideBack.reorderActive = groupReorderMode
+        onDispose { LiveTvGuideBack.reorderActive = false }
+    }
     // Manage visibility for groups: every group (hidden ones too) and which ones are hidden.
     var groupVisibilityList by remember { mutableStateOf<List<ChannelGroup>?>(null) }
     var groupHiddenPending by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -656,7 +673,21 @@ fun LiveTvGuideScreen(
         }
     }
     BackHandler(enabled = !sidebarExpanded) {
+        // The same Back press that closed Reorder groups must not also open the side menu.
+        if (System.currentTimeMillis() < LiveTvGuideBack.suppressMenuUntilMs) {
+            LiveTvGuideBack.suppressMenuUntilMs = 0L
+            return@BackHandler
+        }
         when {
+            // Reorder groups is open: Back saves and leaves it, rather than opening the menu.
+            groupReorderMode -> {
+                viewModel.saveGroupOrder(groupWorking.map { it.id })
+                groupReorderId = null
+                groupReorderMode = false
+                groupTicked = emptySet()
+                groupReorderFocus = null
+                LiveTvGuideBack.suppressMenuUntilMs = System.currentTimeMillis() + 1_000L
+            }
             column == GuideColumn.PROGRAM -> {
                 column = GuideColumn.CHANNEL
                 windowStart = floorSlot(now)
@@ -903,6 +934,20 @@ fun LiveTvGuideScreen(
             }
             .onPreviewKeyEvent { e ->
                 lastKeyAt = System.currentTimeMillis()
+                // While Reorder groups is open, Back saves and leaves that mode before any
+                // handler can open the side menu. The group list's own handler only sees this
+                // when it has focus; this root handler also covers the channel grid.
+                if (groupReorderMode && e.key == Key.Back) {
+                    if (e.type == KeyEventType.KeyDown) {
+                        viewModel.saveGroupOrder(groupWorking.map { it.id })
+                        groupReorderId = null
+                        groupReorderMode = false
+                        groupTicked = emptySet()
+                        groupReorderFocus = null
+                        LiveTvGuideBack.suppressMenuUntilMs = System.currentTimeMillis() + 1_000L
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 // Full screen handles its own keys.
                 if (fullscreen) return@onPreviewKeyEvent false
                 val playingNow = playback.channelKey != null
@@ -1065,8 +1110,14 @@ fun LiveTvGuideScreen(
                     reorderFocusId = groupReorderFocus,
                     onReorderOk = { id ->
                         // OK: pick the group up to move it, or put it down.
-                        if (groupReorderId != null) { groupReorderFocus = groupReorderId; groupReorderId = null }
-                        else { groupTicked = emptySet(); groupReorderId = id }
+                        if (groupReorderId != null) {
+                            groupReorderFocus = groupReorderId
+                            groupReorderId = null
+                            viewModel.saveGroupOrder(groupWorking.map { it.id })
+                        } else {
+                            groupTicked = emptySet()
+                            groupReorderId = id
+                        }
                     },
                     onReorderTick = { id ->
                         // Hold OK: tick it (or untick), to move several at once.
@@ -1086,6 +1137,7 @@ fun LiveTvGuideScreen(
                             val lead = moving.first().id
                             if (groupReorderId == null) groupReorderFocus = lead
                             groupTicked = emptySet()
+                            viewModel.saveGroupOrder(groupWorking.map { it.id })
                             scope.launch {
                                 val index = ui.groups.count { it.special && it.id != ChannelGroup.SEARCH } + groupWorking.indexOfFirst { it.id == lead }
                                 runCatching { groupsListState.scrollToItem((index - 3).coerceAtLeast(0)) }
@@ -1111,6 +1163,7 @@ fun LiveTvGuideScreen(
                         groupReorderMode = false
                         groupTicked = emptySet()
                         groupReorderFocus = null
+                        LiveTvGuideBack.suppressMenuUntilMs = System.currentTimeMillis() + 1_000L
                     },
                     selectedId = ui.selectedGroupId,
                     showCounts = settings.showGroupCounts,

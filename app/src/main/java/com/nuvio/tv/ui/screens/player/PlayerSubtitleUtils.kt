@@ -246,14 +246,44 @@ internal object PlayerSubtitleUtils {
      * to prevent Media3 SubtitlePainter from drawing colliding lines on top of each other.
      */
     fun mergeOverlappingCues(cues: List<Cue>): List<Cue> {
-        if (cues.size <= 1) return cues
-        val unpositioned = cues.filter { it.bitmap == null && it.line == Cue.DIMEN_UNSET }
-        if (unpositioned.size <= 1) return cues
-        if (unpositioned.size < cues.size) {
-            val positioned = cues.filterNot { it.bitmap == null && it.line == Cue.DIMEN_UNSET }
+        if (cues.size <= 1) {
+            val cue = cues.firstOrNull() ?: return cues
+            val text = cue.text
+            if (text == null || text is Spanned) return cues
+            val lines = text.toString().replace("\r\n", "\n").split('\n')
+            val unique = lines.filter { it.isNotBlank() }.distinct()
+            return if (unique.size == lines.size) {
+                cues
+            } else {
+                listOf(cue.buildUpon().setText(unique.joinToString("\n")).build())
+            }
+        }
+
+        // Two tracks, or a file with two events for the same line, can put the same text on
+        // screen twice. Drop an identical cue before merging, whether it is plain text or a
+        // styled/spanned cue, so the second copy cannot survive as an extra line.
+        var deduped: List<Cue> = cues
+        val seenTexts = HashSet<String>(cues.size)
+        var dropped = false
+        val uniqueCues = ArrayList<Cue>(cues.size)
+        for (cue in cues) {
+            val text = cue.text?.toString()?.trim()
+            if (text.isNullOrEmpty() || seenTexts.add(text)) {
+                uniqueCues.add(cue)
+            } else {
+                dropped = true
+            }
+        }
+        if (dropped) deduped = uniqueCues
+        if (deduped.size <= 1) return deduped
+
+        val unpositioned = deduped.filter { it.bitmap == null && it.line == Cue.DIMEN_UNSET }
+        if (unpositioned.size <= 1) return deduped
+        if (unpositioned.size < deduped.size) {
+            val positioned = deduped.filterNot { it.bitmap == null && it.line == Cue.DIMEN_UNSET }
             return positioned + mergeOverlappingCues(unpositioned)
         }
-        val validTexts = cues.mapNotNull { it.text }.filter { it.isNotBlank() }
+        val validTexts = deduped.mapNotNull { it.text }.filter { it.isNotBlank() }
         if (validTexts.isEmpty()) return emptyList()
 
         val hasSpanned = validTexts.any { it is Spanned }
@@ -265,9 +295,13 @@ internal object PlayerSubtitleUtils {
             }
             builder
         } else {
-            validTexts.distinct().joinToString("\n")
+            validTexts
+                .flatMap { it.toString().replace("\r\n", "\n").split('\n') }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .joinToString("\n")
         }
-        return listOf(cues[0].buildUpon().setText(mergedText).build())
+        return listOf(deduped[0].buildUpon().setText(mergedText).build())
     }
 
     fun normalizeBottomCuePosition(cue: Cue): Cue {

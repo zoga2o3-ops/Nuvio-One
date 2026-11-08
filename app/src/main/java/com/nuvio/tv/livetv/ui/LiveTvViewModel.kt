@@ -1392,15 +1392,18 @@ class LiveTvViewModel @Inject constructor(
 
     /** Saves the whole group order at once (Reorder groups). */
     fun saveGroupOrder(ids: List<String>) {
-        // Reordering by hand means "my order" from now on.
-        if (settings.value.groupSort != "custom") viewModelScope.launch { prefs.updateSettings { it.copy(groupSort = "custom") } }
         if (ids.isEmpty()) return
-        viewModelScope.launch { prefs.moveGroup(ids.first(), 0, ids) }
+        prefs.saveGroupOrder(ids)
     }
 
     fun moveGroup(groupId: String, delta: Int) {
-        if (settings.value.groupSort != "custom") viewModelScope.launch { prefs.updateSettings { it.copy(groupSort = "custom") } }
-        viewModelScope.launch { prefs.moveGroup(groupId, delta, uiState.value.orderableGroupIds) }
+        val current = uiState.value.orderableGroupIds
+        val from = current.indexOf(groupId)
+        if (from < 0) return
+        val order = current.toMutableList()
+        order.removeAt(from)
+        order.add((from + delta).coerceIn(0, order.size), groupId)
+        prefs.saveGroupOrder(order)
     }
 
     fun createGroupWith(name: String, channel: LiveChannel?) = viewModelScope.launch {

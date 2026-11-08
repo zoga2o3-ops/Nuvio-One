@@ -104,6 +104,13 @@ val debugReportDiscordWebhook = providers.environmentVariable("DEBUG_REPORT_DISC
     .orNull?.trim()?.takeIf { it.isNotBlank() }
     ?: resolveProperty(devProperties, localProperties, "DEBUG_REPORT_DISCORD_WEBHOOK")
 
+if (debugReportDiscordWebhook.isNullOrBlank()) {
+    logger.warn(
+        "DEBUG_REPORT_DISCORD_WEBHOOK is not set; the About 'Send debug report' row will be hidden in this build. " +
+            "Add it to the active checkout's local.properties before building a release."
+    )
+}
+
 fun env(name: String): String? = providers.environmentVariable(name).orNull
 
 fun truthy(value: String?): Boolean {

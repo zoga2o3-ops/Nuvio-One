@@ -1221,18 +1221,6 @@ fun PlayerScreen(
             !postPlayRecommendationState.isTrailerPlaying &&
             (!postPlayRecommendationState.isVisible || !postPlayRecommendationState.hasAutoPlayedTrailer)
         ) {
-            LaunchedEffect(postPlayRecommendationState.isVisible, youtubeCaptionTranslated) {
-                val playerView = viewModel.controller.exoPlayerView
-                val hide = postPlayRecommendationState.isVisible || youtubeCaptionTranslated
-                val vis = if (hide) {
-                    android.view.View.GONE
-                } else {
-                    android.view.View.VISIBLE
-                }
-                playerView?.subtitleView?.visibility = vis
-                playerView?.setAssOverlayVisibility(vis)
-            }
-
             Box(modifier = playerSurfaceModifier) {
                 val previewConfiguredSubtitlePosition = uiState.showSubtitleOverlay || uiState.showSubtitleStylePanel
                 val subtitleCueState by viewModel.controller.subtitleCueTracker.state.collectAsState()
@@ -1384,6 +1372,8 @@ fun PlayerScreen(
                                 libassRenderMode = uiState.libassRenderMode,
                                 subtitleStyle = uiState.effectiveSubtitleStyle,
                                 subtitleLiftPx = subtitleLiftPx,
+                                hideSubtitles = postPlayRecommendationState.isVisible ||
+                                    youtubeCaptionTranslated,
                                 onBindSubtitleView = viewModel::bindExoSubtitleView,
                                 onSubtitleTextMetricsChanged = { subtitleTextMetrics = it },
                                 modifier = Modifier.fillMaxSize()
@@ -2470,6 +2460,7 @@ private fun ExoPlayerSurface(
     libassRenderMode: LibassRenderMode,
     subtitleStyle: SubtitleStyleSettings,
     subtitleLiftPx: Float,
+    hideSubtitles: Boolean = false,
     onBindSubtitleView: (androidx.media3.ui.SubtitleView?) -> Unit = {},
     onSubtitleTextMetricsChanged: (SubtitleTextMetrics?) -> Unit = {},
     modifier: Modifier = Modifier
@@ -2500,14 +2491,28 @@ private fun ExoPlayerSurface(
         factory = { playerView },
         modifier = modifier.focusProperties { canFocus = false },
         update = {
-            it.syncLibassOverlay(
+            if (!hideSubtitles) {
+                it.syncLibassOverlay(
+                    player = player,
+                    enabled = useLibass,
+                    renderMode = libassRenderMode
+                )
+            }
+            it.applySubtitleVisibility(hideSubtitles)
+            latestBindSubtitleView(it.subtitleView)
+        }
+    )
+
+    LaunchedEffect(playerView, hideSubtitles, useLibass, libassRenderMode) {
+        playerView.applySubtitleVisibility(hideSubtitles)
+        if (!hideSubtitles) {
+            playerView.syncLibassOverlay(
                 player = player,
                 enabled = useLibass,
                 renderMode = libassRenderMode
             )
-            latestBindSubtitleView(it.subtitleView)
         }
-    )
+    }
 
     DisposableEffect(playerView, player) {
         if (playerView.player !== player) {
@@ -2979,6 +2984,15 @@ private fun PlayerView.setAssOverlayVisibility(visibility: Int) {
         val player = player as? ExoPlayer ?: return
         player.getAssHandlerCompat()?.videoFrameCallback = null
     }
+}
+
+/**
+ * The generated YouTube translated caption is drawn by Compose, and the post-play window covers
+ * the player. Hide the normal subtitle view in both cases so two copies cannot be visible.
+ */
+private fun PlayerView.applySubtitleVisibility(hide: Boolean) {
+    subtitleView?.visibility = if (hide) android.view.View.GONE else android.view.View.VISIBLE
+    if (hide) setAssOverlayVisibility(android.view.View.GONE)
 }
 
 @Composable

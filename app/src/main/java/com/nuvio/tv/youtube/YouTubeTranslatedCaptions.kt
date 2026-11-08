@@ -24,7 +24,7 @@ internal class YouTubeTranslatedCaptions(
     private var wholeFileCues: List<Cue>? = null
     private var wholeFileTried = false
 
-    private class Cue(val startMs: Long, val endMs: Long, val text: String)
+    private class Cue(val startMs: Long, var endMs: Long, val text: String)
 
     /** The line showing at [positionMs], or null when nothing is said then. */
     suspend fun lineAt(positionMs: Long): String? = withContext(Dispatchers.IO) {
@@ -67,6 +67,7 @@ internal class YouTubeTranslatedCaptions(
 
     private fun parse(vtt: String): List<Cue> {
         val cues = ArrayList<Cue>()
+        var previousText: String? = null
         for (block in vtt.replace("\r\n", "\n").split(Regex("\n{2,}"))) {
             val lines = block.lines()
             val timingIndex = lines.indexOfFirst { "-->" in it }
@@ -75,8 +76,25 @@ internal class YouTubeTranslatedCaptions(
             fun part(i: Int) = match.groupValues[i].toLongOrNull() ?: 0L
             val start = part(1) * 3_600_000 + part(2) * 60_000 + part(3) * 1_000 + part(4)
             val end = part(5) * 3_600_000 + part(6) * 60_000 + part(7) * 1_000 + part(8)
-            val text = lines.drop(timingIndex + 1).joinToString("\n").trim()
-            if (text.isNotEmpty()) cues += Cue(start, end, text)
+            val rawText = lines.drop(timingIndex + 1).joinToString("\n").trim()
+            if (rawText.isEmpty()) continue
+            // Translated captions can still roll up (old line above the new one) and some cues
+            // contain the same line twice. Keep one copy so the overlay cannot draw it twice.
+            val text = YouTubeAutoCaptions.cleanRollingCue(rawText, previousText)
+            if (text.isEmpty()) continue
+            val last = cues.lastOrNull()
+            if (last != null && last.text == text && start <= last.endMs + 500) {
+                last.endMs = maxOf(last.endMs, end)
+                previousText = text
+                continue
+            }
+            // A translated file can keep the old cue alive while the next one starts. End it at
+            // the next cue so two lines cannot be on screen together.
+            if (last != null && start > last.startMs && start < last.endMs) {
+                last.endMs = start
+            }
+            cues += Cue(start, end, text)
+            previousText = text
         }
         return cues
     }
