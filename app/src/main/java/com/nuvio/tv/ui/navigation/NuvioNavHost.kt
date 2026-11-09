@@ -1157,9 +1157,13 @@ private fun PlaybackNavHost(
                 showYouTubeButton = upNextVideoId != null && youtubeVm != null,
                 youtubeLive = ytState.info?.isLive == true,
                 youtubeSubscribed = ytState.info?.subscribed == true,
+                youtubeLiked = ytState.info?.liked == true,
+                youtubeDisliked = ytState.info?.disliked == true,
                 youtubeChannelImage = ytState.info?.authorImage,
                 youtubeChannelName = ytState.info?.author,
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
+                onYouTubeLike = if (upNextVideoId != null) ({ ytPlayerVm.toggleLike() }) else null,
+                onYouTubeDislike = if (upNextVideoId != null) ({ ytPlayerVm.toggleDislike() }) else null,
                 onYouTubeChannel = ytState.info?.channelId?.let { channel ->
                     {
                         youtubeVm?.openChannel(channel, ytState.info?.author.orEmpty())

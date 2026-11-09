@@ -87,6 +87,8 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.runtime.Composable
@@ -236,6 +238,10 @@ fun PlayerScreen(
     /** YouTube fork: whether you're subscribed to this video's channel, and the Subscribe and Channel buttons' actions. */
     youtubeSubscribed: Boolean = false,
     onYouTubeSubscribe: (() -> Unit)? = null,
+    youtubeLiked: Boolean = false,
+    youtubeDisliked: Boolean = false,
+    onYouTubeLike: (() -> Unit)? = null,
+    onYouTubeDislike: (() -> Unit)? = null,
     onYouTubeChannel: (() -> Unit)? = null,
     youtubeChannelImage: String? = null,
     /** YouTube fork: the channel name, shown above the video title in the controls. */
@@ -1794,6 +1800,10 @@ fun PlayerScreen(
                 youtubeLive = youtubeLive,
                 youtubeSubscribed = youtubeSubscribed,
                 onYouTubeSubscribe = onYouTubeSubscribe,
+                youtubeLiked = youtubeLiked,
+                youtubeDisliked = youtubeDisliked,
+                onYouTubeLike = onYouTubeLike,
+                onYouTubeDislike = onYouTubeDislike,
                 onYouTubeChannel = onYouTubeChannel,
                 youtubeChannelImage = youtubeChannelImage,
                 youtubeChannelName = youtubeChannelName,
@@ -3023,6 +3033,10 @@ private fun PlayerControlsOverlay(
     youtubeLive: Boolean,
     youtubeSubscribed: Boolean,
     onYouTubeSubscribe: (() -> Unit)?,
+    youtubeLiked: Boolean,
+    youtubeDisliked: Boolean,
+    onYouTubeLike: (() -> Unit)?,
+    onYouTubeDislike: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
     youtubeChannelImage: String?,
     youtubeChannelName: String?,
@@ -3249,6 +3263,26 @@ private fun PlayerControlsOverlay(
                                 icon = if (youtubeSubscribed) Icons.Default.NotificationsActive else Icons.Default.PersonAdd,
                                 contentDescription = if (youtubeSubscribed) "Subscribed" else "Subscribe",
                                 onClick = subscribe, downFocusRequester = progressBarFocusRequester, onFocused = onResetHideTimer
+                            )
+                        }
+                        onYouTubeLike?.let { like ->
+                            ControlButton(
+                                icon = Icons.Default.ThumbUp,
+                                contentDescription = if (youtubeLiked) "Remove like" else "Like",
+                                onClick = like,
+                                downFocusRequester = progressBarFocusRequester,
+                                onFocused = onResetHideTimer,
+                                contentColor = if (youtubeLiked) Color(0xFFFF4D6A) else Color.White
+                            )
+                        }
+                        onYouTubeDislike?.let { dislike ->
+                            ControlButton(
+                                icon = Icons.Default.ThumbDown,
+                                contentDescription = if (youtubeDisliked) "Remove dislike" else "Dislike",
+                                onClick = dislike,
+                                downFocusRequester = progressBarFocusRequester,
+                                onFocused = onResetHideTimer,
+                                contentColor = if (youtubeDisliked) Color(0xFFFF4D6A) else Color.White
                             )
                         }
                         onYouTubeLoop?.let { loop ->
