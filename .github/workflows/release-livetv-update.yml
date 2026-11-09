@@ -146,47 +146,9 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Nuvio + IPTV ${{ steps.version.outputs.version }}
+          name: Nuvio One ${{ steps.version.outputs.version }}
           prerelease: true
           files: |
             out/*.apk
           body: |
-            Nuvio + IPTV update ${{ steps.version.outputs.version }}.
-
             ${{ inputs.notes }}
-
-      # One link that always gives the newest APK (for a Downloader code):
-      # https://github.com/<you>/<repo>/releases/download/downloader/NuvioPlusIPTV.apk
-      # It lives on its own "downloader" release, whose file is replaced each time. That release
-      # has no version number, so the in-app updater ignores it, and in-app updates keep
-      # working exactly as before.
-      - name: Update the Downloader link (always the newest version)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          APK=$(ls out/*universal*.apk 2>/dev/null | head -1)
-          [ -z "$APK" ] && APK=$(ls out/*.apk | head -1)
-          mkdir -p dl
-          cp "$APK" dl/NuvioPlusIPTV.apk
-          if ! gh release view downloader -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create downloader -R "$GITHUB_REPOSITORY" \
-              --title "Nuvio + IPTV for Downloader (always the newest version)" \
-              --notes "This file is replaced with the newest version every release, so one link (and one Downloader code) always installs the latest Nuvio + IPTV. Updates after that happen inside the app." \
-              --latest=false --prerelease
-          fi
-          gh release upload downloader dl/NuvioPlusIPTV.apk -R "$GITHUB_REPOSITORY" --clobber
-
-      # Brings the README from dev onto main, so the front page shows the newest one. Only the README
-      # changes on main; the app that was just released is untouched.
-      - name: Update the README on main
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch --no-tags origin dev main
-          # A separate folder, so files changed by the build above are never touched.
-          git worktree add --detach "$RUNNER_TEMP/readme" origin/main
-          cd "$RUNNER_TEMP/readme"
-          git checkout origin/dev -- README.md
-          if git diff --cached --quiet; then echo "README on main is already the newest."; exit 0; fi
-          git -c user.name=homelessbrian -c user.email=briansmithhb@gmail.com commit -m "README: newest from dev"
-          git push origin HEAD:main

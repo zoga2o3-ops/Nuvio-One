@@ -1,342 +1,264 @@
 <div align="center">
 
-# Nuvio + IPTV
+# Nuvio One
 
-**Everything in Nuvio, plus everything IPTV: a TiviMate-style Live TV guide, a Sports hub that finds every game on your own channels, catch-up, recordings, and your provider's movies and series, all in one app for Google TV, Android TV and Fire TV.**
+**Movies and shows, live TV, sports, YouTube and music in one app for Google TV, Android TV and Fire TV.**
 
-[![Latest release](https://img.shields.io/github/v/release/homelessbrian/NuvioPlusIPTV?include_prereleases&label=latest&style=for-the-badge)](https://github.com/homelessbrian/NuvioPlusIPTV/releases)
-[![Downloads](https://img.shields.io/github/downloads/homelessbrian/NuvioPlusIPTV/total?style=for-the-badge)](https://github.com/homelessbrian/NuvioPlusIPTV/releases)
+[![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/Nuvio-One?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
+[![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/Nuvio-One/total?style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
-[![Based on Nuvio](https://img.shields.io/badge/based%20on-NuvioMedia%2FNuvioTV-8A2BE2?style=for-the-badge)](https://github.com/NuvioMedia/NuvioTV)
-[![Support on Ko-fi](https://img.shields.io/badge/support-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/homelessbrian)
+<a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-5F7FFF?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy me a coffee" /></a>
 
-**Downloader code: 6532491**
-
-[Sports hub](#-sports-hub) · [Download](#-installation) · [Features](#-features) · [Setup](#-getting-started) · [Remote controls](CONTROLS.md) · [Report a bug](#-reporting-bugs-and-requesting-features) · [Support](#-support-the-project)
+[What is it](#what-is-it) · [OneTube (YouTube)](#onetube-youtube-built-in) · [Music](#music) · [Live TV, Sports and On Demand](#live-tv-sports-and-on-demand-from-nuvio--iptv) · [Install](#installation) · [Setup](#getting-started) · [Remote controls](CONTROLS.md) · [Bugs](#reporting-bugs-and-asking-for-features) · [Credits](#credits)
 
 </div>
 
 ---
 
-## 🏆 Sports hub
+## What is it
 
-Sports in the side menu shows scores and schedules, and works out **which of your own channels are showing each game**. No more scrolling through sports channels to find the match.
+Nuvio One is a personal fork that puts four things in one TV app:
 
-### Your teams, front and center
-- **My Sports:**
-  - **The big card:** your next games in your teams' colors. Left and Right flip through them.
-  - **Live & Upcoming,** then a row for every team, country, league and name you follow.
-  - **Your order:** arrange the rows how you like.
-- **All Events:** every game in your region's leagues plus everything you follow, with a live count. **Day tabs** run from a week back to a week ahead.
-- **Follow anything:**
-  - **Teams, countries, whole leagues,** or a **name** (a player, driver or fighter) to catch any show that mentions it.
-  - **One search** finds teams and leagues alike.
-  - **Following a club includes its cups** and European games.
-- **Where they stand:** each team's row on My Sports says where it is in its league ("2nd in Premier League").
+1. **[Nuvio](https://github.com/NuvioMedia/NuvioTV)**: the home screen, addons, Trakt and Simkl, your Nuvio account and its settings, and Nuvio's player.
+2. **IPTV**: a TiviMate-style Live TV guide, a Sports hub, catch-up, recordings and On Demand, from [NuvioPlusIPTV](https://github.com/homelessbrian/NuvioPlusIPTV) by homelessbrian.
+3. **OneTube**: YouTube without the YouTube app, in a section of its own in the side menu, played in Nuvio's own player. It's not a launcher and not a web view, and you can use it without an account.
+4. **Music**: an ad-free music section with YouTube Music, your own music server, local files, downloads and synced lyrics.
 
-### 🏆 Tables
-- **🏆 Tables** in the Sports top bar: your leagues across the top, the table below, opened on your team. The video keeps playing beside it.
-- **Football:** played, won, drawn, lost, goal difference and points, the **last five** as coloured squares, **▲ / ▼ place changes** since the last round, and coloured edges for **Champions League, Europa League and relegation** places.
-- **US sports:** **Division / Conference / League** views, clinched marks (x, y, z, e) and **playoff lines** (Play-In too for the NBA).
-- **Racing:** F1, NASCAR and IndyCar drivers' standings, with points behind the leader.
-- **Team colours** on every row, and your team outlined in gold.
-- **Team cards:** OK on a team for its record, home and away form, last three results, next game, **Watch now** (or Remind me), **Follow**, and **all its games**.
-- **From a game:** OK on a game's Table panel opens the whole table with both teams marked.
-
-### 160+ leagues and competitions
-- **US sports:** NFL, NBA, NHL, MLB, WNBA, MLS, college football, basketball, hockey and baseball, plus CFL, UFL and G League.
-- **Football (soccer):**
-  - **The UK:** Premier League down to the National League, the FA Cup, Carabao Cup, Scottish leagues and cups, and the WSL.
-  - **Europe:** the Champions League, Europa League, LaLiga, Serie A, Bundesliga, Ligue 1, Eredivisie, Primeira Liga, and their cups.
-  - **Further afield:** the Libertadores, Brazil, Argentina, the Saudi Pro League, J1, the A-League and more.
-- **National teams:** follow England, France, USA and others for every game, from friendlies to the World Cup. Women's internationals have their own list.
-- **Rugby:** the Six Nations, Nations Championship, Rugby Championship, World Cup, Premiership, URC, Champions Cup, Top 14 and Super Rugby. **AFL** too.
-- **Events:** UFC, PFL, F1, NASCAR, IndyCar, PGA Tour, DP World Tour, LPGA, LIV, and ATP and WTA tennis, with leaderboards, results and full fight cards.
-- **Beyond ESPN:** from TheSportsDB, with scores about every 15 minutes on match days:
-  - **non-league football:** the National League and the step below
-  - **rugby league:** Super League, NRL and State of Origin
-  - **cricket:** T20 Blast, IPL and Big Bash
-  - **ice hockey:** the Elite Ice Hockey League
-  - **Gaelic games:** the National Football League
-  - **netball:** the UK Netball Superleague and Super Netball
-- **Wrestling and boxing schedules.** WWE and AEW shows are matched to your channels by show name.
-- **Your TV guide fills the gaps:** darts, snooker, horse racing, cycling and cricket internationals are found in your own guide.
-
-### Watching
-- **Watch on your channels:**
-  - **Every channel showing the game,** best match first, with the playlist it comes from.
-  - **Labels:** each channel is marked **SHOWING IT** or **MAYBE**.
-- **Fix Channel:** pick the right channel once, for one game, every game on that network, or every game for a team. It's remembered.
-- **Video window:** hold OK on a game to watch it on the Sports page while you keep browsing. Hold Back for full screen.
-- **Watch from the start** on channels with catch-up.
-- **Game pages:**
-  - the score by period, and the latest scoring as it happens
-  - **before it starts:** form, the last meetings, match info, win chance and the table
-  - **once it's on:** team stats, top performers or line-ups, and win chance as it changes
-  - race and golf leaderboards, tennis matches and fight cards
-  - **Up to a team** and OK for its team card
-- **Scores everywhere:**
-  - the score shows on Live TV's info bar when you're watching a game
-  - **scoring alerts** pop up in the corner when your team scores, wherever you are in the app
-- **Spoiler-free:** **Hide Scores** keeps results off the screen until you're ready.
-
-### Never miss it
-- **Remind me** on any game, and automatic reminders for your teams.
-- **Switch automatically:** a minute before kick-off, with 10 seconds to cancel.
-- **Record a game:** pick the channel and how long to record (1 to 6 hours, for overtime and extra time). Games set to record show **REC**.
-- **On every TV:** your teams, leagues and Sports settings sync with Google Drive.
+You sign in with your usual Nuvio account and everything you set up there carries over: TMDB, Trakt, Simkl, MDBList, Premiumize, ratings, trailers, intro skip, avatars and Drive backup. The app has its own package name, so it installs next to the official Nuvio without replacing it. (Nuvio One was called Nuvio + IPTV + 1Tube until 1.1.0-beta.11.2, and updates install straight over those versions.)
 
 ---
 
-## ✨ Features
+## OneTube: YouTube, built in
 
-### 📺 A proper TV guide
-- **TiviMate-style guide:** channels down the side, a timeline across, and a line marking "now" (which you can hide). It fits **8 or more channels** on screen.
-- **Guide Size:** Compact, Standard, Large or Extra Large. It sets the size of overlay mode too.
-- **Group list:**
-  - **Opening it:** it slides out with a tap of Left.
-  - **Grouping:** optionally grouped by playlist.
-  - **Browse by channel name** (satellite-box style).
-- **Info panel** with the show's poster (or just the channel logo, if you prefer), time left, the description (as much as fits), the playlist it comes from, and a live preview window.
-- **Make room for more channels:** a smaller info panel, and hiding numbers, logos, names or episode numbers.
-- **Badges:** catch-up icons on channels that support it, and 4K / FHD / HD / SD badges on channels you've watched.
+YouTube has its own page in the side menu. **Nothing from YouTube shows up on Nuvio's Home or in Continue Watching.** Your YouTube watching stays on the YouTube page.
 
-### 🎬 Overlay mode (while watching)
-- Press **Left** in full screen for a see-through guide over the video: the group's channels, the highlighted channel's schedule, and the show's details.
-- **Left again** switches groups. **Right** opens the channel's full schedule, with a date picker.
-- **Grouped by playlist** (when you have more than one), with headings you can fold, as in the guide.
+### Browsing
+- **Tabs:** Home, Subscriptions, History, Playlists, Live, Music, Gaming, News, Sports, Shorts and Channels. Turn any tab on or off and put them in any order under **Settings → YouTube**.
+- **Remember the last tab:** open on the tab you were on, or always start on Home.
+- **Search** with suggestions as you type, plus your search history.
+- **Channel pages and playlists,** with endless scrolling in the feeds.
+- **Clear messages** when something can't load or a video can't play, instead of a blank screen.
 
-### 📡 Your sources, your way
-- **Multiple M3U playlists** and **multiple XMLTV guides,** merged into one guide.
-- **Xtream Codes logins:**
-  - **Pick what to include:** TV channels, movies & series, or both.
-  - **Stream format:** Auto, TS or HLS.
-  - **Account details:** expiry date, status and connections in use, with a warning before it runs out.
-- **Smart guide matching:** real listings always beat "Programming" placeholders. Fine-tune any channel with **Assign EPG**.
-- **Catch-up:**
-  - **Watch past shows** with a seek bar, or **restart what's on now**.
-  - **Follow-on playback:** carries straight on into the next show.
-  - **Guide time shift** and **Catch-up time shift** for providers that are off by an hour or more.
-- **Channel name editor** (like TiviMate): strip "USA:", "HD", "24/7" and similar from channel names.
+### Accounts
+- **Sign in with a QR code:** scan it with your phone and approve. No typing on the TV.
+- **Several accounts and channel profiles:** the account button at the top of the page switches between them.
+- **Separate from Music:** OneTube and Music each keep their own YouTube sign-in and profile, so changing one never changes the other.
+- **Watch progress goes back to YouTube,** so History and the "resume" bar match what you see on other devices.
 
-### ⏺️ Recordings
-- **Record a show, or a whole series,** from the guide. Shows on catch-up channels are saved from catch-up after they end, which is the most reliable way.
-- **Save to this device or a USB drive.** Choose what happens when space runs low: stop recording, or delete the oldest.
-- **Choose the padding:** how early recordings start and how long they keep going after the show.
-- **Recordings carry on with the app closed or the box in standby**, and catch-up saves wait for the connection to come back.
-- **Watch while it records,** with skipping back and forward.
-- **Size and details** for every recording: channel, air time, length, size and where it's saved.
+### Playing
+- **Nuvio's own player,** so the controls, subtitles and remote behave the way they do for everything else in the app. The Watch Party and Sources buttons are hidden for YouTube, where they make no sense.
+- **Quality picker** (up to 4K) and a **video format choice** (for example AV1, VP9 or H.264), with a remembered default for each.
+- **Fast start:** the next video is looked up ahead of time, and stream links are refreshed if they have gone stale.
+- **Chapters,** shown on the seek bar and skippable from the player.
+- **Loop** a video.
+- **Autoplay** with an **up-next card** in the corner showing the next video's thumbnail and title.
+- **Playback speed is remembered** between videos.
+- **Captions** through the player's usual subtitle menu.
+- **Live streams** play too, with **live chat** as an overlay.
 
-### 🗂️ Channel management
-- **Manage visibility** and **reorder** for channels *and* groups.
-- **Copy, rename and renumber** channels, **create your own groups,** and **number channels 1, 2, 3…** in each group.
-- **Channel numbers from your playlist** are used when it has them.
-- **Favorites** and **Recently watched,** with sorting that works everywhere.
+### The player panel
+Open the YouTube button in the player for:
+- **Like and dislike,** as buttons of their own.
+- **Subscribe,** and a **Channel** button that shows the channel's profile picture and opens the channel.
+- **Save to a playlist.**
+- **Comments:** sort by **Top** or **Newest**, open replies, and scroll with the remote without losing your place.
+- **Hide this channel.**
 
-### 🎞️ On Demand
-- **What it is:** movies and series from your Xtream providers, with **categories or genres**, **Recently added**, **Search** and **Sort by**.
-- **Your posters, not the provider's:** posters and details come from your own addons. Matched titles open on Nuvio's normal details page, with watched marks and the usual long-press menu.
-- **📡 On Demand** in Nuvio's stream list, with quality, codec and audio badges. Choose where its tab goes, and whether auto-play may pick it.
-- **Each title once:** duplicates are merged, and a picker lets you choose the version when there are several.
+### Skipping and cleaning up
+- **SponsorBlock:** skip sponsors, intros, outros, self-promotion and more automatically, or have the app **ask first** with a skip card. Choose what to skip under **Settings → YouTube**.
+- **DeArrow:** community-written titles and real thumbnails in place of clickbait. Each part can be turned on or off.
+- **No ads** in playback.
+- **Feed filters:** hide Shorts, watched videos and upcoming premieres.
+- **Hidden words and channels:** anything matching a word or phrase, or coming from a channel you hide, is removed from the feeds.
 
-### 🔔 Watching
-- **Zap** with Up/Down, type a channel number, or jump to the **last channel**.
-- **Pause and rewind live TV**, even on channels without catch-up.
-- **Reminders:** "Remind me" on any upcoming show, with a pop-up and a Watch button.
-- **Player menu:** audio, **closed captions**, screen size, **picture shape**, stream info, **sleep timer**, record, find & stream, and watch from the beginning.
-- **Your audio choice is remembered for each channel** (a second language, or 5.1 over stereo).
-- **⏪ / ⏩ on the remote** skip 30 seconds in catch-up and paused live TV; hold to go faster.
-- **On-screen clock** in any corner, if you want one.
-- **Smooth playback:**
-  - **Keeps the TV awake** while you watch (no screen saver).
-  - **Match frame rate** (Off, On start, or On start/stop, as in Nuvio's player) and **audio passthrough** settings.
-  - **Auto-reconnect,** plus automatic recovery from frozen or stuck streams, with the reason shown when a stream fails.
-
-### 🔒 Parental controls
-- **PIN locks:** a PIN that locks any group or category. Adult content locks automatically.
-
-### 🔎 Part of Nuvio, not bolted on
-- **In the side menu:** Live TV, On Demand and Recordings sit in Nuvio's side menu, with their settings inside Nuvio's own Settings.
-- **Start page:** open the app on Home, Live TV, On Demand and more.
-- **Home screen row:** your favorite channels and what's on now, next to Continue watching.
-- **Live TV in Nuvio search:**
-  - **Your order:** choose which results come first.
-  - **Preview behind search:** live channels play in the background while you search.
-- **Find & stream in Nuvio:** see a movie in the guide, and stream it through your own addons and debrid.
-- **Google Drive sync:** your setup on every TV, combined correctly when you use more than one.
+### How it works
+YouTube is handled by **MediaServiceCore**, the engine behind SmartTube, vendored in `mediaservicecore/`. The app plays through a small loopback server so Nuvio's ExoPlayer gets a proper DASH manifest. The OneTube code lives in `app/src/main/java/com/nuvio/tv/youtube/`.
 
 ---
 
-## 📥 Installation
+## Music
 
-### The quick way: Downloader code **6532491**
+Music has its own page in the side menu, with top tabs, an Up Next list and plain Back navigation for the remote.
 
-1. Install **Downloader** (by AFTVnews) from your TV's app store.
-2. Open it, type **6532491** in the search or address box, and press **Go**.
-3. It downloads the latest **universal** version (works on every device). Press **Install**, allowing installs from unknown sources when asked.
+- **Ad-free** listening.
+- **YouTube Music:** sign in for your playlists, liked songs and a personalised home. Likes sync across your devices.
+- **Spotify playlists:** paste a public playlist's link to import it.
+- **Navidrome and WebDAV:** connect your own music server and stream your collection.
+- **Local music:** play from the TV, a USB drive or a network share.
+- **Downloads and offline playback.**
+- **Synced lyrics and music videos:** follow the lyrics, then jump between the song and its video.
+- **Playlists, queue, radio and shuffle,** plus **Explore** for moods and genres and a search for any track.
+- **Last.fm scrobbling** and **Party mode** for listening together.
+- **Its own YouTube sign-in,** separate from OneTube.
 
-### Or pick the APK for your device
+---
 
-The universal version works everywhere. The device-specific ones are smaller downloads.
+## Live TV, Sports and On Demand (from Nuvio + IPTV)
 
-1. Open the **[latest release](https://github.com/homelessbrian/NuvioPlusIPTV/releases)**.
+All of this comes from NuvioPlusIPTV and works as it does there. Here is what you get.
+
+### Live TV
+- **TiviMate-style guide** with channels down the side, a timeline across and a "now" line, in four sizes. Browse by group, by playlist or by channel name. Playlist order follows your provider's own order.
+- **Overlay mode:** press Left while watching for a see-through guide with the group's channels and the show details, and Right for a channel's full schedule.
+- **Your sources:** several M3U playlists and XMLTV guides merged into one, and Xtream Codes logins with choices for TV, movies and series, stream format and account details.
+- **Smart guide matching,** with **Assign EPG** to fix any single channel and time-shift settings for providers that are off.
+- **Catch-up:** watch past shows with a seek bar, restart what's on now and carry on into the next show.
+- **Pause and rewind live TV,** zap with Up and Down or by number, jump to the last channel, and set a sleep timer.
+- **Channel management:** hide, reorder, rename, renumber and copy channels and groups, make your own groups, and keep favorites and recently watched lists.
+- **Channel name cleanup** to strip tags like "USA:", "HD" and "24/7".
+- **Remembered audio track** for each channel, frame-rate matching, audio passthrough, auto-reconnect and recovery from stuck streams.
+- **Parental PIN** for any group or category. Adult content locks by itself.
+
+### Sports hub
+- **My Sports:** a big card for your next games, rows for Live and Upcoming, and a row for every team, country, league or name you follow.
+- **All Events** with day tabs from a week back to a week ahead.
+- **Tables** for football, US sports and racing, with form, place changes and playoff lines.
+- **160+ leagues and competitions** across football, US sports, rugby, racing, golf, tennis, fighting and more.
+- **Finds your channels:** every channel in your own playlists that is showing a game, marked **SHOWING IT** or **MAYBE**, with **Fix Channel** to remember your choice.
+- **Watch beside the page** in a video window, **watch from the start** on catch-up channels, and see game pages with scores, stats and line-ups.
+- **Reminders,** automatic switching a minute before kick-off, and recording a game.
+- **Hide Scores** for spoiler-free browsing, and scoring alerts when your team scores.
+
+### Recordings
+- Record a show or a whole series from the guide, to the device or a USB drive.
+- Padding before and after, low-space rules, and recordings that carry on with the app closed or the box in standby.
+- Watch a recording while it is still recording.
+
+### On Demand
+- Movies and series from your Xtream providers, with categories, recently added, search and sorting.
+- Titles open on Nuvio's normal details page with your own addon artwork, and appear in Nuvio's stream list.
+
+### Part of Nuvio, not bolted on
+- Live TV, On Demand, Sports, Recordings, OneTube and Music sit in Nuvio's side menu, with their settings inside Nuvio's own Settings.
+- Pick a **start page,** a **Home row** of favorite channels, and have live channels show up in Nuvio's search.
+- **Google Drive sync** of your Live TV and Sports setup.
+
+---
+
+## Installation
+
+1. Open the **[latest release](https://github.com/zoga2o3-ops/Nuvio-One/releases)**.
 2. Download the APK for your device:
 
    | Device | APK |
    |---|---|
-   | Most Google TV / Android TV devices | `arm64-v8a` |
+   | Most Google TV and Android TV devices | `arm64-v8a` |
    | Fire TV (all models), older or budget boxes | `armeabi-v7a` |
-   | Not sure (works everywhere) | `universal` |
+   | Not sure (works everywhere, larger download) | `universal` |
 
-3. Install it with a file manager or **Downloader**, allowing installs from unknown sources when asked.
+3. Install it with a file manager or an app like Downloader, and allow installs from unknown sources when asked.
 
-Requires **Android 7.0 or newer** (Fire OS 6 or later). It installs **alongside** the official Nuvio app.
+It needs **Android 7.0 or newer** (Fire OS 6 or later).
 
-**Updating:** updates appear **inside the app**. Each new Nuvio release is followed by a matching Nuvio + IPTV version (currently based on Nuvio 1.1.0-beta.8).
-
----
-
-## 🚀 Getting started
-
-1. Open **Settings → Live TV**.
-2. Choose **Add M3U Playlist** or **Add Xtream Codes Login**. For Xtream, pick **Include TV channels** and/or **Include movies & series**.
-3. Optionally **Add EPG Source** for an extra TV guide.
-4. Open **Live TV**, **On Demand** or **Sports** from the side menu. The first load can take a minute on big providers; a small progress bubble shows what's happening.
-5. Optional, all in **Settings → Live TV**:
-   - set a **Start page**
-   - turn on the **home screen row**
-   - choose where recordings are saved under **Recordings**
-   - set a parental **PIN**
-   - turn on **Google Drive sync**
-6. In **Sports**, press **✎ Follow Teams & Leagues** to pick your teams. Set your region and reminders under **Settings → Sports**.
+**Updates** show up inside the app: when a newer release is published here, Settings offers to download and install it. Releases are always signed with the same key, so updates install over your existing copy and keep your data.
 
 ---
 
-## 🎮 Remote controls
+## Getting started
 
-Every button for the guide, full screen, Sports, On Demand and Recordings: see **[CONTROLS.md](CONTROLS.md)**.
+1. Open the app and **sign in with your Nuvio account** (or skip and add addons yourself).
+2. **OneTube:** open OneTube in the side menu, press **Sign in** and scan the QR code. You can use it signed out too.
+3. **Music:** open Music, and sign in to YouTube Music if you want your playlists and likes, or connect a music server or local folder.
+4. **Live TV and Sports:** open **Settings → Live TV**, add an M3U playlist or Xtream Codes login, and optionally an EPG source. Then open Live TV, On Demand or Sports from the side menu. The first load can take a minute on large providers.
+5. **Settings → YouTube** has the tabs, SponsorBlock, DeArrow, quality, filters and hidden words.
+6. In **Sports**, press **Follow Teams & Leagues** to pick your teams.
 
----
-
-## 🐞 Reporting bugs and requesting features
-
-Please search [existing issues](https://github.com/homelessbrian/NuvioPlusIPTV/issues) first.
-
-| | |
-|---|---|
-| 🐛 **Something isn't working** | [Report a bug](https://github.com/homelessbrian/NuvioPlusIPTV/issues/new?template=live_tv_bug.yml) |
-| 📺 **An idea for a new feature** | [Request a feature](https://github.com/homelessbrian/NuvioPlusIPTV/issues/new?template=live_tv_feature.yml) |
-| 🎨 **The look or layout could be better** | [Suggest a UI / UX improvement](https://github.com/homelessbrian/NuvioPlusIPTV/issues/new?template=live_tv_ui.yml) |
-
-**If the app crashes,** scan the QR code on the crash screen with your phone and paste the text into your report.
-
-**If something doesn't load** (a playlist, the guide or catch-up), open **Settings → Live TV → Help → Start-Up Report** and include it in your report. Usernames and passwords are hidden in it.
-
-Problems with Nuvio's movies, shows, addons or accounts that also happen in the official app belong with [Nuvio](https://github.com/NuvioMedia/NuvioTV/issues).
+Every button for the guide, full screen, Sports, On Demand and Recordings is listed in **[CONTROLS.md](CONTROLS.md)**.
 
 ---
 
-## ❓ FAQ
+## Reporting bugs and asking for features
+
+Please look through the [existing issues](https://github.com/zoga2o3-ops/Nuvio-One/issues) first, then [open a new one](https://github.com/zoga2o3-ops/Nuvio-One/issues/new). Say which device you use, what you did and what happened. For OneTube or Music problems, mention the video's title or link.
+
+If the app crashes, scan the QR code on the crash screen and paste the text into your report. If a playlist, guide or catch-up doesn't load, include **Settings → Live TV → Help → Start-Up Report** (usernames and passwords are hidden in it).
+
+Problems that also happen in the official Nuvio app belong with [Nuvio](https://github.com/NuvioMedia/NuvioTV/issues).
+
+---
+
+## FAQ
 
 <details>
-<summary><b>Does this include any channels or movies?</b></summary>
+<summary><b>Does it come with any channels, movies or videos?</b></summary>
 
-No. It only plays what you add yourself: your own playlists, guides, Xtream logins, addons and debrid services.
+No. It plays what you add yourself: your own playlists, guides, Xtream logins, addons and debrid services, plus YouTube, which anyone can watch.
 </details>
 
 <details>
-<summary><b>I don't see On Demand.</b></summary>
+<summary><b>Will it replace my Nuvio app?</b></summary>
 
-Turn on movies & series for your Xtream login under **Settings → Live TV → On Demand**. On Demand appears in the side menu once the first import finishes.
+No. It has its own package name and installs alongside it. It does replace older Nuvio + IPTV + 1Tube installs, keeping your data, because it is the same app under its new name.
 </details>
 
 <details>
-<summary><b>Sports shows the wrong channel for a game, or none at all.</b></summary>
+<summary><b>Does YouTube show up on Home or in Continue Watching?</b></summary>
 
-Open the game and press **Fix channel**. Pick the right channel for that game, for every game on that network, or for every game a team plays. It's remembered from then on. **MAYBE** means the app wasn't sure; a channel whose guide lists the game is marked **SHOWING IT**.
+No. YouTube watching stays on the OneTube page and in your YouTube History.
 </details>
 
 <details>
-<summary><b>I can't find my team or league in Sports.</b></summary>
+<summary><b>Do Music and OneTube share my YouTube sign-in?</b></summary>
 
-Search for it in **✎ Follow Teams & Leagues**: search covers every league, not just your region's. If it still isn't there, follow it as a name, and any show in your TV guide with that name in the title appears on My Sports.
+No. Each keeps its own sign-in and profile, even for the same Google account.
 </details>
 
 <details>
-<summary><b>Why doesn't a league show under Tables?</b></summary>
+<summary><b>A YouTube video won't play.</b></summary>
 
-Tables lists the leagues you follow and your teams' leagues that have a table. Cups and knockout competitions don't have one, and neither do golf, tennis or fights. Turn off **Hide Scores** under **Settings → Sports** to see tables.
+The app shows the reason on screen (age restriction, region, private video and so on). If a stream link has gone stale, back out and open the video again. If it keeps happening, open an issue with the video link.
 </details>
 
 <details>
-<summary><b>Where do the scores come from?</b></summary>
+<summary><b>Where do ads go?</b></summary>
 
-Scores, schedules, tables, team logos and colors come from ESPN's free public feed. Non-league football, rugby league, cricket, UK ice hockey, Gaelic games, netball, and the wrestling and boxing schedules come from TheSportsDB, and some event dates from sporting-events.org. Sports they don't cover are found in your own TV guide.
-</details>
-
-<details>
-<summary><b>Some channels show "Programming" or the wrong listings.</b></summary>
-
-Long-press the channel and choose **Assign EPG**. Press Left to search, or pick a TV guide from the buttons at the top. If every channel is off by the same amount, use **Guide time shift**.
-</details>
-
-<details>
-<summary><b>Catch-up plays the wrong show (an hour or more off).</b></summary>
-
-Run **Update now** on that playlist once, so the app learns your provider's time zone. If it's still off, set **Catch-Up Time Shift** under **Settings → Live TV → Watching**.
-</details>
-
-<details>
-<summary><b>A channel looks stretched or squashed.</b></summary>
-
-Long-press OK while it's playing and choose **Picture shape**. Try **Use real size**; the app remembers it for that channel. **Screen size** in the same menu changes how the picture fills the screen on every channel.
-</details>
-
-<details>
-<summary><b>My USB drive doesn't show up for recordings.</b></summary>
-
-Open **Save Recordings To** under **Settings → Live TV → Recordings**. Drives the app can't use are listed with the reason, usually that the drive is formatted as NTFS (read-only on most TV boxes) or isn't set up as storage yet. **Drive Not Listed?** in the same list explains what to do.
-</details>
-
-<details>
-<summary><b>Will recordings work if I close the app or turn the TV off?</b></summary>
-
-Yes, as long as the box is in standby and not fully powered off or unplugged. Shows on catch-up channels are saved from catch-up after they end, and they're retried when the connection comes back.
-</details>
-
-<details>
-<summary><b>Sound cuts out or stops on Fire TV with Echo speakers.</b></summary>
-
-Turn off **Audio passthrough** under **Settings → Live TV → Watching**.
+YouTube's ads aren't requested by the player. Sponsor segments inside videos are handled by SponsorBlock, which you can set to skip or to ask first.
 </details>
 
 <details>
 <summary><b>What does Google Drive sync store, and where?</b></summary>
 
-Your Live TV setup, in a private app folder in your own Google Drive that only this app can see. See the [privacy policy](https://homelessbrian.github.io/privacy.html).
+Your Live TV and Sports setup, in a private app folder in your own Google Drive that only this app can see.
+</details>
+
+<details>
+<summary><b>Where do sports scores come from?</b></summary>
+
+ESPN's public feed, TheSportsDB and sporting-events.org. Sports they don't cover are found in your own TV guide.
 </details>
 
 ---
 
-## ☕ Support the project
+## Support the project
 
-Nuvio + IPTV is free. If it's made your TV better and you'd like to say thanks, you can buy me a coffee on **[Ko-fi](https://ko-fi.com/homelessbrian)**. It's completely optional, and every bit helps keep updates coming.
+Enjoying the app? A coffee keeps the updates coming. Totally optional, always appreciated
 
-[![Support me on Ko-fi](https://img.shields.io/badge/Buy%20me%20a%20coffee-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/homelessbrian)
+<a href="https://www.buymeacoffee.com/zoga2o3m"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-5F7FFF?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy me a coffee" /></a>
 
 ---
 
-## 🙏 Credits
+## Credits
 
-- **[Nuvio](https://github.com/NuvioMedia/NuvioTV)** by the NuvioMedia team: Nuvio + IPTV is built on their work and follows their releases.
-- Guide and overlay design inspired by **TiviMate**.
-- Sports data from **ESPN**'s public feed, **[TheSportsDB](https://www.thesportsdb.com)** and **sporting-events.org**. Nuvio + IPTV isn't affiliated with any of them, and team and league names and logos belong to their owners.
+- **[Nuvio](https://github.com/NuvioMedia/NuvioTV)** by the NuvioMedia team, which this app is built on.
+- **[NuvioPlusIPTV](https://github.com/homelessbrian/NuvioPlusIPTV)** by homelessbrian: the Live TV guide, Sports hub, recordings and On Demand. This fork is used with the author's agreement.
+- **[SmartTube](https://github.com/yuliskov/SmartTube) / [MediaServiceCore](https://github.com/yuliskov/MediaServiceCore)** by Yurii Liskov (MIT licence): the YouTube engine. Licence texts are in `mediaservicecore/`.
+- **[BitChord](https://github.com/kushagrasinghx/BitChord)** by Kushagra Singh (GPL-3.0): the YouTube Music catalogue client and the Music section's design. The ported code is in `app/src/main/java/com/music/bitchord/` and `app/src/main/java/com/nuvio/tv/music/`.
+- **[SponsorBlock](https://sponsor.ajay.app)** and **[DeArrow](https://dearrow.ajay.app)** by Ajay Ramachandran and their communities (CC BY-NC-SA 4.0).
+- Sports data from ESPN's public feed, [TheSportsDB](https://www.thesportsdb.com) and sporting-events.org. Guide design inspired by TiviMate.
 - Built with Kotlin, Jetpack Compose, TV Material 3 and Media3 / ExoPlayer.
 
-Nuvio + IPTV is an unofficial fork and is **not affiliated with or endorsed by NuvioMedia or TiviMate**. Please report issues here, not to the Nuvio team.
+This is an unofficial fork. It is **not affiliated with or endorsed by NuvioMedia, NuvioPlusIPTV, SmartTube, SponsorBlock, DeArrow, TiviMate, Google or YouTube**. YouTube is a trademark of Google LLC. Please report issues here, not to those projects.
 
-## ⚖️ Legal
+## Building
+
+You need JDK 17 and the Android SDK. Copy `local.example.properties` to `local.properties`, fill in the services you use, then run:
+
+```
+./gradlew :app:assembleFullDebug
+```
+
+## Legal
 
 This app is a client-side player. It does not host, store or distribute any media, and it ships with no channels, playlists or content sources. Only use sources you own or are authorized to access. See Nuvio's [legal and DMCA information](https://github.com/NuvioMedia/NuvioTV#legal--dmca), which applies here as well.
 
-Licensed under the **GNU General Public License v3.0**, like upstream Nuvio. See [LICENSE](LICENSE).
+Licensed under the **GNU General Public License v3.0**, like upstream Nuvio. See [LICENSE](LICENSE). If you share a build, share its source too.
