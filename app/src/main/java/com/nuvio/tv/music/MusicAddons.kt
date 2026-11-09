@@ -408,8 +408,14 @@ object MusicAddonRegistry {
     /** Rows that carried their own `streamURL`, so playback skips `/stream/{id}` entirely. */
     private val directStreams = ConcurrentHashMap<String, Pair<Long, MusicAddonStream>>()
 
+    private data class CachedSubstitution(
+        val savedAt: Long,
+        val configId: String,
+        val stream: MusicAddonStream
+    )
+
     /** YouTube video id -> an addon stream already matched to it. */
-    private val substitutions = ConcurrentHashMap<String, Pair<Long, MusicAddonStream>>()
+    private val substitutions = ConcurrentHashMap<String, CachedSubstitution>()
     private val substitutionMisses = ConcurrentHashMap<String, Long>()
 
     @Synchronized
@@ -503,6 +509,9 @@ object MusicAddonRegistry {
             requiresBitChordAuth = manifest.requiresBitChordAuth
         )
         clients.remove(config.id)
+        directStreams.clear()
+        substitutions.clear()
+        substitutionMisses.clear()
         val updated = _configs.value.filterNot { it.id == config.id } + config
         _configs.value = updated
         persist(updated)
@@ -512,6 +521,8 @@ object MusicAddonRegistry {
     fun setEnabled(id: String, enabled: Boolean) {
         val updated = _configs.value.map { if (it.id == id) it.copy(enabled = enabled) else it }
         _configs.value = updated
+        substitutions.clear()
+        substitutionMisses.clear()
         persist(updated)
     }
 
@@ -521,12 +532,16 @@ object MusicAddonRegistry {
         _configs.value = updated
         clients.remove(id)
         directStreams.clear()
+        substitutions.clear()
+        substitutionMisses.clear()
         persist(updated)
     }
 
     fun remove(id: String) {
         clients.remove(id)
         directStreams.clear()
+        substitutions.clear()
+        substitutionMisses.clear()
         val updated = _configs.value.filterNot { it.id == id }
         _configs.value = updated
         persist(updated)
@@ -579,8 +594,13 @@ object MusicAddonRegistry {
     suspend fun substitute(song: Song): MusicAddonStream? {
         if (song.isVideo || song.title.isBlank()) return null
         val now = System.currentTimeMillis()
-        substitutions[song.videoId]?.let { (savedAt, stream) ->
-            if (now - savedAt < SUBSTITUTION_TTL_MS) return stream
+        substitutions[song.videoId]?.let { cached ->
+            val source = _configs.value.firstOrNull { it.id == cached.configId }
+            val usable = now - cached.savedAt < SUBSTITUTION_TTL_MS &&
+                source != null &&
+                source.enabled &&
+                (!source.requiresLossless || MusicLosslessOutput.capable)
+            if (usable) return cached.stream
             substitutions.remove(song.videoId)
         }
         substitutionMisses[song.videoId]?.let { missedAt ->
@@ -610,10 +630,14 @@ object MusicAddonRegistry {
             val ranked = TrackMatcher.ranked(byId.values.map { it.second }, target)
             for (candidate in ranked.take(4)) {
                 if (System.currentTimeMillis() >= deadline) break
-                if (byId[candidate.videoId] == null) continue
+                val source = byId[candidate.videoId]?.first ?: continue
                 val stream = resolveStream(candidate.videoId).getOrNull() ?: continue
                 if (substitutions.size > 256) substitutions.clear()
-                substitutions[song.videoId] = System.currentTimeMillis() to stream
+                substitutions[song.videoId] = CachedSubstitution(
+                    savedAt = System.currentTimeMillis(),
+                    configId = source.config.id,
+                    stream = stream
+                )
                 return stream
             }
         }
