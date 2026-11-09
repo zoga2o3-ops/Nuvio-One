@@ -94,6 +94,7 @@ data class LayoutSettingsUiState(
     val customPosterEnabledScreens: Set<com.nuvio.tv.core.poster.CustomPosterScreen> =
         com.nuvio.tv.core.poster.CustomPosterScreen.ALL,
     val alwaysShowLandscapeClearlogo: Boolean = false,
+    val heroDescriptionAutoScrollEnabled: Boolean = false,
 )
 
 data class CatalogInfo(
@@ -156,6 +157,7 @@ sealed class LayoutSettingsEvent {
     data class SetContinueWatchingSortMode(val mode: ContinueWatchingSortMode) : LayoutSettingsEvent()
     data class SetContinueWatchingCardStyle(val style: ContinueWatchingCardStyle) : LayoutSettingsEvent()
     data class SetAlwaysShowLandscapeClearlogo(val enabled: Boolean) : LayoutSettingsEvent()
+    data class SetHeroDescriptionAutoScrollEnabled(val enabled: Boolean) : LayoutSettingsEvent()
     data object ResetPosterCardStyle : LayoutSettingsEvent()
     data object ResetCardDepthStyle : LayoutSettingsEvent()
     data class SetCustomPosterUrlPattern(val pattern: String) : LayoutSettingsEvent()
@@ -446,6 +448,13 @@ class LayoutSettingsViewModel @Inject constructor(
                     updateUiStateIfChanged { it.copy(alwaysShowLandscapeClearlogo = enabled) }
                 }
         }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.heroDescriptionAutoScrollEnabled
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    updateUiStateIfChanged { it.copy(heroDescriptionAutoScrollEnabled = enabled) }
+                }
+        }
         loadAvailableCatalogs()
     }
 
@@ -501,6 +510,7 @@ class LayoutSettingsViewModel @Inject constructor(
             is LayoutSettingsEvent.SetContinueWatchingSortMode -> setContinueWatchingSortMode(event.mode)
             is LayoutSettingsEvent.SetContinueWatchingCardStyle -> setContinueWatchingCardStyle(event.style)
             is LayoutSettingsEvent.SetAlwaysShowLandscapeClearlogo -> setAlwaysShowLandscapeClearlogo(event.enabled)
+            is LayoutSettingsEvent.SetHeroDescriptionAutoScrollEnabled -> setHeroDescriptionAutoScrollEnabled(event.enabled)
             LayoutSettingsEvent.ResetPosterCardStyle -> resetPosterCardStyle()
             LayoutSettingsEvent.ResetCardDepthStyle -> resetCardDepthStyle()
             is LayoutSettingsEvent.SetCustomPosterUrlPattern -> setCustomPosterUrlPattern(event.pattern)
@@ -914,6 +924,13 @@ class LayoutSettingsViewModel @Inject constructor(
         }
     }
 
+    private fun setHeroDescriptionAutoScrollEnabled(enabled: Boolean) {
+        if (_uiState.value.heroDescriptionAutoScrollEnabled == enabled) return
+        viewModelScope.launch {
+            layoutPreferenceDataStore.setHeroDescriptionAutoScrollEnabled(enabled)
+        }
+    }
+
     private fun setContinueWatchingSortMode(mode: ContinueWatchingSortMode) {
         if (_uiState.value.continueWatchingSortMode == mode) return
         viewModelScope.launch {
@@ -1029,7 +1046,7 @@ class LayoutSettingsViewModel @Inject constructor(
                                 addonName = addon.displayName
                             )
                         }
-                }
+                }.distinctBy { it.key }
                 updateUiStateIfChanged { it.copy(availableCatalogs = catalogs) }
             }
         }

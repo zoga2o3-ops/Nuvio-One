@@ -49,11 +49,6 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "number=$N" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.27.3"
-          cache-dependency-path: vpn-android/native/go.sum
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -153,7 +148,8 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Nuvio + IPTV ${{ steps.version.outputs.version }}
           prerelease: true
-          files: out/*.apk
+          files: |
+            out/*.apk
           body: |
             Nuvio + IPTV update ${{ steps.version.outputs.version }}.
 
