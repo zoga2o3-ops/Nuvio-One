@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,6 +63,7 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val addons by MusicAddonRegistry.configs.collectAsState()
     val lossless by MusicLosslessOutput.state.collectAsState()
+    val preferAddons by MusicSettings.preferAddonSources.collectAsState()
     val scope = rememberCoroutineScope()
     val closeFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
@@ -76,6 +78,7 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
         MusicAddonRegistry.init(context)
         MusicLosslessOutput.init(context)
         MusicLosslessOutput.refresh()
+        MusicSettings.init(context)
         withFrameNanos { }
         runCatching { closeFocus.requestFocus() }
     }
@@ -194,6 +197,39 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
                     Text(
                         text = "The addon must answer /manifest.json, /search?q= and /stream/{id} " +
                             "with JSON. No addon code runs on this TV.",
+                        color = MusicPalette.textMuted,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp
+                    )
+                }
+
+                SourceCard(
+                    icon = Icons.Default.PlayArrow,
+                    tint = MusicPalette.accentTeal,
+                    title = "Prefer addon playback",
+                    subtitle = if (preferAddons) {
+                        "Addons are checked first for YouTube tracks."
+                    } else {
+                        "YouTube plays first; addons are only used in search results."
+                    }
+                ) {
+                    SourcePill(
+                        icon = Icons.Default.PlayArrow,
+                        label = if (preferAddons) "On" else "Off",
+                        primary = preferAddons,
+                        onClick = {
+                            MusicSettings.setPreferAddonSources(!preferAddons)
+                            report(
+                                if (preferAddons) "Addon substitution is off."
+                                else "Addon substitution is on."
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "When a YouTube track starts, Nuvio looks for the same title, " +
+                            "artist and length in your addons. If there is no confident match, " +
+                            "YouTube plays normally.",
                         color = MusicPalette.textMuted,
                         fontSize = 10.sp,
                         lineHeight = 14.sp

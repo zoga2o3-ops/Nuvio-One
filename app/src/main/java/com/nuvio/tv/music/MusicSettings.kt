@@ -40,6 +40,7 @@ object MusicSettings {
     private const val KEY_EQUALIZER = "equalizer_preset"
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_WIFI_ONLY_DOWNLOADS = "wifi_only_downloads"
+    private const val KEY_PREFER_ADDON_SOURCES = "prefer_addon_sources"
 
     private var prefs: SharedPreferences? = null
 
@@ -68,6 +69,10 @@ object MusicSettings {
     private val _wifiOnlyDownloads = MutableStateFlow(true)
     val wifiOnlyDownloads: StateFlow<Boolean> = _wifiOnlyDownloads.asStateFlow()
 
+    /** Look for a matching addon recording before playing a YouTube track. */
+    private val _preferAddonSources = MutableStateFlow(false)
+    val preferAddonSources: StateFlow<Boolean> = _preferAddonSources.asStateFlow()
+
     @Synchronized
     fun init(context: Context) {
         if (prefs != null) return
@@ -88,6 +93,7 @@ object MusicSettings {
             MusicAudioQuality.valueOf(store.getString(KEY_DOWNLOAD_QUALITY, null).orEmpty())
         }.getOrDefault(MusicAudioQuality.HIGH)
         _wifiOnlyDownloads.value = store.getBoolean(KEY_WIFI_ONLY_DOWNLOADS, true)
+        _preferAddonSources.value = store.getBoolean(KEY_PREFER_ADDON_SOURCES, false)
     }
 
     fun setAudioQuality(value: MusicAudioQuality) {
@@ -130,6 +136,11 @@ object MusicSettings {
     fun setWifiOnlyDownloads(value: Boolean) {
         _wifiOnlyDownloads.value = value
         edit { putBoolean(KEY_WIFI_ONLY_DOWNLOADS, value) }
+    }
+
+    fun setPreferAddonSources(value: Boolean) {
+        _preferAddonSources.value = value
+        edit { putBoolean(KEY_PREFER_ADDON_SOURCES, value) }
     }
 
     private inline fun edit(block: SharedPreferences.Editor.() -> Unit) {

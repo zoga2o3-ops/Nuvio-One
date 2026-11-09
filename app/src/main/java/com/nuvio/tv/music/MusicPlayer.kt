@@ -31,6 +31,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The Music section's player: one audio-only ExoPlayer owned by [MusicPlaybackService] and
@@ -631,9 +633,7 @@ object MusicPlayer {
                 prefetchNext()
                 return@launch
             }
-            val result = withContext(Dispatchers.IO) {
-                runCatching { MusicStreamResolver.resolve(song.videoId) }
-            }
+            val result = resolveTrackStream(song)
             result.fold(
                 onSuccess = { stream ->
                     currentHeaders = stream.headers
@@ -659,6 +659,44 @@ object MusicPlayer {
             )
         }
     }
+
+    /**
+     * Resolves a YouTube row, optionally preferring a matching addon recording.
+     *
+     * The addon search runs beside the YouTube lookup and only gets a short window: if it has not
+     * found a confident match by then, YouTube starts as usual. Setting is off by default.
+     */
+    private suspend fun resolveTrackStream(song: Song): Result<ResolvedMusicStream> =
+        withContext(Dispatchers.IO) {
+            if (!MusicSettings.preferAddonSources.value ||
+                song.isVideo ||
+                MusicAddonRegistry.isAddonTrack(song.videoId)
+            ) {
+                return@withContext runCatching { MusicStreamResolver.resolve(song.videoId) }
+            }
+            // Keep both lookups on the player's scope: cancelling a slow addon search must not
+            // make the playback coroutine wait for its blocking HTTP call to unwind.
+            val youtube = scope.async(Dispatchers.IO) {
+                runCatching { MusicStreamResolver.resolve(song.videoId) }
+            }
+            val addon = scope.async(Dispatchers.IO) {
+                runCatching { MusicAddonRegistry.substitute(song) }.getOrNull()
+            }
+            val substitute = withTimeoutOrNull(2_500L) { addon.await() }
+            if (substitute != null) {
+                youtube.cancel()
+                Result.success(
+                    ResolvedMusicStream(
+                        videoId = song.videoId,
+                        url = substitute.url,
+                        mimeType = substitute.resolvedMimeType()
+                    )
+                )
+            } else {
+                addon.cancel()
+                youtube.await()
+            }
+        }
 
     private fun applyAudioQuality(quality: MusicAudioQuality) {
         val selector = trackSelector ?: return

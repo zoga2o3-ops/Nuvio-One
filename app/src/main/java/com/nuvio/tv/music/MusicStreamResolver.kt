@@ -146,27 +146,11 @@ object MusicStreamResolver {
         val resolved = ResolvedMusicStream(
             videoId = videoId,
             url = stream.url,
-            mimeType = stream.mimeType ?: mimeTypeFor(stream)
+            mimeType = stream.resolvedMimeType()
         )
         if (cache.size >= 64) cache.clear()
         cache[videoId] = resolved
         return resolved
-    }
-
-    private fun mimeTypeFor(stream: MusicAddonStream): String? {
-        val manifest = stream.manifest?.lowercase()
-        if (manifest == "dash") return "application/dash+xml"
-        if (manifest == "hls") return "application/x-mpegURL"
-        return when (stream.format?.lowercase()) {
-            "dash" -> "application/dash+xml"
-            "hls", "m3u8" -> "application/x-mpegURL"
-            "flac" -> "audio/flac"
-            "mp3" -> "audio/mpeg"
-            "m4a", "mp4", "aac", "alac" -> "audio/mp4"
-            "ogg", "opus" -> "audio/ogg"
-            "wav" -> "audio/wav"
-            else -> null
-        }
     }
 
     private fun playable(info: MediaItemFormatInfo): Boolean {

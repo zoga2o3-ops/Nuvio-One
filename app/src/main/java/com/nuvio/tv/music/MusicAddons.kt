@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Base64
 import android.util.Log
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.sources.TrackMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -88,6 +90,25 @@ data class MusicAddonSearchHit(
     val config: MusicAddonConfig,
     val track: MusicAddonTrack
 )
+
+/** What ExoPlayer should be told this URL is, from whichever field the addon filled in. */
+internal fun MusicAddonStream.resolvedMimeType(): String? {
+    mimeType?.takeIf { it.isNotBlank() }?.let { return it }
+    when (manifest?.lowercase()) {
+        "dash" -> return "application/dash+xml"
+        "hls" -> return "application/x-mpegURL"
+    }
+    return when (format?.lowercase()) {
+        "dash" -> "application/dash+xml"
+        "hls", "m3u8" -> "application/x-mpegURL"
+        "flac" -> "audio/flac"
+        "mp3" -> "audio/mpeg"
+        "m4a", "mp4", "aac", "alac" -> "audio/mp4"
+        "ogg", "opus" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        else -> null
+    }
+}
 
 /**
  * A user-added HTTP music addon.
@@ -372,6 +393,9 @@ object MusicAddonRegistry {
     private const val KEY_CONFIGS = "configs"
     private const val MAX_RESULTS_PER_ADDON = 30
     private const val DIRECT_STREAM_TTL_MS = 4 * 60 * 1000L
+    private const val SUBSTITUTION_TTL_MS = 4 * 60 * 1000L
+    private const val SUBSTITUTION_MISS_TTL_MS = 2 * 60 * 1000L
+    private const val SUBSTITUTION_BUDGET_MS = 2500L
 
     private val _configs = MutableStateFlow<List<MusicAddonConfig>>(emptyList())
     val configs: StateFlow<List<MusicAddonConfig>> = _configs.asStateFlow()
@@ -383,6 +407,10 @@ object MusicAddonRegistry {
 
     /** Rows that carried their own `streamURL`, so playback skips `/stream/{id}` entirely. */
     private val directStreams = ConcurrentHashMap<String, Pair<Long, MusicAddonStream>>()
+
+    /** YouTube video id -> an addon stream already matched to it. */
+    private val substitutions = ConcurrentHashMap<String, Pair<Long, MusicAddonStream>>()
+    private val substitutionMisses = ConcurrentHashMap<String, Long>()
 
     @Synchronized
     fun init(context: Context) {
@@ -539,6 +567,59 @@ object MusicAddonRegistry {
                     mimeType = null
                 )
         }
+    }
+
+    /**
+     * The same recording from an addon, for an opt-in YouTube substitution.
+     *
+     * Only rows with a known runtime are considered, and [TrackMatcher] still requires the
+     * artist and duration to line up. Successful and failed lookups are cached briefly so a
+     * queue does not repeat the same searches on every play.
+     */
+    suspend fun substitute(song: Song): MusicAddonStream? {
+        if (song.isVideo || song.title.isBlank()) return null
+        val now = System.currentTimeMillis()
+        substitutions[song.videoId]?.let { (savedAt, stream) ->
+            if (now - savedAt < SUBSTITUTION_TTL_MS) return stream
+            substitutions.remove(song.videoId)
+        }
+        substitutionMisses[song.videoId]?.let { missedAt ->
+            if (now - missedAt < SUBSTITUTION_MISS_TTL_MS) return null
+            substitutionMisses.remove(song.videoId)
+        }
+        val target = TrackMatcher.targetOf(song)
+        if (target.artist.isBlank()) return null
+        val queries = TrackMatcher.queries(target).take(2)
+        if (queries.isEmpty()) return null
+        val available = _configs.value.count {
+            it.enabled && (!it.requiresLossless || MusicLosslessOutput.capable)
+        }
+        if (available == 0) return null
+
+        val deadline = now + SUBSTITUTION_BUDGET_MS
+        for (query in queries) {
+            val remaining = deadline - System.currentTimeMillis()
+            if (remaining <= 0) break
+            val hits = withTimeoutOrNull(remaining) { search(query) }.orEmpty()
+            if (hits.isEmpty()) continue
+            val byId = LinkedHashMap<String, Pair<MusicAddonSearchHit, Song>>()
+            hits.forEach { hit ->
+                val candidate = hit.track.toSong(hit.config)
+                byId[candidate.videoId] = hit to candidate
+            }
+            val ranked = TrackMatcher.ranked(byId.values.map { it.second }, target)
+            for (candidate in ranked.take(4)) {
+                if (System.currentTimeMillis() >= deadline) break
+                if (byId[candidate.videoId] == null) continue
+                val stream = resolveStream(candidate.videoId).getOrNull() ?: continue
+                if (substitutions.size > 256) substitutions.clear()
+                substitutions[song.videoId] = System.currentTimeMillis() to stream
+                return stream
+            }
+        }
+        if (substitutionMisses.size > 512) substitutionMisses.clear()
+        substitutionMisses[song.videoId] = System.currentTimeMillis()
+        return null
     }
 
     /** Blocking; called from the stream resolver's IO path. */
