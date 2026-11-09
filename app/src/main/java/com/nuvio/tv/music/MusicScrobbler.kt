@@ -256,14 +256,16 @@ object MusicScrobbler {
             .build()
         client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw IOException("Last.fm returned HTTP ${response.code}.")
-            }
+            // Last.fm reports credential failures as HTTP 403 with an error object in the body;
+            // read that first so the TV shows "Authentication Failed" rather than just "HTTP 403".
             if (body.contains("\"error\"")) {
                 val error = runCatching { JSONObject(body) }.getOrNull()
                 val message = error?.optString("message").orEmpty()
                     .ifBlank { "Last.fm rejected the request." }
                 throw IOException(message)
+            }
+            if (!response.isSuccessful) {
+                throw IOException("Last.fm returned HTTP ${response.code}.")
             }
             return body
         }
