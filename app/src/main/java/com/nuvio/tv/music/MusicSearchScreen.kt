@@ -212,7 +212,7 @@ internal fun MusicSearchScreen(
                 message = "Find a song, an album, an artist or a playlist.",
                 modifier = Modifier.weight(1f)
             )
-            state.error != null -> MusicErrorState(
+            state.error != null && state.rows.isEmpty() -> MusicErrorState(
                 message = state.error,
                 onRetry = { onSubmit(state.query) },
                 modifier = Modifier.weight(1f)

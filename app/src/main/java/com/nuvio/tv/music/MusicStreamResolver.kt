@@ -35,6 +35,8 @@ data class ResolvedMusicStream(
 object MusicStreamResolver {
     private const val TAG = "MusicStream"
     private const val MAX_CLIENT_SWITCHES = 5
+    /** Addon URLs are signed by their server; assume a shorter life than YouTube's. */
+    private const val ADDON_STREAM_TTL_MS = 4 * 60 * 1000L
 
     /**
      * Clients whose plain stream URLs usually answer 403. The engine steps through the others
@@ -71,7 +73,14 @@ object MusicStreamResolver {
 
     /** A cached, still-valid stream for [videoId], if there is one. */
     fun cached(videoId: String): ResolvedMusicStream? =
-        cache[videoId]?.takeIf { it.isFresh }
+        cache[videoId]?.takeIf { stream ->
+            val ttl = if (MusicAddonRegistry.isAddonTrack(videoId)) {
+                ADDON_STREAM_TTL_MS
+            } else {
+                20 * 60 * 1000L
+            }
+            SystemClock.elapsedRealtime() - stream.lookedUpAt < ttl
+        }
 
     /** Blocking; call from an IO dispatcher. */
     fun resolve(videoId: String): ResolvedMusicStream {

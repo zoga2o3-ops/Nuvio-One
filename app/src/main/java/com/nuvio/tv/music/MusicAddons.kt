@@ -247,9 +247,7 @@ internal class MusicAddonClient(
                 val track = array.optJSONObject(index) ?: continue
                 val id = track.string("id")
                 if (id.isBlank()) continue
-                val duration = track.optDouble("duration", 0.0)
-                    .takeIf { it > 0.0 }
-                    ?.toInt()
+                val duration = track.durationSeconds()
                 add(
                     MusicAddonTrack(
                         id = id,
@@ -257,12 +255,12 @@ internal class MusicAddonClient(
                         artist = track.string("artist"),
                         album = track.string("album").takeIf { it.isNotBlank() },
                         durationSeconds = duration,
-                        artworkUrl = track.string("artworkURL").ifBlank { null }
-                            ?: track.string("albumArtworkURL").ifBlank { null },
+                        artworkUrl = absoluteUrl(track.string("artworkURL"))
+                            ?: absoluteUrl(track.string("albumArtworkURL")),
                         format = track.string("format").takeIf { it.isNotBlank() },
                         quality = track.string("audioQuality").takeIf { it.isNotBlank() }
                             ?: track.string("quality").takeIf { it.isNotBlank() },
-                        streamUrl = track.string("streamURL").takeIf { it.isNotBlank() }
+                        streamUrl = absoluteUrl(track.string("streamURL"))
                     )
                 )
             }
@@ -283,8 +281,8 @@ internal class MusicAddonClient(
         ) {
             throw IOException("This addon returned a DRM-protected stream.")
         }
-        val url = json.string("url")
-        if (url.isBlank()) {
+        val url = absoluteUrl(json.string("url"))
+        if (url.isNullOrBlank()) {
             throw IOException(json.string("error").ifBlank { "This addon didn't return a stream." })
         }
         return MusicAddonStream(
@@ -298,6 +296,16 @@ internal class MusicAddonClient(
         )
     }
 
+    private fun absoluteUrl(raw: String?): String? {
+        val value = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true)
+        ) {
+            return value
+        }
+        return baseUrl.toHttpUrlOrNull()?.resolve(value)?.toString()
+    }
+
     companion object {
         private const val USER_AGENT = "NuvioOne/1.0"
         private const val MANIFEST_TTL_MS = 10 * 60 * 1000L
@@ -306,13 +314,20 @@ internal class MusicAddonClient(
 
         private val HTTP = OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(12, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(25, TimeUnit.SECONDS)
             .build()
 
         /** Accepts either the addon root or its manifest URL, both of which people copy. */
         fun normalizeBase(raw: String): String {
-            val trimmed = raw.trim().trimEnd('/')
+            var trimmed = raw.trim().trimEnd('/')
+            if (!trimmed.contains("://")) {
+                val host = trimmed.substringBefore('/')
+                val local = host.startsWith("localhost") || host.startsWith("127.") ||
+                    host.startsWith("192.168.") || host.startsWith("10.") ||
+                    host.startsWith("[::1]")
+                trimmed = "${if (local) "http" else "https"}://$trimmed"
+            }
             val withoutQuery = trimmed.substringBefore('?')
             val lastSegment = withoutQuery.substringAfterLast('/', "")
             if (!lastSegment.endsWith(".json", ignoreCase = true) || !trimmed.contains("://")) {
@@ -609,6 +624,21 @@ private fun addonDurationText(seconds: Int): String {
     } else {
         "%d:%02d".format(minutes, remainder)
     }
+}
+
+/** Accepts seconds as a number or `M:SS` / `H:MM:SS`, since addons send both. */
+private fun JSONObject.durationSeconds(): Int? {
+    val value = opt("duration") ?: return null
+    if (value is Number) return value.toDouble().takeIf { it > 0 }?.toInt()
+    if (value !is String) return null
+    val text = value.trim()
+    text.toDoubleOrNull()?.let { return it.takeIf { seconds -> seconds > 0 }?.toInt() }
+    val parts = text.split(":").mapNotNull { it.trim().toIntOrNull() }
+    return when (parts.size) {
+        2 -> parts[0] * 60 + parts[1]
+        3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+        else -> null
+    }?.takeIf { it > 0 }
 }
 
 /** Reads a JSON value as the query-string form the addon expects. */
