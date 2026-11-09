@@ -61,6 +61,7 @@ import kotlinx.coroutines.withContext
 internal fun MusicSourcesScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val addons by MusicAddonRegistry.configs.collectAsState()
+    val lossless by MusicLosslessOutput.state.collectAsState()
     val scope = rememberCoroutineScope()
     val closeFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
@@ -73,6 +74,8 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
 
     LaunchedEffect(Unit) {
         MusicAddonRegistry.init(context)
+        MusicLosslessOutput.init(context)
+        MusicLosslessOutput.refresh()
         withFrameNanos { }
         runCatching { closeFocus.requestFocus() }
     }
@@ -116,6 +119,14 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
                     fontSize = 12.sp
                 )
             }
+
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = lossless.label,
+                color = if (lossless.capable) MusicPalette.accentTeal else MusicPalette.textMuted,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(start = 4.dp)
+            )
 
             Spacer(Modifier.height(14.dp))
 
@@ -288,6 +299,19 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
                                 Text(
                                     text = "This source is skipped in search and playback.",
                                     color = MusicPalette.textMuted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            if (addon.requiresLossless) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = if (lossless.capable) {
+                                        "This source is only used on a lossless-capable output."
+                                    } else {
+                                        "Skipped: this source needs HDMI, USB or wired output."
+                                    },
+                                    color = if (lossless.capable) MusicPalette.textMuted
+                                    else MusicPalette.error,
                                     fontSize = 10.sp
                                 )
                             }

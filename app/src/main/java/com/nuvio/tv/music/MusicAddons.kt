@@ -32,7 +32,11 @@ data class MusicAddonConfig(
     /** The renditions this addon's manifest offers, when it declares a `quality` select. */
     val qualities: List<MusicAddonOption> = emptyList(),
     /** The value sent as `quality`; null means the addon's first (best) option. */
-    val quality: String? = null
+    val quality: String? = null,
+    /** Manifest `checkValidLossless`: only ask this source when the output can carry lossless. */
+    val requiresLossless: Boolean = false,
+    /** Manifest `bitchordAuth`: the addon only serves the signed BitChord app. */
+    val requiresBitChordAuth: Boolean = false
 )
 
 data class MusicAddonOption(val value: String, val label: String)
@@ -49,7 +53,9 @@ data class MusicAddonManifest(
     val name: String,
     val version: String,
     val resources: List<String>,
-    val settings: List<MusicAddonSetting>
+    val settings: List<MusicAddonSetting>,
+    val requiresLosslessOutput: Boolean = false,
+    val requiresBitChordAuth: Boolean = false
 ) {
     val displayName: String get() = name.ifBlank { id }
 
@@ -174,6 +180,12 @@ internal class MusicAddonClient(
         HTTP.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
+                val challenge = response.header("WWW-Authenticate").orEmpty()
+                if (response.code == 401 && challenge.contains("BitChord", ignoreCase = true)) {
+                    throw IOException(
+                        "This addon requires BitChord app verification, which Nuvio can't provide."
+                    )
+                }
                 throw IOException(
                     when (response.code) {
                         401, 403 -> "This addon asks for a sign-in Nuvio doesn't support yet."
@@ -230,7 +242,9 @@ internal class MusicAddonClient(
             name = json.string("name"),
             version = json.string("version"),
             resources = resources,
-            settings = settings
+            settings = settings,
+            requiresLosslessOutput = json.flag("checkValidLossless"),
+            requiresBitChordAuth = json.flag("bitchordAuth")
         )
         if (!manifest.playable) {
             throw IOException("This addon doesn't offer search.")
@@ -374,6 +388,7 @@ object MusicAddonRegistry {
     fun init(context: Context) {
         val app = context.applicationContext
         this.context = app
+        MusicLosslessOutput.init(app)
         if (loaded) return
         prefs = MusicSecurePreferences.open(app, SECURE_PREFS, PLAIN_PREFS, LEGACY_PREFS)
         loaded = true
@@ -432,6 +447,11 @@ object MusicAddonRegistry {
     }
 
     fun add(rawUrl: String): Result<MusicAddonConfig> = test(rawUrl).mapCatching { manifest ->
+        if (manifest.requiresBitChordAuth) {
+            throw IOException(
+                "This addon requires BitChord app verification, which Nuvio can't provide."
+            )
+        }
         val base = MusicAddonClient.normalizeBase(rawUrl)
         val existing = _configs.value.firstOrNull { it.baseUrl == base }
         val qualities = manifest.settings
@@ -442,13 +462,17 @@ object MusicAddonRegistry {
             name = manifest.displayName,
             enabled = true,
             qualities = qualities,
-            quality = existing.quality?.takeIf { chosen -> qualities.any { it.value == chosen } }
+            quality = existing.quality?.takeIf { chosen -> qualities.any { it.value == chosen } },
+            requiresLossless = manifest.requiresLosslessOutput,
+            requiresBitChordAuth = manifest.requiresBitChordAuth
         ) ?: MusicAddonConfig(
             id = UUID.randomUUID().toString(),
             name = manifest.displayName,
             baseUrl = base,
             enabled = true,
-            qualities = qualities
+            qualities = qualities,
+            requiresLossless = manifest.requiresLosslessOutput,
+            requiresBitChordAuth = manifest.requiresBitChordAuth
         )
         clients.remove(config.id)
         val updated = _configs.value.filterNot { it.id == config.id } + config
@@ -482,7 +506,9 @@ object MusicAddonRegistry {
 
     /** Searches every enabled addon in parallel; a slow or broken one never holds up the rest. */
     suspend fun search(query: String): List<MusicAddonSearchHit> = withContext(Dispatchers.IO) {
-        val enabled = _configs.value.filter { it.enabled }
+        val enabled = _configs.value.filter {
+            it.enabled && (!it.requiresLossless || MusicLosslessOutput.capable)
+        }
         if (enabled.isEmpty() || query.isBlank()) return@withContext emptyList()
         val hits = coroutineScope {
             enabled.map { config ->
@@ -526,6 +552,13 @@ object MusicAddonRegistry {
         if (!config.enabled) {
             return Result.failure(
                 IllegalStateException("${config.name} is turned off in Music sources.")
+            )
+        }
+        if (config.requiresLossless && !MusicLosslessOutput.capable) {
+            return Result.failure(
+                IllegalStateException(
+                    "${config.name} needs a lossless-capable output (HDMI, USB or wired)."
+                )
             )
         }
         directStreams[videoId]?.let { (savedAt, stream) ->
@@ -573,7 +606,9 @@ object MusicAddonRegistry {
                             baseUrl = baseUrl,
                             enabled = item.optBoolean("enabled", true),
                             qualities = qualities,
-                            quality = item.optString("quality").takeIf { it.isNotBlank() }
+                            quality = item.optString("quality").takeIf { it.isNotBlank() },
+                            requiresLossless = item.optBoolean("requiresLossless", false),
+                            requiresBitChordAuth = item.optBoolean("requiresBitChordAuth", false)
                         )
                     )
                 }
@@ -597,6 +632,8 @@ object MusicAddonRegistry {
                     .put("baseUrl", config.baseUrl)
                     .put("enabled", config.enabled)
                     .put("qualities", qualities)
+                    .put("requiresLossless", config.requiresLossless)
+                    .put("requiresBitChordAuth", config.requiresBitChordAuth)
                     .apply { config.quality?.let { put("quality", it) } }
             )
         }
@@ -636,6 +673,18 @@ private fun addonDurationText(seconds: Int): String {
         "%d:%02d:%02d".format(hours, minutes, remainder)
     } else {
         "%d:%02d".format(minutes, remainder)
+    }
+}
+
+/** Reads `true`/`false`, `1`/`0` or their string forms. */
+private fun JSONObject.flag(key: String): Boolean {
+    val value = opt(key) ?: return false
+    if (value == JSONObject.NULL) return false
+    return when (value) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value.equals("true", true) || value == "1" || value.equals("yes", true)
+        else -> false
     }
 }
 
