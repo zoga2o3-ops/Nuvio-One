@@ -288,7 +288,16 @@ class YouTubeViewModel @Inject constructor(
                 it.copy(loading = true, error = null, rows = emptyList(), grid = emptyList(), canLoadMore = false,
                     subTitle = item.title)
             }
-            load(item.title) { grid(content.getPlaylist(playlistId)) }
+            load(item.title) {
+                val byId = runCatching { content.getPlaylist(playlistId) }.getOrNull()
+                if (byId != null) {
+                    grid(byId)
+                } else {
+                    // Home cards sometimes only have a reload/page key behind them, not a
+                    // playable playlist id. Failing over to that page beats a dead error.
+                    grid(content.getGroupObserve(item.source).blockingFirst())
+                }
+            }
             return
         }
         filtersOn = true

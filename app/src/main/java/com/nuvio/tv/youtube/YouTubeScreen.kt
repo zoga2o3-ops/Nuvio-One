@@ -262,7 +262,13 @@ fun YouTubeScreen(
 
     // Back goes up from a channel, playlist or search before it leaves the page.
     BackHandler(enabled = state.subTitle == null && !showAccounts && !suggestionsOpen && !sidebarExpanded) { openSidebar() }
-    BackHandler(enabled = state.subTitle != null) { viewModel.back() }
+    BackHandler(enabled = state.subTitle != null) {
+        viewModel.back()
+        // Put focus back on the tab strip so Down can enter the restored feed. Without this,
+        // focus stayed on the removed channel/playlist page and the remote seemed stuck.
+        headerHidden = false
+        focusHeaderAfterBack = true
+    }
     BackHandler(enabled = showAccounts) { showAccounts = false }
     BackHandler(enabled = suggestionsOpen) { suggestionsOpen = false }
     BackHandler(
@@ -733,6 +739,9 @@ private fun Content(
     val screenWidthDp = context.resources.configuration.screenWidthDp
     val rowCardWidth = ((screenWidthDp - 56) * 0.23f).coerceIn(190f, 300f).dp
     var needsInitialFocus by remember { mutableStateOf(true) }
+    // The row whose cards last held focus. Re-running the vertical animate-scroll for every
+    // horizontal focus move made the whole feed bounce while browsing a row.
+    var lastFocusedRow by remember(state.tab, state.subTitle) { mutableStateOf(-1) }
     val canRequestInitialFocus = needsInitialFocus && !com.nuvio.tv.LocalSidebarExpanded.current
     val restoreId = viewModel.lastPlayedVideoId
     val firstRowWithVideo = state.rows.indexOfFirst { row -> row.items.any { it.kind == YtKind.VIDEO } }
@@ -840,9 +849,12 @@ private fun Content(
                             itemsIndexed(row.items) { i, v ->
                                 ItemCard(v, viewModel, Modifier.width(rowCardWidth), requestInitialFocus = canRequestInitialFocus && rowIndex == targetRow && i == targetRowVideo, upFocusRequester = if (rowIndex == 0) tabsFocus else null, externalFocusRequester = if (rowIndex == firstRowIndex && i == firstRowCardIndex) firstCardFocus else null, onInitialFocus = { needsInitialFocus = false }, onFocused = {
                                     viewModel.prefetch(v)
-                                    // Bring the row the user just entered to the top, so the next
-                                    // row starts with its cards instead of the previous descriptions.
-                                    rowsScope.launch { rowsState.animateScrollToItem(rowIndex) }
+                                    // Bring the row the user just entered to the top once, not on
+                                    // every horizontal focus change within it.
+                                    if (lastFocusedRow != rowIndex) {
+                                        lastFocusedRow = rowIndex
+                                        rowsScope.launch { rowsState.animateScrollToItem(rowIndex) }
+                                    }
                                     if (row.canLoadMore && i >= row.items.size - 4) viewModel.loadMoreRow(rowIndex)
                                 }, onLongClick = { viewModel.openMenu(v) }) {
                                     viewModel.activate(v, row.items, onPlay)
