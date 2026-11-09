@@ -86,7 +86,7 @@ Music has its own page in the side menu, with top tabs, an Up Next list and plai
 - **YouTube Music:** sign in for your playlists, liked songs and a personalised home. Likes sync across your devices.
 - **Spotify playlists:** paste a public playlist's link to import it.
 - **Navidrome and WebDAV:** connect your own music server and stream your collection.
-- **Music addons:** add BitChord-style HTTP addon URLs and search their catalogues alongside YouTube Music.
+- **Music addons:** add BitChord-style HTTP addon URLs, search their catalogues alongside YouTube Music, and optionally prefer a matching addon stream over YouTube. Lossless-only sources wait for a capable HDMI/USB/wired output.
 - **Local music:** play from the TV, a USB drive or a network share.
 - **Downloads and offline playback.**
 - **Synced lyrics and music videos:** follow the lyrics, then jump between the song and its video.
