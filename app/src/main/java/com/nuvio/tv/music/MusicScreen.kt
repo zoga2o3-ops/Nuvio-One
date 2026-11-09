@@ -111,6 +111,7 @@ fun MusicScreen(
     var showParty by remember { mutableStateOf(false) }
     var showWebDav by remember { mutableStateOf(false) }
     var showIntegrations by remember { mutableStateOf(false) }
+    var showSources by remember { mutableStateOf(false) }
     var showNavidrome by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
     var lastAccountKey by remember { mutableStateOf<String?>(null) }
@@ -203,6 +204,7 @@ fun MusicScreen(
         openPlaylistId = null
         showIntegrations = false
         showWebDav = false
+        showSources = false
         showNavidrome = false
         // Leave a mood/genre detail instead of keeping it as a hidden overlay that would
         // swallow the first Back press on the new tab.
@@ -214,7 +216,7 @@ fun MusicScreen(
     val musicOverlayOpen = showNowPlaying || state.detail.open ||
         state.explore.selected != null || openPlaylistId != null ||
         showSettings || showDownloads || showParty || showWebDav ||
-        showIntegrations || showNavidrome || showAccount || musicVideo != null
+        showIntegrations || showSources || showNavidrome || showAccount || musicVideo != null
 
     BackHandler(
         enabled = showNowPlaying || state.detail.open ||
@@ -298,6 +300,12 @@ fun MusicScreen(
                             showNowPlaying = true
                         }
                     )
+                    showSources -> MusicSourcesScreen(
+                        onClose = {
+                            showSources = false
+                            showIntegrations = true
+                        }
+                    )
                     showIntegrations -> MusicIntegrationsScreen(
                         onClose = { showIntegrations = false },
                         onOpenWebDav = {
@@ -307,6 +315,10 @@ fun MusicScreen(
                         onOpenNavidrome = {
                             showIntegrations = false
                             showNavidrome = true
+                        },
+                        onOpenSources = {
+                            showIntegrations = false
+                            showSources = true
                         }
                     )
                     state.detail.open -> MusicDetailScreen(

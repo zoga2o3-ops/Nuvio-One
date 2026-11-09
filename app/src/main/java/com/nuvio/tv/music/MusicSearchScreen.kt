@@ -205,7 +205,8 @@ internal fun MusicSearchScreen(
         Spacer(Modifier.height(14.dp))
 
         when {
-            state.loading -> MusicLoading(Modifier.weight(1f).fillMaxWidth())
+            // Addon answers can arrive before YouTube's; show them instead of hiding the list.
+            state.loading && state.rows.isEmpty() -> MusicLoading(Modifier.weight(1f).fillMaxWidth())
             !state.submitted -> MusicEmptyState(
                 title = "Search music",
                 message = "Find a song, an album, an artist or a playlist.",

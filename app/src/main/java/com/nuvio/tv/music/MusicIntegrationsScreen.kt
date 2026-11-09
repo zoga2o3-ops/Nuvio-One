@@ -66,12 +66,14 @@ import kotlinx.coroutines.withContext
 internal fun MusicIntegrationsScreen(
     onClose: () -> Unit,
     onOpenWebDav: () -> Unit,
-    onOpenNavidrome: () -> Unit
+    onOpenNavidrome: () -> Unit,
+    onOpenSources: () -> Unit
 ) {
     val context = LocalContext.current
     val lastFm by MusicScrobbler.config.collectAsState()
     val webDav by MusicWebDav.config.collectAsState()
     val navidrome by MusicNavidrome.config.collectAsState()
+    val addons by MusicAddonRegistry.configs.collectAsState()
     val closeFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
@@ -92,6 +94,9 @@ internal fun MusicIntegrationsScreen(
         MusicWebDav.init(context)
         MusicNavidrome.init(context)
         MusicScrobbler.init(context)
+        MusicAddonRegistry.init(context)
+        withFrameNanos { }
+        runCatching { closeFocus.requestFocus() }
     }
 
     BackHandler(onBack = onClose)
@@ -268,6 +273,24 @@ internal fun MusicIntegrationsScreen(
                         Spacer(Modifier.height(8.dp))
                         Text(text = it, color = MusicPalette.error, fontSize = 11.sp)
                     }
+                }
+
+                IntegrationCard(
+                    icon = Icons.Default.Cloud,
+                    tint = MusicPalette.accent,
+                    title = "Music sources",
+                    subtitle = when {
+                        addons.isEmpty() -> "Add BitChord-style addons to search their catalogues."
+                        addons.count { it.enabled } == 0 -> "${addons.size} addon(s), all turned off."
+                        else -> "${addons.count { it.enabled }} addon(s) connected."
+                    }
+                ) {
+                    IntegrationPill(
+                        icon = Icons.Default.Cloud,
+                        label = if (addons.isEmpty()) "Add a source" else "Manage sources",
+                        primary = addons.isEmpty(),
+                        onClick = onOpenSources
+                    )
                 }
 
                 IntegrationCard(

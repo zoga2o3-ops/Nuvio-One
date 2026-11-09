@@ -126,6 +126,7 @@ object MusicPlayer {
         MusicDownloads.init(app)
         MusicWebDav.init(app)
         MusicScrobbler.init(app)
+        MusicAddonRegistry.init(app)
         MusicNavidrome.init(app)
         MusicNavidromeSync.init(app)
         restoreQueue(app)
@@ -275,7 +276,8 @@ object MusicPlayer {
             auto -> {
                 val seed = current.song
                 if (MusicSettings.autoplay.value && seed != null &&
-                    seed.localUri == null && seed.videoId.isNotBlank()
+                    seed.localUri == null && seed.videoId.isNotBlank() &&
+                    !MusicAddonRegistry.isAddonTrack(seed.videoId)
                 ) {
                     _state.update { it.copy(isBuffering = true) }
                     startRadio(seed)
@@ -463,7 +465,7 @@ object MusicPlayer {
     }
 
     fun startRadio(seed: Song) {
-        if (seed.videoId.isBlank()) return
+        if (seed.videoId.isBlank() || MusicAddonRegistry.isAddonTrack(seed.videoId)) return
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 YtMusicRepository.radio(seed.videoId)
@@ -498,7 +500,8 @@ object MusicPlayer {
         if (song.localUri != null ||
             song.videoId.startsWith("local:") ||
             song.videoId.startsWith("webdav:") ||
-            song.videoId.startsWith("navidrome:")
+            song.videoId.startsWith("navidrome:") ||
+            MusicAddonRegistry.isAddonTrack(song.videoId)
         ) {
             return
         }
@@ -635,7 +638,7 @@ object MusicPlayer {
                 onSuccess = { stream ->
                     currentHeaders = stream.headers
                     appContext?.let { MusicPlaybackService.start(it) }
-                    p.setMediaItem(song.toMediaItem(stream.url))
+                    p.setMediaItem(song.toMediaItem(stream.url, stream.mimeType))
                     p.prepare()
                     applyResumePosition(p, song)
                     p.play()
@@ -731,7 +734,7 @@ object MusicPlayer {
         }
     }
 
-    private fun Song.toMediaItem(url: String): MediaItem {
+    private fun Song.toMediaItem(url: String, mimeType: String? = null): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
@@ -744,6 +747,7 @@ object MusicPlayer {
             .setMediaId(videoId)
             .setUri(url)
             .setMediaMetadata(metadata)
+            .apply { mimeType?.let { setMimeType(it) } }
             .build()
     }
 

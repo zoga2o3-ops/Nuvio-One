@@ -50,6 +50,8 @@ data class MusicSearchState(
     val loading: Boolean = false,
     val loadingMore: Boolean = false,
     val rows: List<SearchResult> = emptyList(),
+    /** Rows from the user's music addons, kept separate so a YouTube page can be replaced. */
+    val addonRows: List<SearchResult> = emptyList(),
     val continuation: String? = null,
     val error: String? = null,
     val suggestions: List<String> = emptyList()
@@ -123,6 +125,7 @@ class MusicViewModel @Inject constructor(
     private var homeMoreJob: Job? = null
     private var searchJob: Job? = null
     private var searchMoreJob: Job? = null
+    private var addonSearchJob: Job? = null
     private var suggestionJob: Job? = null
     private var detailJob: Job? = null
     private var detailMoreJob: Job? = null
@@ -132,6 +135,7 @@ class MusicViewModel @Inject constructor(
 
     init {
         MusicAccountRepository.init(context)
+        MusicAddonRegistry.init(context)
         loadHome()
     }
 
@@ -324,11 +328,21 @@ class MusicViewModel @Inject constructor(
     fun submitSearch(query: String = _state.value.search.query) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) {
-            _state.update { it.copy(search = it.search.copy(submitted = false, rows = emptyList())) }
+            addonSearchJob?.cancel()
+            _state.update {
+                it.copy(
+                    search = it.search.copy(
+                        submitted = false,
+                        rows = emptyList(),
+                        addonRows = emptyList()
+                    )
+                )
+            }
             return
         }
         searchJob?.cancel()
         searchMoreJob?.cancel()
+        addonSearchJob?.cancel()
         _state.update {
             it.copy(
                 search = it.search.copy(
@@ -336,12 +350,14 @@ class MusicViewModel @Inject constructor(
                     submitted = true,
                     loading = true,
                     rows = emptyList(),
+                    addonRows = emptyList(),
                     continuation = null,
                     error = null,
                     suggestions = emptyList()
                 )
             )
         }
+        searchAddons(trimmed, _state.value.search.filter)
         searchJob = viewModelScope.launch {
             val filter = _state.value.search.filter
             val result = withContext(Dispatchers.IO) {
@@ -355,7 +371,7 @@ class MusicViewModel @Inject constructor(
                         else it.copy(
                             search = it.search.copy(
                                 loading = false,
-                                rows = page.rows,
+                                rows = it.search.addonRows + page.rows,
                                 continuation = page.continuation,
                                 error = null
                             )
@@ -374,6 +390,32 @@ class MusicViewModel @Inject constructor(
                     }
                 }
             )
+        }
+    }
+
+    /**
+     * Addon results arrive independently of YouTube's, so a slow addon never delays the normal
+     * catalogue. Only songs and the combined view ask for them; albums and artists are YouTube-only.
+     */
+    private fun searchAddons(query: String, filter: SearchFilter) {
+        if (filter != SearchFilter.ALL && filter != SearchFilter.SONGS) return
+        if (MusicAddonRegistry.configs.value.none { it.enabled }) return
+        addonSearchJob = viewModelScope.launch {
+            val hits = withContext(Dispatchers.IO) { MusicAddonRegistry.search(query) }
+            val rows = hits.map { SearchResult.Track(it.track.toSong(it.config)) }
+            _state.update { current ->
+                if (current.search.query != query || current.search.filter != filter) current
+                else {
+                    val old = current.search.addonRows
+                    val youtubeRows = current.search.rows.filterNot { row -> old.any { it == row } }
+                    current.copy(
+                        search = current.search.copy(
+                            addonRows = rows,
+                            rows = rows + youtubeRows
+                        )
+                    )
+                }
+            }
         }
     }
 

@@ -86,11 +86,12 @@ Music has its own page in the side menu, with top tabs, an Up Next list and plai
 - **YouTube Music:** sign in for your playlists, liked songs and a personalised home. Likes sync across your devices.
 - **Spotify playlists:** paste a public playlist's link to import it.
 - **Navidrome and WebDAV:** connect your own music server and stream your collection.
+- **Music addons:** add BitChord-style HTTP addon URLs and search their catalogues alongside YouTube Music.
 - **Local music:** play from the TV, a USB drive or a network share.
 - **Downloads and offline playback.**
 - **Synced lyrics and music videos:** follow the lyrics, then jump between the song and its video.
 - **Playlists, queue, radio and shuffle,** plus **Explore** for moods and genres and a search for any track.
-- **Last.fm scrobbling** and **Party mode** for listening together.
+- **Last.fm scrobbling:** sign in with your Last.fm account, plus **Party mode** for listening together.
 - **Its own YouTube sign-in,** separate from OneTube.
 
 ---

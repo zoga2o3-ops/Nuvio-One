@@ -76,6 +76,7 @@ object MusicStreamResolver {
     /** Blocking; call from an IO dispatcher. */
     fun resolve(videoId: String): ResolvedMusicStream {
         cached(videoId)?.let { return it }
+        if (MusicAddonRegistry.isAddonTrack(videoId)) return resolveAddon(videoId)
         val context = appContext ?: error("MusicStreamResolver.init() has not been called")
         // Music has its own YouTube sign-in. Make the engine hold Music's profiles before asking
         // for the stream; otherwise it resolves with whichever profile OneTube used last.
@@ -126,6 +127,38 @@ object MusicStreamResolver {
 
     /** Drops every cached stream; used when playback keeps failing. */
     fun clearCache() = cache.clear()
+
+    /**
+     * Asks the addon that produced this row for its stream. The addon owns the URL and we cache
+     * it exactly like a YouTube resolution, so repeated plays of the same row are free.
+     */
+    private fun resolveAddon(videoId: String): ResolvedMusicStream {
+        val stream = MusicAddonRegistry.resolveStream(videoId).getOrThrow()
+        val resolved = ResolvedMusicStream(
+            videoId = videoId,
+            url = stream.url,
+            mimeType = stream.mimeType ?: mimeTypeFor(stream)
+        )
+        if (cache.size >= 64) cache.clear()
+        cache[videoId] = resolved
+        return resolved
+    }
+
+    private fun mimeTypeFor(stream: MusicAddonStream): String? {
+        val manifest = stream.manifest?.lowercase()
+        if (manifest == "dash") return "application/dash+xml"
+        if (manifest == "hls") return "application/x-mpegURL"
+        return when (stream.format?.lowercase()) {
+            "dash" -> "application/dash+xml"
+            "hls", "m3u8" -> "application/x-mpegURL"
+            "flac" -> "audio/flac"
+            "mp3" -> "audio/mpeg"
+            "m4a", "mp4", "aac", "alac" -> "audio/mp4"
+            "ogg", "opus" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            else -> null
+        }
+    }
 
     private fun playable(info: MediaItemFormatInfo): Boolean {
         if (info.isUnplayable) return false
