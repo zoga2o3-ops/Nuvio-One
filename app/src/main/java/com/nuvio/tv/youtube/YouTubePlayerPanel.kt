@@ -89,13 +89,21 @@ fun BoxScope.YouTubePlayerPanel(
     onSeekTo: (Long) -> Unit = {},
     /** Opened with Down: show chapters and recommendations first, not the action list. */
     startWithRecommendations: Boolean = false,
+    /** Opened by the player's Comments button: show the comments list first. */
+    startInComments: Boolean = false,
     /** 0 = video at full screen, 1 = recommendations fill the screen. */
     scrollFraction: Float = 0f,
     onScrollFractionChange: (Float) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
-    var mode by remember(videoId) {
-        mutableStateOf(if (startWithRecommendations) PanelMode.HOME else PanelMode.MAIN)
+    var mode by remember(videoId, startWithRecommendations, startInComments) {
+        mutableStateOf(
+            when {
+                startInComments -> PanelMode.COMMENTS
+                startWithRecommendations -> PanelMode.HOME
+                else -> PanelMode.MAIN
+            }
+        )
     }
     // Where you were in the comments, so coming back from a comment's replies lands on it.
     var commentsIndex by remember { mutableIntStateOf(0) }
@@ -103,6 +111,7 @@ fun BoxScope.YouTubePlayerPanel(
 
     LaunchedEffect(videoId) {
         viewModel.load(videoId)
+        if (startInComments) viewModel.loadComments()
         if (com.nuvio.tv.ui.screens.player.YouTubePageScrollUi.ENABLED) {
             viewModel.loadRelated()
         }

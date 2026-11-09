@@ -1164,6 +1164,9 @@ private fun PlaybackNavHost(
                 onYouTubeSubscribe = if (upNextVideoId != null) ({ ytPlayerVm.toggleSubscribe() }) else null,
                 onYouTubeLike = if (upNextVideoId != null) ({ ytPlayerVm.toggleLike() }) else null,
                 onYouTubeDislike = if (upNextVideoId != null) ({ ytPlayerVm.toggleDislike() }) else null,
+                onYouTubeComments = if (upNextVideoId != null) ({
+                    upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnShowYouTubeComments)
+                }) else null,
                 onYouTubeChannel = ytState.info?.channelId?.let { channel ->
                     {
                         youtubeVm?.openChannel(channel, ytState.info?.author.orEmpty())
@@ -1236,6 +1239,7 @@ private fun PlaybackNavHost(
                                     upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnSeekTo(positionMs))
                                 },
                                 startWithRecommendations = playerUi.youTubePanelStartWithRecommendations,
+                                startInComments = playerUi.youTubePanelStartWithComments,
                                 scrollFraction = playerUi.youTubeScrollFraction,
                                 onScrollFractionChange = { fraction ->
                                     upNextPlayerVm.onEvent(com.nuvio.tv.ui.screens.player.PlayerEvent.OnSetYouTubeScrollFraction(fraction))

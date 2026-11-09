@@ -242,6 +242,7 @@ fun PlayerScreen(
     youtubeDisliked: Boolean = false,
     onYouTubeLike: (() -> Unit)? = null,
     onYouTubeDislike: (() -> Unit)? = null,
+    onYouTubeComments: (() -> Unit)? = null,
     onYouTubeChannel: (() -> Unit)? = null,
     youtubeChannelImage: String? = null,
     /** YouTube fork: the channel name, shown above the video title in the controls. */
@@ -1804,6 +1805,7 @@ fun PlayerScreen(
                 youtubeDisliked = youtubeDisliked,
                 onYouTubeLike = onYouTubeLike,
                 onYouTubeDislike = onYouTubeDislike,
+                onYouTubeComments = onYouTubeComments,
                 onYouTubeChannel = onYouTubeChannel,
                 youtubeChannelImage = youtubeChannelImage,
                 youtubeChannelName = youtubeChannelName,
@@ -3037,6 +3039,7 @@ private fun PlayerControlsOverlay(
     youtubeDisliked: Boolean,
     onYouTubeLike: (() -> Unit)?,
     onYouTubeDislike: (() -> Unit)?,
+    onYouTubeComments: (() -> Unit)?,
     onYouTubeChannel: (() -> Unit)?,
     youtubeChannelImage: String?,
     youtubeChannelName: String?,
@@ -3283,6 +3286,15 @@ private fun PlayerControlsOverlay(
                                 downFocusRequester = progressBarFocusRequester,
                                 onFocused = onResetHideTimer,
                                 contentColor = if (youtubeDisliked) Color(0xFFFF4D6A) else Color.White
+                            )
+                        }
+                        onYouTubeComments?.let { comments ->
+                            ControlButton(
+                                icon = Icons.Default.Forum,
+                                contentDescription = "Comments",
+                                onClick = comments,
+                                downFocusRequester = progressBarFocusRequester,
+                                onFocused = onResetHideTimer
                             )
                         }
                         onYouTubeLoop?.let { loop ->

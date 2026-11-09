@@ -1877,13 +1877,17 @@ fun PlayerRuntimeController.onEvent(
                 scheduleHideControls()
             }
         }
-        PlayerEvent.OnShowYouTubePanel, PlayerEvent.OnShowYouTubeRecommendations -> {
+        PlayerEvent.OnShowYouTubePanel,
+        PlayerEvent.OnShowYouTubeRecommendations,
+        PlayerEvent.OnShowYouTubeComments -> {
             val recommendations = YouTubePageScrollUi.ENABLED &&
                 event is PlayerEvent.OnShowYouTubeRecommendations
+            val comments = event is PlayerEvent.OnShowYouTubeComments
             _uiState.update {
                 it.copy(
                     showYouTubePanel = true,
                     youTubePanelStartWithRecommendations = recommendations,
+                    youTubePanelStartWithComments = comments,
                     youTubeScrollFraction = if (recommendations) 1f else 0f,
                     showQualityOverlay = false,
                     showAudioOverlay = false,

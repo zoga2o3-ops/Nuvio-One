@@ -125,6 +125,8 @@ data class PlayerUiState(
     val showYouTubePanel: Boolean = false,
     /** The panel was opened for recommendations (Down) rather than the action list. */
     val youTubePanelStartWithRecommendations: Boolean = false,
+    /** The panel was opened by the player's Comments button. */
+    val youTubePanelStartWithComments: Boolean = false,
     /** 0 = video full screen, 1 = recommendations fill the screen and the video is scrolled away. */
     val youTubeScrollFraction: Float = 0f,
     /** The chosen video height; 0 is automatic. */
@@ -362,6 +364,7 @@ sealed class PlayerEvent {
     data object OnShowQualityOverlay : PlayerEvent()
     data object OnShowYouTubePanel : PlayerEvent()
     data object OnShowYouTubeRecommendations : PlayerEvent()
+    data object OnShowYouTubeComments : PlayerEvent()
     data class OnSetYouTubeScrollFraction(val fraction: Float) : PlayerEvent()
     data class OnSelectVideoQuality(val height: Int) : PlayerEvent()
     data object OnShowSubtitleOverlay : PlayerEvent()
