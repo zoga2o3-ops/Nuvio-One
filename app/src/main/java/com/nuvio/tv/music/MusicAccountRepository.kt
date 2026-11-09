@@ -80,8 +80,10 @@ object MusicAccountRepository {
     /** The account's Liked Music and playlists. */
     fun library(): Result<Library> = runCatching {
         val groups = loadGroups()
-        val liked = groups.firstOrNull { it.isLikedGroup() }
-            ?.mediaItems.orEmpty()
+        val likedGroup = groups.firstOrNull { it.isLikedGroup() }
+        // The first Music row only carries the first page of liked songs. Read the rest too,
+        // otherwise likes added on another device never appear after the first connection.
+        val liked = loadAllGroupItems(likedGroup)
             .mapNotNull { it.toSong() }
         // A playlist-list failure shouldn't hide the liked songs that did load.
         val playlists = runCatching { loadPlaylists() }.getOrDefault(emptyList())
@@ -89,32 +91,33 @@ object MusicAccountRepository {
     }
 
     fun playlistSongs(playlistId: String): Result<List<Song>> = runCatching {
-        var group = service().contentService.getPlaylist(playlistId)
+        val group = service().contentService.getPlaylist(playlistId)
             ?: error("This playlist couldn't be opened.")
-        val songs = mutableListOf<Song>()
-        var pages = 0
-        while (true) {
-            group.mediaItems.orEmpty().mapNotNullTo(songs) { it.toSong() }
-            if (group.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
-            group = runCatching { service().contentService.continueGroup(group) }.getOrNull() ?: break
-        }
-        songs
+        loadAllGroupItems(group).mapNotNull { it.toSong() }
     }
 
     /** Opens a shelf card that was stored while the account home was loaded. */
     fun groupSongs(key: String): Result<List<Song>> = runCatching {
         val source = groupItems[key]
             ?: error("This shelf has expired. Reload Home and try again.")
-        var group = service().contentService.getGroup(source)
+        val group = service().contentService.getGroup(source)
             ?: error("This shelf couldn't be opened.")
-        val songs = mutableListOf<Song>()
+        loadAllGroupItems(group).mapNotNull { it.toSong() }
+    }
+
+    /** Every item in [first], following the service's continuation pages. */
+    private fun loadAllGroupItems(first: MediaGroup?): List<MediaItem> {
+        if (first == null) return emptyList()
+        val items = mutableListOf<MediaItem>()
+        var group: MediaGroup? = first
         var pages = 0
         while (true) {
-            group.mediaItems.orEmpty().mapNotNullTo(songs) { it.toSong() }
-            if (group.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
-            group = runCatching { service().contentService.continueGroup(group) }.getOrNull() ?: break
+            val current = group ?: break
+            items += current.mediaItems.orEmpty()
+            if (current.nextPageKey.isNullOrBlank() || pages++ >= MAX_PAGES) break
+            group = runCatching { service().contentService.continueGroup(current) }.getOrNull()
         }
-        songs
+        return items
     }
 
     /** Best-effort sync of the heart to the account's Liked Music. The local like is immediate. */

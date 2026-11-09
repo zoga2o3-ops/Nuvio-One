@@ -254,6 +254,16 @@ class MusicViewModel @Inject constructor(
         loadAccountLibrary()
     }
 
+    /** Pulls likes and playlists again without reloading the whole Music home. */
+    fun refreshAccountLibrary() {
+        if (!MusicAccountRepository.isSignedIn()) {
+            loadAccountLibrary()
+            return
+        }
+        MusicAccountRepository.invalidate()
+        loadAccountLibrary()
+    }
+
     fun loadAccountLibrary() {
         val signedIn = MusicAccountRepository.isSignedIn()
         if (!signedIn) {

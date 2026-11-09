@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
@@ -79,6 +80,7 @@ internal fun MusicLibraryScreen(
     accountLiked: List<Song>,
     accountPlaylists: List<MusicAccountPlaylist>,
     accountLoading: Boolean,
+    onRefreshAccount: () -> Unit,
     onSignIn: () -> Unit,
     onManageAccount: () -> Unit,
     onPlayAccountLiked: (Int) -> Unit,
@@ -134,6 +136,15 @@ internal fun MusicLibraryScreen(
                 onSignIn = onSignIn,
                 onManage = onManageAccount
             )
+            if (accountName != null) {
+                Spacer(Modifier.height(8.dp))
+                LibraryActionButton(
+                    icon = Icons.Default.Refresh,
+                    label = if (accountLoading) "Refreshing..." else "Refresh YouTube Music",
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onRefreshAccount
+                )
+            }
             Spacer(Modifier.height(14.dp))
 
             LibraryFilterRow(
@@ -429,7 +440,7 @@ internal fun MusicLibraryScreen(
                         } else {
                             item(key = "account-playlists-grid") {
                                 LibraryTileGrid(
-                                    items = accountPlaylists.take(8).map { playlist ->
+                                    items = accountPlaylists.map { playlist ->
                                         LibraryTile(
                                             artworkUrl = playlist.thumbnailUrl,
                                             title = playlist.title,
@@ -454,7 +465,7 @@ internal fun MusicLibraryScreen(
                     }
                     item(key = "local-playlists-grid") {
                         LibraryTileGrid(
-                            items = playlists.take(8).map { playlist ->
+                            items = playlists.map { playlist ->
                                 LibraryTile(
                                     artworkUrl = playlist.songs.firstOrNull()?.thumbnailUrl,
                                     title = playlist.name,

@@ -381,6 +381,7 @@ fun MusicScreen(
                         accountLiked = state.accountLibrary.liked,
                         accountPlaylists = state.accountLibrary.playlists,
                         accountLoading = state.accountLibrary.loading,
+                        onRefreshAccount = viewModel::refreshAccountLibrary,
                         onSignIn = {
                             showAccount = true
                             accountViewModel.startSignIn()
