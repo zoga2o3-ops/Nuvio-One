@@ -47,7 +47,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -852,9 +855,12 @@ internal fun MusicTextField(
     modifier: Modifier = Modifier,
     password: Boolean = false,
     fontSize: TextUnit = 13.sp,
-    onDone: () -> Unit = {}
+    onDone: () -> Unit = {},
+    /** Where D-pad Down goes when the field is focused but not editing. */
+    downFocus: FocusRequester? = null
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
 
@@ -918,6 +924,29 @@ internal fun MusicTextField(
                             !editing && (event.key == Key.DirectionCenter || event.key == Key.Enter) -> {
                                 editing = true
                                 keyboard?.show()
+                                true
+                            }
+                            // A read-only text field still consumes D-pad directions. Intercept
+                            // them until editing starts so Down reaches the next control instead
+                            // of trapping focus on the field.
+                            !editing && event.key == Key.DirectionUp -> {
+                                focusManager.moveFocus(FocusDirection.Up)
+                                true
+                            }
+                            !editing && event.key == Key.DirectionDown -> {
+                                if (downFocus != null) {
+                                    runCatching { downFocus.requestFocus() }
+                                } else {
+                                    focusManager.moveFocus(FocusDirection.Down)
+                                }
+                                true
+                            }
+                            !editing && event.key == Key.DirectionLeft -> {
+                                focusManager.moveFocus(FocusDirection.Left)
+                                true
+                            }
+                            !editing && event.key == Key.DirectionRight -> {
+                                focusManager.moveFocus(FocusDirection.Right)
                                 true
                             }
                             editing && event.key == Key.Back -> {

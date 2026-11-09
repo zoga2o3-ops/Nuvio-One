@@ -153,10 +153,6 @@ fun MusicScreen(
         MusicLibrary.init(context)
         MusicDownloads.init(context)
         accountViewModel.refresh()
-        // Start on the selected tab so the content list is not scrolled by focusing the hero
-        // action on entry.
-        kotlinx.coroutines.delay(150)
-        runCatching { topNavFocus.requestFocus() }
     }
 
     LaunchedEffect(account.checked, account.signedIn, account.accountName, account.accounts) {
@@ -217,6 +213,16 @@ fun MusicScreen(
         state.explore.selected != null || openPlaylistId != null ||
         showSettings || showDownloads || showParty || showWebDav ||
         showIntegrations || showSources || showNavidrome || showAccount || musicVideo != null
+
+    // Re-anchor focus to the selected top tab whenever the tab changes or an overlay closes.
+    // Without this, tapping a tab (which does not move focus) or closing Integrations leaves
+    // the remote with no focused control, and the next D-pad press lands somewhere random.
+    LaunchedEffect(state.tab, musicOverlayOpen) {
+        if (!musicOverlayOpen) {
+            kotlinx.coroutines.delay(250)
+            runCatching { topNavFocus.requestFocus() }
+        }
+    }
 
     BackHandler(
         enabled = showNowPlaying || state.detail.open ||

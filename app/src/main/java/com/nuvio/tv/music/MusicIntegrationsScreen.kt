@@ -75,6 +75,8 @@ internal fun MusicIntegrationsScreen(
     val navidrome by MusicNavidrome.config.collectAsState()
     val addons by MusicAddonRegistry.configs.collectAsState()
     val closeFocus = remember { FocusRequester() }
+    val lastFmLoginFocus = remember { FocusRequester() }
+    val spotifyImportFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
     var lastFmUsername by remember { mutableStateOf("") }
@@ -209,7 +211,8 @@ internal fun MusicIntegrationsScreen(
                                 value = lastFmUsername,
                                 placeholder = "Last.fm username",
                                 onValueChange = { lastFmUsername = it },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                downFocus = lastFmLoginFocus
                             )
                             IntegrationField(
                                 label = "Password",
@@ -217,7 +220,8 @@ internal fun MusicIntegrationsScreen(
                                 placeholder = "Last.fm password",
                                 onValueChange = { lastFmPassword = it },
                                 password = true,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                downFocus = lastFmLoginFocus
                             )
                         }
                         Spacer(Modifier.height(8.dp))
@@ -233,6 +237,7 @@ internal fun MusicIntegrationsScreen(
                             IntegrationPill(
                                 icon = Icons.Default.Favorite,
                                 label = if (lastFmSigningIn) "Signing in..." else "Log in",
+                                modifier = Modifier.focusRequester(lastFmLoginFocus),
                                 primary = true,
                                 enabled = !lastFmSigningIn && lastFm.available,
                                 onClick = {
@@ -303,7 +308,8 @@ internal fun MusicIntegrationsScreen(
                         label = "Playlist link",
                         value = spotifyUrl,
                         placeholder = "https://open.spotify.com/playlist/…",
-                        onValueChange = { spotifyUrl = it }
+                        onValueChange = { spotifyUrl = it },
+                        downFocus = spotifyImportFocus
                     )
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -313,6 +319,7 @@ internal fun MusicIntegrationsScreen(
                         IntegrationPill(
                             icon = Icons.Default.MusicNote,
                             label = if (importing) "Importing…" else "Import playlist",
+                            modifier = Modifier.focusRequester(spotifyImportFocus),
                             primary = true,
                             enabled = !importing,
                             onClick = {
@@ -444,7 +451,8 @@ private fun IntegrationField(
     placeholder: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    password: Boolean = false
+    password: Boolean = false,
+    downFocus: FocusRequester? = null
 ) {
     MusicTextField(
         label = label,
@@ -452,7 +460,8 @@ private fun IntegrationField(
         placeholder = placeholder,
         onValueChange = onValueChange,
         modifier = modifier,
-        password = password
+        password = password,
+        downFocus = downFocus
     )
 }
 

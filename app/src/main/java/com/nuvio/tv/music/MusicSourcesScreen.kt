@@ -63,6 +63,7 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
     val addons by MusicAddonRegistry.configs.collectAsState()
     val scope = rememberCoroutineScope()
     val closeFocus = remember { FocusRequester() }
+    val addFocus = remember { FocusRequester() }
 
     var url by remember { mutableStateOf("") }
     var working by remember { mutableStateOf(false) }
@@ -141,11 +142,13 @@ internal fun MusicSourcesScreen(onClose: () -> Unit) {
                             value = url,
                             placeholder = "https://example.com/addon/",
                             onValueChange = { url = it },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            downFocus = addFocus
                         )
                         SourcePill(
                             icon = Icons.Default.Add,
                             label = if (working) "Checking..." else "Test & add",
+                            modifier = Modifier.focusRequester(addFocus),
                             primary = true,
                             enabled = !working,
                             onClick = {
