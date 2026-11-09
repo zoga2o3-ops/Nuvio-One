@@ -1167,24 +1167,9 @@ open class MainActivity : ComponentActivity() {
                     val startRouteNow = com.nuvio.tv.livetv.startup.StartPage.routeFor(liveTvSettingsNow, sportsInSidebar)
                     val homeHidden = startRouteNow != null && com.nuvio.tv.livetv.calendar.SideMenuPages.HOME in
                         com.nuvio.tv.livetv.calendar.SideMenuPages.hidden(liveTvSettingsNow.sideMenuHidden)
-                    androidx.compose.runtime.DisposableEffect(navController, homeHidden, startRouteNow) {
-                        val main = android.os.Handler(android.os.Looper.getMainLooper())
-                        val listener = androidx.navigation.NavController.OnDestinationChangedListener { controller, destination, _ ->
-                            val target = startRouteNow
-                            if (homeHidden && target != null && destination.route == Screen.Home.route) {
-                                main.post {
-                                    runCatching {
-                                        controller.navigate(target) {
-                                            popUpTo(Screen.Home.route) { inclusive = true }
-                                            launchSingleTop = true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        navController.addOnDestinationChangedListener(listener)
-                        onDispose { navController.removeOnDestinationChangedListener(listener) }
-                    }
+                    // The start page is applied once, by startDestination. Do not redirect every
+                    // later visit to Home back to it: Back from a menu page must be able to reach
+                    // the menu/Home instead of snapping to the startup page again.
                     // Live TV fork: the menu's order and the pages taken off it (Settings → Menu & Features).
                     val sideMenuOrder = liveTvSettingsNow.sideMenuOrder
                     val sideMenuHidden = liveTvSettingsNow.sideMenuHidden

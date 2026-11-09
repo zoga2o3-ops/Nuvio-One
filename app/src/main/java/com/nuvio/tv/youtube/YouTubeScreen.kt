@@ -56,6 +56,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -248,6 +249,7 @@ fun YouTubeScreen(
         suggestionsOpen = false
         searchEditing = false
         searchExpanded = false
+        query = ""
     }
 
     // After the search box closes, the remote's highlight goes back to the magnifier.
@@ -352,6 +354,7 @@ fun YouTubeScreen(
                             // leave typing mode after it has actually held focus and then lost it.
                             var hadTextFocus by remember { mutableStateOf(false) }
                             val textFocus = remember { FocusRequester() }
+                            val clearFocus = remember { FocusRequester() }
                             LaunchedEffect(searchEditing, textPlaced) {
                                 if (searchEditing && textPlaced) {
                                     // Focus restoration after the search icon disappears can land on the
@@ -374,6 +377,7 @@ fun YouTubeScreen(
                                 suggestionsOpen = false
                                 searchEditing = false
                                 searchExpanded = false
+                                query = ""
                                 collapseToSearchIcon = true
                             }
                             Box(
@@ -385,6 +389,7 @@ fun YouTubeScreen(
                                     .border(2.dp, if (boxFocused || searchEditing) Color.White else Color.Transparent, RoundedCornerShape(24.dp))
                                     // Down from the box goes into the suggestions when they're showing.
                                     .focusProperties {
+                                        if (query.isNotEmpty()) right = clearFocus
                                         if (suggestionsOpen && suggestions.isNotEmpty()) down = firstSuggestion
                                         else if (headerDownFocus != null) down = headerDownFocus
                                     }
@@ -406,58 +411,95 @@ fun YouTubeScreen(
                                     ) { searchEditing = true }
                                     .padding(horizontal = 20.dp, vertical = 10.dp)
                             ) {
-                                BasicTextField(
-                                    value = query,
-                                    onValueChange = {
-                                        query = it
-                                        viewModel.suggest(it)
-                                    },
-                                    singleLine = true,
-                                    textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
-                                    cursorBrush = SolidColor(Color.White),
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                    keyboardActions = KeyboardActions(onSearch = {
-                                        // Close the keyboard and move on to the results.
-                                        keyboard?.hide()
-                                        suggestionsOpen = false
-                                        searchEditing = false
-                                        focusManager.moveFocus(FocusDirection.Down)
-                                        viewModel.search(query)
-                                    }),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .onPlaced { textPlaced = true }
-                                        .focusRequester(textFocus)
-                                        // Only while typing: the arrows never land inside the text field by themselves.
-                                        .focusProperties {
-                                            canFocus = searchEditing
-                                            if (suggestionsOpen && suggestions.isNotEmpty()) {
-                                                down = firstSuggestion
-                                            } else if (headerDownFocus != null) {
-                                                down = headerDownFocus
-                                            }
-                                        }
-                                        .onFocusChanged {
-                                            if (it.isFocused) {
-                                                hadTextFocus = true
-                                                suggestionsOpen = true
-                                                viewModel.suggest(query)
-                                            } else if (hadTextFocus && searchEditing) {
-                                                // Focus left the box (down into the suggestions, say): done typing.
-                                                hadTextFocus = false
-                                                searchEditing = false
-                                                // With no suggestion list to browse, the arrows have moved on to the
-                                                // page itself, so put the magnifier back instead of leaving the box open.
-                                                if (!(suggestionsOpen && suggestions.isNotEmpty())) {
-                                                    searchExpanded = false
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    BasicTextField(
+                                        value = query,
+                                        onValueChange = {
+                                            query = it
+                                            viewModel.suggest(it)
+                                        },
+                                        singleLine = true,
+                                        textStyle = TextStyle(color = Color.White, fontSize = 18.sp),
+                                        cursorBrush = SolidColor(Color.White),
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                        keyboardActions = KeyboardActions(onSearch = {
+                                            // Close the keyboard and move on to the results.
+                                            keyboard?.hide()
+                                            suggestionsOpen = false
+                                            searchEditing = false
+                                            focusManager.moveFocus(FocusDirection.Down)
+                                            viewModel.search(query)
+                                            query = ""
+                                        }),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .onPlaced { textPlaced = true }
+                                            .focusRequester(textFocus)
+                                            // Only while typing: the arrows never land inside the text field by themselves.
+                                            .focusProperties {
+                                                canFocus = searchEditing
+                                                if (suggestionsOpen && suggestions.isNotEmpty()) {
+                                                    down = firstSuggestion
+                                                } else if (headerDownFocus != null) {
+                                                    down = headerDownFocus
                                                 }
                                             }
-                                        },
-                                    decorationBox = { inner ->
-                                        if (query.isEmpty()) Text("Search OneTube", color = Color.Gray, fontSize = 18.sp)
-                                        inner()
+                                            .onFocusChanged {
+                                                if (it.isFocused) {
+                                                    hadTextFocus = true
+                                                    suggestionsOpen = true
+                                                    viewModel.suggest(query)
+                                                } else if (hadTextFocus && searchEditing) {
+                                                    // Focus left the box (down into the suggestions, say): done typing.
+                                                    hadTextFocus = false
+                                                    searchEditing = false
+                                                    // With no suggestion list to browse, the arrows have moved on to the
+                                                    // page itself, so put the magnifier back instead of leaving the box open.
+                                                    if (!(suggestionsOpen && suggestions.isNotEmpty())) {
+                                                        searchExpanded = false
+                                                    }
+                                                }
+                                            },
+                                        decorationBox = { inner ->
+                                            if (query.isEmpty()) Text("Search OneTube", color = Color.Gray, fontSize = 18.sp)
+                                            inner()
+                                        }
+                                    )
+                                    if (query.isNotEmpty()) {
+                                        var clearFocused by remember { mutableStateOf(false) }
+                                        Box(
+                                            Modifier
+                                                .size(24.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (clearFocused) Color.White.copy(alpha = 0.16f)
+                                                    else Color.Transparent
+                                                )
+                                                .focusRequester(clearFocus)
+                                                .onFocusChanged { clearFocused = it.isFocused }
+                                                .clickable {
+                                                    query = ""
+                                                    viewModel.suggest("")
+                                                    if (searchEditing) {
+                                                        runCatching { textFocus.requestFocus() }
+                                                    } else {
+                                                        runCatching { searchIconFocus.requestFocus() }
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Clear search",
+                                                tint = if (clearFocused) Color.White else Color.Gray,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
-                                )
+                                }
                             }
                         }
                         IconChip(
