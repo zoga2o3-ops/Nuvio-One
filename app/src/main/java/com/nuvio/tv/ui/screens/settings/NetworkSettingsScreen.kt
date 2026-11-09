@@ -6,6 +6,7 @@ package com.nuvio.tv.ui.screens.settings
 import com.nuvio.tv.core.network.NetworkConnectionKind
 import com.nuvio.tv.core.network.NetworkTransport
 import com.nuvio.tv.core.network.networkConnectionKind
+import com.nuvio.tv.ui.components.GlobalStatsOverlaySettings
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.util.keepLtr
 
@@ -194,6 +195,8 @@ fun AdvancedSettingsContent(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val globalStatsOverlay by GlobalStatsOverlaySettings.enabled.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { GlobalStatsOverlaySettings.init(context) }
     var connectionType by remember { mutableStateOf(getConnectionType(context)) }
     var testState by remember { mutableStateOf(NetworkTestState.Idle) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -577,6 +580,14 @@ fun AdvancedSettingsContent(
                                 !uiState.playerStatsHudEnabled
                             )
                         )
+                    }
+                )
+                SettingsToggleRow(
+                    title = stringResource(R.string.advanced_global_stats_overlay),
+                    subtitle = stringResource(R.string.advanced_global_stats_overlay_subtitle),
+                    checked = globalStatsOverlay,
+                    onToggle = {
+                        GlobalStatsOverlaySettings.setEnabled(context, !globalStatsOverlay)
                     }
                 )
             }

@@ -120,6 +120,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.nuvio.tv.ui.screens.ambient.AmbientIdleController
 import com.nuvio.tv.ui.screens.ambient.AmbientModeHost
 import com.nuvio.tv.ui.screens.ambient.LocalAmbientIdleController
+import com.nuvio.tv.ui.components.GlobalStatsOverlay
 import com.nuvio.tv.ui.components.LocalStartupLoadingState
 import com.nuvio.tv.ui.components.LocalStartupSplashEnabled
 import com.nuvio.tv.ui.components.StartupLoadingState
@@ -2008,11 +2009,14 @@ private fun LegacySidebarScaffold(
                     drawerState.setValue(DrawerValue.Open)
                 }
             ) {
-                NuvioNavHost(
-                    navController = navController,
-                    startDestination = startDestination,
-                    hideBuiltInHeaders = hideBuiltInHeaders
-                )
+                Box(Modifier.fillMaxSize()) {
+                    NuvioNavHost(
+                        navController = navController,
+                        startDestination = startDestination,
+                        hideBuiltInHeaders = hideBuiltInHeaders
+                    )
+                    GlobalStatsOverlay()
+                }
             }
         }
     }
@@ -2489,11 +2493,14 @@ private fun ModernSidebarScaffold(
                     pendingSidebarFocusRequest = true
                 }
             ) {
-                NuvioNavHost(
-                    navController = navController,
-                    startDestination = startDestination,
-                    hideBuiltInHeaders = hideBuiltInHeaders
-                )
+                Box(Modifier.fillMaxSize()) {
+                    NuvioNavHost(
+                        navController = navController,
+                        startDestination = startDestination,
+                        hideBuiltInHeaders = hideBuiltInHeaders
+                    )
+                    GlobalStatsOverlay()
+                }
             }
         }
 

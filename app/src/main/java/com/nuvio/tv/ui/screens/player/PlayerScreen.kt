@@ -182,6 +182,7 @@ import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.domain.model.StreamBadge
 import com.nuvio.tv.domain.model.Subtitle
 import com.nuvio.tv.domain.model.WatchProgress
+import com.nuvio.tv.ui.components.GlobalPlaybackStats
 import com.nuvio.tv.ui.components.LoadingIndicator
 import android.text.format.DateFormat
 import com.nuvio.tv.ui.util.rememberRawSvgPainter
@@ -312,6 +313,23 @@ fun PlayerScreen(
     val effectiveAutoplayEnabled by viewModel.effectiveAutoplayEnabled.collectAsState(initial = false)
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        while (true) {
+            val player = viewModel.exoPlayer
+            if (player == null) {
+                GlobalPlaybackStats.clear()
+            } else {
+                GlobalPlaybackStats.update(
+                    aheadMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L),
+                    playing = player.isPlaying
+                )
+            }
+            delay(1_000L)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { GlobalPlaybackStats.clear() }
+    }
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val containerFocusRequester = remember { FocusRequester() }
     val playPauseFocusRequester = remember { FocusRequester() }
