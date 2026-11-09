@@ -194,9 +194,12 @@ android {
         buildConfigField("String", "LASTFM_SECRET", buildConfigString(lastfmSecret))
 
         // In-app updater (GitHub Releases)
-        // YouTube fork: no update source by default, so it never checks (or downloads from) someone
-        // else's releases. Build with -PlivetvUpdateRepo=owner/repo to turn the updater on.
-        val updateRepo = (findProperty("livetvUpdateRepo") as String?).orEmpty().trim()
+        // The fork's own releases are the default; -PlivetvUpdateRepo=owner/repo can override it.
+        // Leaving this empty made every "Check for updates" fail silently in release builds.
+        val updateRepo = (findProperty("livetvUpdateRepo") as String?)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: "zoga2o3-ops/Nuvio-One"
         buildConfigField("String", "GITHUB_OWNER", "\"${updateRepo.substringBefore('/', "")}\"")
         buildConfigField("String", "GITHUB_REPO", "\"${updateRepo.substringAfter('/', "")}\"")
     }

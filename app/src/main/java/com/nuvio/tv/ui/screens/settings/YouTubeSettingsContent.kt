@@ -177,7 +177,7 @@ internal fun YouTubeSettingsContent(
             )
             SettingsActionRow(
                 title = "Posters per row",
-                subtitle = "How many videos fit across the OneTube grids",
+                subtitle = "How many videos fit across OneTube rows and grids",
                 value = "$posterColumns",
                 onClick = {
                     posterColumns = if (posterColumns >= 5) 3 else posterColumns + 1

@@ -120,16 +120,25 @@ object YouTubeAccountScopes {
                 .forEach { runCatching { svc.removeAccount(it) }.onFailure { e -> Log.w(TAG, "couldn't remove account", e) } }
             selectFirstIfNoneLocked(svc)
             runCatching { YouTubeServiceManager.instance().invalidateCache() }
-            saveLocked(context, scope)
+            // This empty export is intentional: the user asked for this scope to sign out.
+            saveLocked(context, scope, allowEmpty = true)
         }
     }
 
     private fun blobKey(scope: AccountScope) = "blob_${scope.tag}"
 
-    private fun saveLocked(context: Context, scope: AccountScope) {
+    private fun saveLocked(context: Context, scope: AccountScope, allowEmpty: Boolean = false) {
         if (engineScope != scope) return
         val svc = signIn() ?: return
-        prefs(context).edit().putString(blobKey(scope), svc.exportAccounts()).apply()
+        val exported = svc.exportAccounts()
+        if (exported.isBlank() && !allowEmpty) {
+            // A failed token refresh makes the engine report no accounts for a moment. Writing
+            // that empty list over the saved copy is what turned a temporary sign-in error into
+            // a permanent sign-out for both OneTube and Music.
+            Log.w(TAG, "not overwriting $scope's saved accounts with an empty export")
+            return
+        }
+        prefs(context).edit().putString(blobKey(scope), exported).apply()
     }
 
     private fun selectFirstIfNoneLocked(svc: YouTubeSignInService) {
@@ -158,7 +167,9 @@ object YouTubeAccountScopes {
             // Keep what the engine holds (a sign-in, a profile choice, refreshed names) under its owner, then load ours.
             // Early in a launch the engine may not have read its saved accounts yet; never overwrite a copy with that.
             svc.exportAccounts().takeIf { it.isNotEmpty() }?.let { p.edit().putString(blobKey(holder), it).apply() }
-            svc.importAccounts(p.getString(blobKey(scope), null))
+            val savedBlob = p.getString(blobKey(scope), null)
+            Log.i(TAG, "switch $scope: savedBlob=${savedBlob?.length ?: 0} chars")
+            svc.importAccounts(savedBlob)
             selectFirstIfNoneLocked(svc)
             runCatching { YouTubeServiceManager.instance().invalidateCache() }
             p.edit().putString(ACTIVE, scope.tag).apply()

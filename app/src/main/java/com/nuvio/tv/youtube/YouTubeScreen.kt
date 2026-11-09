@@ -737,7 +737,14 @@ private fun Content(
     // about four cards fit on a 1080p TV, with the next one peeking in at the edge.
     val columnCount = YouTubeSettings.posterColumns(context)
     val screenWidthDp = context.resources.configuration.screenWidthDp
-    val rowCardWidth = ((screenWidthDp - 56) * 0.23f).coerceIn(190f, 300f).dp
+    // The same "Posters per row" choice drives horizontal feed rows and grids. It used to
+    // affect only grids, so changing it from 5 to 3 or 4 left the Home rows looking identical.
+    val rowCardWidth = run {
+        val gapDp = 16f * (columnCount - 1).coerceAtLeast(0)
+        ((screenWidthDp - 56f - gapDp) / columnCount.toFloat())
+            .coerceIn(150f, 340f)
+            .dp
+    }
     var needsInitialFocus by remember { mutableStateOf(true) }
     // The row whose cards last held focus. Re-running the vertical animate-scroll for every
     // horizontal focus move made the whole feed bounce while browsing a row.
