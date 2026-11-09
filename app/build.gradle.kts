@@ -103,6 +103,10 @@ val sentryMappingUploadEnabled = sentryAuthToken != null && sentryOrg != null &&
 val debugReportDiscordWebhook = providers.environmentVariable("DEBUG_REPORT_DISCORD_WEBHOOK")
     .orNull?.trim()?.takeIf { it.isNotBlank() }
     ?: resolveProperty(devProperties, localProperties, "DEBUG_REPORT_DISCORD_WEBHOOK")
+val lastfmApiKey = providers.environmentVariable("LASTFM_API_KEY").orNull?.trim()?.takeIf { it.isNotBlank() }
+    ?: resolveProperty(devProperties, localProperties, "LASTFM_API_KEY")
+val lastfmSecret = providers.environmentVariable("LASTFM_SECRET").orNull?.trim()?.takeIf { it.isNotBlank() }
+    ?: resolveProperty(devProperties, localProperties, "LASTFM_SECRET")
 
 if (debugReportDiscordWebhook.isNullOrBlank()) {
     logger.warn(
@@ -186,6 +190,8 @@ android {
         buildConfigField("String", "PREMIUMIZE_CLIENT_ID", "\"${localProperties.getProperty("PREMIUMIZE_CLIENT_ID", "")}\"")
         buildConfigField("String", "SPONSOR_NAMES", buildConfigString(sponsorNames))
         buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
+        buildConfigField("String", "LASTFM_API_KEY", buildConfigString(lastfmApiKey))
+        buildConfigField("String", "LASTFM_SECRET", buildConfigString(lastfmSecret))
 
         // In-app updater (GitHub Releases)
         // YouTube fork: no update source by default, so it never checks (or downloads from) someone

@@ -136,19 +136,18 @@ object MusicPhoneSetup {
                 }
             }
             MusicPhoneTarget.LASTFM -> {
-                runCatching {
-                    MusicScrobbler.save(
+                runBlocking {
+                    MusicScrobbler.login(
                         app,
-                        fields.optString("apiKey"),
-                        fields.optString("secret"),
-                        fields.optString("session")
+                        fields.optString("lastfmUsername"),
+                        fields.optString("lastfmPassword")
                     )
-                }.map {
+                }.map { account ->
                     _state.update {
-                        it.copy(connected = true, message = "Last.fm details saved.")
+                        it.copy(connected = true, message = "Signed in to Last.fm as $account.")
                     }
                     handler.postDelayed({ closeServer() }, 1_500L)
-                    "Last.fm details saved."
+                    "Signed in to Last.fm as $account. Scrobbling is on."
                 }
             }
             MusicPhoneTarget.SPOTIFY -> {

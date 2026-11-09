@@ -72,12 +72,10 @@
       </div>
 
       <div id="lastfm" class="target hidden">
-        <label for="lf-key">API key</label>
-        <input id="lf-key" type="text" autocapitalize="none" spellcheck="false" placeholder="Last.fm API key">
-        <label for="lf-secret">Shared secret</label>
-        <input id="lf-secret" type="password" placeholder="Last.fm shared secret">
-        <label for="lf-session">Session key</label>
-        <input id="lf-session" type="password" placeholder="Last.fm session key">
+        <label for="lf-user">Username</label>
+        <input id="lf-user" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Last.fm username">
+        <label for="lf-pass">Password</label>
+        <input id="lf-pass" type="password" autocomplete="current-password" placeholder="Last.fm password">
       </div>
 
       <div id="spotify" class="target hidden">
@@ -113,7 +111,7 @@
   const successText = document.getElementById('success-text');
   const notes = {
     webdav: 'The TV tests the folder before saving. Credentials are stored on the TV for streaming.',
-    lastfm: 'Create an API account at last.fm/api/account/create, authorize once, then paste the session key. Scrobbling stays off until you enable it on the TV.',
+    lastfm: 'Sign in with your Last.fm account. The password is sent once to Last.fm and never stored; only the session key stays on the TV.',
     spotify: 'The TV reads the public playlist, matches tracks in the music catalogue and saves a normal local playlist. This can take a minute.'
   };
   const titles = {
@@ -123,7 +121,7 @@
   };
   const leads = {
     webdav: 'Type the collection URL and credentials here instead of the TV remote.',
-    lastfm: 'Type your Last.fm API details here.',
+    lastfm: 'Type your Last.fm username and password here instead of the TV remote.',
     spotify: 'Paste a public Spotify playlist link; the TV does the import.'
   };
   document.getElementById(target).classList.remove('hidden');
@@ -148,9 +146,8 @@
       url: document.getElementById('wd-url').value.trim(),
       username: document.getElementById('wd-user').value.trim(),
       password: document.getElementById('wd-pass').value,
-      apiKey: document.getElementById('lf-key').value.trim(),
-      secret: document.getElementById('lf-secret').value.trim(),
-      session: document.getElementById('lf-session').value.trim(),
+      lastfmUsername: document.getElementById('lf-user').value.trim(),
+      lastfmPassword: document.getElementById('lf-pass').value,
       playlist: document.getElementById('sp-playlist').value.trim()
     };
   }

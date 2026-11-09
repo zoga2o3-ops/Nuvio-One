@@ -75,10 +75,11 @@ internal fun MusicIntegrationsScreen(
     val closeFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
 
-    var apiKey by remember(lastFm.apiKey) { mutableStateOf(lastFm.apiKey) }
-    var secret by remember(lastFm.secret) { mutableStateOf(lastFm.secret) }
-    var sessionKey by remember(lastFm.sessionKey) { mutableStateOf(lastFm.sessionKey) }
+    var lastFmUsername by remember { mutableStateOf("") }
+    var lastFmPassword by remember { mutableStateOf("") }
+    var lastFmSigningIn by remember { mutableStateOf(false) }
     var lastFmMessage by remember { mutableStateOf<String?>(null) }
+    var lastFmError by remember { mutableStateOf<String?>(null) }
 
     var spotifyUrl by remember { mutableStateOf("") }
     var importing by remember { mutableStateOf(false) }
@@ -157,64 +158,24 @@ internal fun MusicIntegrationsScreen(
                     tint = MusicPalette.accentCoral,
                     title = "Last.fm",
                     subtitle = when {
-                        lastFm.configured && lastFm.enabled -> "Scrobbling is on."
-                        lastFm.configured -> "Configured, currently off."
-                        else -> "Scrobble the music you play on this TV."
+                        lastFm.configured && lastFm.enabled -> "Scrobbling as ${lastFm.username}."
+                        lastFm.configured -> "Signed in as ${lastFm.username}, currently off."
+                        !lastFm.available -> "Last.fm sign-in isn't configured in this build."
+                        else -> "Log in with your Last.fm account to scrobble."
                     }
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        IntegrationField(
-                            label = "API key",
-                            value = apiKey,
-                            placeholder = "Last.fm API key",
-                            onValueChange = { apiKey = it },
-                            modifier = Modifier.weight(1f)
+                    if (lastFm.configured) {
+                        Text(
+                            text = "Signed in as ${lastFm.username}.",
+                            color = MusicPalette.textSecondary,
+                            fontSize = 12.sp
                         )
-                        IntegrationField(
-                            label = "Shared secret",
-                            value = secret,
-                            placeholder = "Last.fm shared secret",
-                            onValueChange = { secret = it },
-                            password = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    IntegrationField(
-                        label = "Session key",
-                        value = sessionKey,
-                        placeholder = "Paste a Last.fm session key",
-                        onValueChange = { sessionKey = it },
-                        password = true
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Create an API account at last.fm/api/account/create, authorize " +
-                            "once, then paste the session key. Nothing is sent until scrobbling is on.",
-                        color = MusicPalette.textMuted,
-                        fontSize = 10.sp,
-                        lineHeight = 14.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        IntegrationPill(
-                            icon = Icons.Default.Favorite,
-                            label = "Save",
-                            primary = true,
-                            onClick = {
-                                MusicScrobbler.save(context, apiKey, secret, sessionKey)
-                                lastFmMessage = "Last.fm details saved."
-                            }
-                        )
-                        IntegrationPill(
-                            icon = Icons.Default.QrCode2,
-                            label = "Link with phone",
-                            onClick = { phoneTarget = MusicPhoneTarget.LASTFM }
-                        )
-                        if (lastFm.configured) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                             IntegrationPill(
                                 icon = Icons.Default.Favorite,
                                 label = if (lastFm.enabled) "Turn scrobbling off" else "Turn scrobbling on",
+                                primary = !lastFm.enabled,
                                 onClick = {
                                     MusicScrobbler.setEnabled(context, !lastFm.enabled)
                                     lastFmMessage = if (lastFm.enabled) {
@@ -224,11 +185,88 @@ internal fun MusicIntegrationsScreen(
                                     }
                                 }
                             )
+                            IntegrationPill(
+                                icon = Icons.Default.Favorite,
+                                label = "Sign out",
+                                onClick = {
+                                    MusicScrobbler.logout(context)
+                                    lastFmUsername = ""
+                                    lastFmPassword = ""
+                                    lastFmMessage = "Signed out of Last.fm."
+                                    lastFmError = null
+                                }
+                            )
+                        }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            IntegrationField(
+                                label = "Username",
+                                value = lastFmUsername,
+                                placeholder = "Last.fm username",
+                                onValueChange = { lastFmUsername = it },
+                                modifier = Modifier.weight(1f)
+                            )
+                            IntegrationField(
+                                label = "Password",
+                                value = lastFmPassword,
+                                placeholder = "Last.fm password",
+                                onValueChange = { lastFmPassword = it },
+                                password = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Your password is sent once to Last.fm and never stored. " +
+                                "Only the session key stays on this TV.",
+                            color = MusicPalette.textMuted,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            IntegrationPill(
+                                icon = Icons.Default.Favorite,
+                                label = if (lastFmSigningIn) "Signing in..." else "Log in",
+                                primary = true,
+                                enabled = !lastFmSigningIn && lastFm.available,
+                                onClick = {
+                                    if (!lastFmSigningIn) {
+                                        lastFmSigningIn = true
+                                        lastFmError = null
+                                        lastFmMessage = null
+                                        scope.launch {
+                                            MusicScrobbler.login(context, lastFmUsername, lastFmPassword)
+                                                .fold(
+                                                    onSuccess = { account ->
+                                                        lastFmPassword = ""
+                                                        lastFmMessage = "Signed in as $account. Scrobbling is on."
+                                                        lastFmSigningIn = false
+                                                    },
+                                                    onFailure = { error ->
+                                                        lastFmError = error.message
+                                                            ?: "Last.fm rejected the sign-in."
+                                                        lastFmSigningIn = false
+                                                    }
+                                                )
+                                        }
+                                    }
+                                }
+                            )
+                            IntegrationPill(
+                                icon = Icons.Default.QrCode2,
+                                label = "Link with phone",
+                                onClick = { phoneTarget = MusicPhoneTarget.LASTFM }
+                            )
                         }
                     }
                     lastFmMessage?.let {
                         Spacer(Modifier.height(8.dp))
                         Text(text = it, color = MusicPalette.accentTeal, fontSize = 11.sp)
+                    }
+                    lastFmError?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(text = it, color = MusicPalette.error, fontSize = 11.sp)
                     }
                 }
 
