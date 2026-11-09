@@ -353,6 +353,7 @@ object MusicAddonRegistry {
     private const val PREFS = "nuvio_music_addons"
     private const val KEY_CONFIGS = "configs"
     private const val MAX_RESULTS_PER_ADDON = 30
+    private const val DIRECT_STREAM_TTL_MS = 4 * 60 * 1000L
 
     private val _configs = MutableStateFlow<List<MusicAddonConfig>>(emptyList())
     val configs: StateFlow<List<MusicAddonConfig>> = _configs.asStateFlow()
@@ -362,7 +363,7 @@ object MusicAddonRegistry {
     private val clients = ConcurrentHashMap<String, MusicAddonClient>()
 
     /** Rows that carried their own `streamURL`, so playback skips `/stream/{id}` entirely. */
-    private val directStreams = ConcurrentHashMap<String, MusicAddonStream>()
+    private val directStreams = ConcurrentHashMap<String, Pair<Long, MusicAddonStream>>()
 
     @Synchronized
     fun init(context: Context) {
@@ -496,13 +497,14 @@ object MusicAddonRegistry {
         if (directStreams.size > 512) directStreams.clear()
         hits.forEach { hit ->
             val url = hit.track.streamUrl?.takeIf { it.isNotBlank() } ?: return@forEach
-            directStreams[trackKey(hit.config.id, hit.track.id)] = MusicAddonStream(
-                url = url,
-                format = hit.track.format,
-                quality = hit.track.quality,
-                manifest = null,
-                mimeType = null
-            )
+            directStreams[trackKey(hit.config.id, hit.track.id)] =
+                System.currentTimeMillis() to MusicAddonStream(
+                    url = url,
+                    format = hit.track.format,
+                    quality = hit.track.quality,
+                    manifest = null,
+                    mimeType = null
+                )
         }
     }
 
@@ -519,7 +521,12 @@ object MusicAddonRegistry {
                 IllegalStateException("${config.name} is turned off in Music sources.")
             )
         }
-        directStreams[videoId]?.let { return Result.success(it) }
+        directStreams[videoId]?.let { (savedAt, stream) ->
+            if (System.currentTimeMillis() - savedAt < DIRECT_STREAM_TTL_MS) {
+                return Result.success(stream)
+            }
+            directStreams.remove(videoId)
+        }
         return clientFor(config).stream(trackId)
     }
 
