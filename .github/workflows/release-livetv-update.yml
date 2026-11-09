@@ -60,6 +60,7 @@ jobs:
         env:
           NUVIO_BACKEND_URL: ${{ secrets.NUVIO_BACKEND_URL }}
           NUVIO_BACKEND_KEY: ${{ secrets.NUVIO_BACKEND_KEY }}
+          NUVIO_SUPABASE_FALLBACK_URL: ${{ secrets.NUVIO_SUPABASE_FALLBACK_URL }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
           TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
@@ -76,13 +77,26 @@ jobs:
           # Skip intro: IntroDB (introdb.app), a free and open timestamp service (no key needed to
           # read). A secret can point it elsewhere; otherwise the public address is used.
           INTRODB_API_URL: ${{ secrets.INTRODB_API_URL }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          DEBUG_REPORT_DISCORD_WEBHOOK: ${{ secrets.DEBUG_REPORT_DISCORD_WEBHOOK }}
+          PLAYBACK_REPORTS_BASE_URL: ${{ secrets.PLAYBACK_REPORTS_BASE_URL }}
+          TRAILER_API_URL: ${{ secrets.TRAILER_API_URL }}
+          SUPPORTERS_API_BASE_URL: ${{ secrets.SUPPORTERS_API_BASE_URL }}
+          SUPPORT_URL: ${{ secrets.SUPPORT_URL }}
+          AVATAR_PUBLIC_BASE_URL: ${{ secrets.AVATAR_PUBLIC_BASE_URL }}
         run: |
+          if [ -z "$NUVIO_BACKEND_URL" ] || [ -z "$NUVIO_BACKEND_KEY" ]; then
+            echo "::error::NUVIO_BACKEND_URL and NUVIO_BACKEND_KEY must be set. Without them Nuvio account and QR login do not work."
+            exit 1
+          fi
           : > keys.properties
           add() { if [ -n "$2" ]; then echo "$1=$2" >> keys.properties; fi; }
           if [ -n "$NUVIO_BACKEND_URL" ]; then
             BACKEND="${NUVIO_BACKEND_URL%/}"
             add NUVIO_SUPABASE_URL "$BACKEND"
             add NUVIO_SUPABASE_ANON_KEY "$NUVIO_BACKEND_KEY"
+            add NUVIO_SUPABASE_FALLBACK_URL "$NUVIO_SUPABASE_FALLBACK_URL"
             case "$BACKEND" in
               *api.nuvio.tv*)
                 # Official Nuvio accounts: the app's built-in nuvio.tv login pages are already right.
@@ -107,6 +121,14 @@ jobs:
           add IMDB_RATINGS_API_BASE_URL "$IMDB_RATINGS_API_BASE_URL"
           add IMDB_TAPFRAME_API_BASE_URL "$IMDB_TAPFRAME_API_BASE_URL"
           add INTRODB_API_URL "${INTRODB_API_URL:-https://api.introdb.app/}"
+          add LASTFM_API_KEY "$LASTFM_API_KEY"
+          add LASTFM_SECRET "$LASTFM_SECRET"
+          add DEBUG_REPORT_DISCORD_WEBHOOK "$DEBUG_REPORT_DISCORD_WEBHOOK"
+          add PLAYBACK_REPORTS_BASE_URL "$PLAYBACK_REPORTS_BASE_URL"
+          add TRAILER_API_URL "$TRAILER_API_URL"
+          add SUPPORTERS_API_BASE_URL "$SUPPORTERS_API_BASE_URL"
+          add SUPPORT_URL "$SUPPORT_URL"
+          add AVATAR_PUBLIC_BASE_URL "$AVATAR_PUBLIC_BASE_URL"
           # The build reads some values from each file, so write both.
           cp keys.properties local.properties
           cp keys.properties local.dev.properties
