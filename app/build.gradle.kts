@@ -542,6 +542,7 @@ dependencies {
     baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.core.ktx)
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.profileinstaller)
     implementation("androidx.recyclerview:recyclerview:1.4.0")

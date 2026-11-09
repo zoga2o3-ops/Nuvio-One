@@ -1,6 +1,7 @@
 package com.nuvio.tv.music
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Base64
 import android.util.Log
 import com.music.bitchord.data.model.Song
@@ -350,7 +351,10 @@ object MusicAddonRegistry {
     const val TRACK_PREFIX = "addon:"
 
     private const val TAG = "MusicAddons"
-    private const val PREFS = "nuvio_music_addons"
+    /** Pre-encryption file; read once by [MusicSecurePreferences] and then removed. */
+    private const val LEGACY_PREFS = "nuvio_music_addons"
+    private const val SECURE_PREFS = "nuvio_music_addons_secure"
+    private const val PLAIN_PREFS = "nuvio_music_addons_plain"
     private const val KEY_CONFIGS = "configs"
     private const val MAX_RESULTS_PER_ADDON = 30
     private const val DIRECT_STREAM_TTL_MS = 4 * 60 * 1000L
@@ -359,6 +363,7 @@ object MusicAddonRegistry {
     val configs: StateFlow<List<MusicAddonConfig>> = _configs.asStateFlow()
 
     private var context: Context? = null
+    private var prefs: SharedPreferences? = null
     private var loaded = false
     private val clients = ConcurrentHashMap<String, MusicAddonClient>()
 
@@ -367,8 +372,10 @@ object MusicAddonRegistry {
 
     @Synchronized
     fun init(context: Context) {
-        this.context = context.applicationContext
+        val app = context.applicationContext
+        this.context = app
         if (loaded) return
+        prefs = MusicSecurePreferences.open(app, SECURE_PREFS, PLAIN_PREFS, LEGACY_PREFS)
         loaded = true
         load()
     }
@@ -534,9 +541,8 @@ object MusicAddonRegistry {
         clients.getOrPut(config.id) { MusicAddonClient(config.baseUrl, config.quality) }
 
     private fun load() {
-        val app = context ?: return
-        val raw = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_CONFIGS, "[]").orEmpty()
+        val store = prefs ?: return
+        val raw = store.getString(KEY_CONFIGS, "[]").orEmpty()
         val parsed = runCatching {
             val array = JSONArray(raw)
             buildList {
@@ -577,7 +583,7 @@ object MusicAddonRegistry {
     }
 
     private fun persist(configs: List<MusicAddonConfig>) {
-        val app = context ?: return
+        val store = prefs ?: return
         val array = JSONArray()
         configs.forEach { config ->
             val qualities = JSONArray()
@@ -594,7 +600,7 @@ object MusicAddonRegistry {
                     .apply { config.quality?.let { put("quality", it) } }
             )
         }
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        store.edit()
             .putString(KEY_CONFIGS, array.toString())
             .apply()
     }

@@ -1,6 +1,7 @@
 package com.nuvio.tv.music
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import com.music.bitchord.data.model.Song
 import com.nuvio.tv.BuildConfig
@@ -48,7 +49,10 @@ data class LastFmConfig(
  */
 object MusicScrobbler {
     private const val TAG = "MusicScrobbler"
-    private const val PREFS = "nuvio_music_lastfm"
+    /** Pre-encryption file; read once by [MusicSecurePreferences] and then removed. */
+    private const val LEGACY_PREFS = "nuvio_music_lastfm"
+    private const val SECURE_PREFS = "nuvio_music_lastfm_secure"
+    private const val PLAIN_PREFS = "nuvio_music_lastfm_plain"
     private const val KEY_USERNAME = "username"
     private const val KEY_SESSION = "session_key"
     private const val KEY_ENABLED = "enabled"
@@ -63,6 +67,7 @@ object MusicScrobbler {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    private var prefs: SharedPreferences? = null
     private var started = false
     private var announcedId: String? = null
     private var scrobbledId: String? = null
@@ -72,18 +77,19 @@ object MusicScrobbler {
     @Synchronized
     fun init(context: Context) {
         val app = context.applicationContext
-        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val username = prefs.getString(KEY_USERNAME, "").orEmpty()
+        val store = MusicSecurePreferences.open(app, SECURE_PREFS, PLAIN_PREFS, LEGACY_PREFS)
+        prefs = store
+        val username = store.getString(KEY_USERNAME, "").orEmpty()
         // Older builds stored a session key without an account name. That key was signed with a
         // different app credential and can no longer be used, so don't pretend it is signed in.
-        val sessionKey = prefs.getString(KEY_SESSION, "").orEmpty().takeIf { username.isNotBlank() }.orEmpty()
+        val sessionKey = store.getString(KEY_SESSION, "").orEmpty().takeIf { username.isNotBlank() }.orEmpty()
         _config.value = LastFmConfig(
             username = username,
             sessionKey = sessionKey,
-            enabled = prefs.getBoolean(KEY_ENABLED, false)
+            enabled = store.getBoolean(KEY_ENABLED, false)
         )
-        if (sessionKey.isBlank() && prefs.contains(KEY_SESSION)) {
-            prefs.edit().remove(KEY_SESSION).remove(KEY_ENABLED).apply()
+        if (sessionKey.isBlank() && store.contains(KEY_SESSION)) {
+            store.edit().remove(KEY_SESSION).remove(KEY_ENABLED).apply()
         }
         if (!started) {
             started = true
@@ -131,37 +137,37 @@ object MusicScrobbler {
 
     fun setEnabled(context: Context, enabled: Boolean) {
         if (enabled && !_config.value.configured) return
-        val app = context.applicationContext
+        init(context)
         val updated = _config.value.copy(enabled = enabled)
         _config.value = updated
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_ENABLED, enabled)
-            .apply()
+        prefs?.edit()
+            ?.putBoolean(KEY_ENABLED, enabled)
+            ?.apply()
         announcedId = null
         scrobbledId = null
     }
 
     fun logout(context: Context) {
-        val app = context.applicationContext
+        init(context)
         _config.value = LastFmConfig()
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        prefs?.edit()?.clear()?.apply()
         announcedId = null
         scrobbledId = null
     }
 
     private fun saveSession(context: Context, username: String, sessionKey: String, enabled: Boolean) {
-        val app = context.applicationContext
+        init(context)
         val updated = LastFmConfig(
             username = username,
             sessionKey = sessionKey,
             enabled = enabled
         )
         _config.value = updated
-        app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_USERNAME, updated.username)
-            .putString(KEY_SESSION, updated.sessionKey)
-            .putBoolean(KEY_ENABLED, updated.enabled)
-            .apply()
+        prefs?.edit()
+            ?.putString(KEY_USERNAME, updated.username)
+            ?.putString(KEY_SESSION, updated.sessionKey)
+            ?.putBoolean(KEY_ENABLED, updated.enabled)
+            ?.apply()
         announcedId = null
         scrobbledId = null
     }
