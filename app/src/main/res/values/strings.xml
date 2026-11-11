@@ -764,6 +764,8 @@
     <string name="playback_section_interface_desc">Overlays, clock and details shown during playback.</string>
     <string name="playback_section_audio_only_desc">Languages, decoding and audio output.</string>
     <string name="playback_section_video_desc">Frame rate matching, Dolby Vision and HDR.</string>
+    <string name="playback_section_capabilities">Device Capabilities</string>
+    <string name="playback_section_capabilities_desc">What this device can decode, display and pass through, with suggested settings.</string>
     <string name="playback_default_player">Default Player</string>
     <string name="playback_external_player_label">External Player</string>
     <string name="playback_afr_mode">Frame Rate Matching</string>
@@ -2374,7 +2376,7 @@
     <string name="plugin_enable_plugins_subtitle">Use plugin providers during stream discovery</string>
     <string name="plugin_group_by_repository_title">Group plugin providers by repository</string>
     <string name="plugin_group_by_repository_subtitle">In Streams, show one provider per repository instead of one per source</string>
-    <string name="plugin_add_repository">Add repository</string>
+    <string name="plugin_add_repository">Add Repository / CloudStream</string>
     <string name="plugin_add_btn">Add</string>
     <string name="plugin_manage_from_phone_title">Manage from phone</string>
     <string name="plugin_manage_from_phone_subtitle">Scan a QR code to add or remove repositories from your phone</string>

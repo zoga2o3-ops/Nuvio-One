@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.scrollBy
@@ -1603,7 +1604,8 @@ private fun LiveTvGuideScreenBody(
                             !ui.hasSources -> EmptyGuideMessage(
                                 title = "No playlists yet",
                                 body = "Add an M3U playlist, Xtream login or XMLTV guide in Settings › Live TV.",
-                                action = "Press OK to open Live TV settings"
+                                action = "Open Live TV settings",
+                                onAction = onOpenSettings
                             )
                             channels.isEmpty() && status.loading -> EmptyGuideMessage(
                                 title = status.message ?: "Loading…",
@@ -3067,7 +3069,25 @@ private fun ProgramBlock(
 }
 
 @Composable
-private fun EmptyGuideMessage(title: String, body: String?, action: String?) {
+private fun EmptyGuideMessage(
+    title: String,
+    body: String?,
+    action: String?,
+    onAction: (() -> Unit)? = null
+) {
+    val actionFocus = remember { FocusRequester() }
+    var actionFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(onAction) {
+        if (onAction != null) {
+            // The guide focuses its group list shortly after it opens. Keep asking for a
+            // moment so the empty-state action wins instead of being skipped straight away,
+            // then stop so it never pulls focus back from the user.
+            repeat(8) {
+                delay(100)
+                if (runCatching { actionFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            }
+        }
+    }
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -3080,7 +3100,46 @@ private fun EmptyGuideMessage(title: String, body: String?, action: String?) {
         }
         if (action != null) {
             Spacer(Modifier.height(18.dp))
-            LiveText(action, color = NuvioTheme.colors.Secondary, weight = FontWeight.SemiBold)
+            if (onAction != null) {
+                Box(
+                    modifier = Modifier
+                        .focusRequester(actionFocus)
+                        .onFocusChanged { actionFocused = it.isFocused }
+                        .onPreviewKeyEvent { event ->
+                            if (event.type == KeyEventType.KeyDown &&
+                                (event.key == Key.DirectionCenter ||
+                                    event.key == Key.Enter ||
+                                    event.key == Key.NumPadEnter)
+                            ) {
+                                onAction()
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .focusable()
+                        .clickable(onClick = onAction)
+                        .clip(RoundedCornerShape(50))
+                        .background(
+                            if (actionFocused) NuvioTheme.colors.Secondary
+                            else NuvioTheme.colors.BackgroundCard
+                        )
+                        .border(
+                            2.dp,
+                            if (actionFocused) NuvioTheme.colors.FocusRing else NuvioTheme.colors.Border,
+                            RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                ) {
+                    LiveText(
+                        action,
+                        color = if (actionFocused) NuvioTheme.colors.OnSecondary else NuvioTheme.colors.Secondary,
+                        weight = FontWeight.SemiBold
+                    )
+                }
+            } else {
+                LiveText(action, color = NuvioTheme.colors.Secondary, weight = FontWeight.SemiBold)
+            }
         }
     }
 }

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -118,6 +119,7 @@ internal fun MusicNowPlayingScreen(
     onClose: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMusicVideo: (Song, Long) -> Unit,
+    onOpenArtist: (Song) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by MusicPlayer.state.collectAsState()
@@ -147,6 +149,10 @@ internal fun MusicNowPlayingScreen(
     }
     val playFocus = remember { FocusRequester() }
     val firstPickerFocus = remember { FocusRequester() }
+    val artistFocus = remember { FocusRequester() }
+    val likeFocus = remember { FocusRequester() }
+    val canOpenArtist = song?.artist?.isNotBlank() == true
+    var artistFocused by remember { mutableStateOf(false) }
     val windowInfo = LocalWindowInfo.current
     val colors = musicAuroraColors(song?.thumbnailUrl ?: song?.title)
     val playInteraction = remember { MutableInteractionSource() }
@@ -350,13 +356,52 @@ internal fun MusicNowPlayingScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = song?.artist.orEmpty(),
-                            color = Color.White.copy(alpha = 0.78f),
-                            fontSize = 16.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        val artistName = song?.artist.orEmpty()
+                        val artistModifier = if (canOpenArtist) {
+                            Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (artistFocused) Color.White.copy(alpha = 0.10f)
+                                    else Color.Transparent
+                                )
+                                .focusRequester(artistFocus)
+                                .onFocusChanged { artistFocused = it.isFocused }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown &&
+                                        event.key == Key.DirectionDown
+                                    ) {
+                                        runCatching { likeFocus.requestFocus() }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                                .clickable { song?.let(onOpenArtist) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        } else {
+                            Modifier
+                        }
+                        Box(artistModifier) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = artistName,
+                                    color = if (artistFocused) MusicPalette.accent
+                                    else Color.White.copy(alpha = 0.78f),
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.KeyboardArrowRight,
+                                    contentDescription = "Open artist",
+                                    tint = if (artistFocused) MusicPalette.accent
+                                    else Color.White.copy(alpha = 0.35f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                         if (!song?.albumName.isNullOrBlank()) {
                             Spacer(Modifier.height(3.dp))
                             Text(
@@ -370,11 +415,26 @@ internal fun MusicNowPlayingScreen(
                         Spacer(Modifier.height(10.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = if (canOpenArtist) {
+                                Modifier.onPreviewKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyDown &&
+                                        event.key == Key.DirectionUp
+                                    ) {
+                                        runCatching { artistFocus.requestFocus() }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            }
                         ) {
                             MusicActionChip(
                                 icon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                 label = if (isLiked) "Liked" else "Like",
+                                modifier = Modifier.focusRequester(likeFocus),
                                 active = isLiked,
                                 onClick = {
                                     song?.let {

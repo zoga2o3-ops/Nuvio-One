@@ -560,6 +560,47 @@ class MusicViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Opens [song]'s artist page. Rows from Home and some playlists carry no channel id, so
+     * the name is looked up (exact match only) before giving up. [onOpened] runs when the
+     * page really opens, so the caller can close Now Playing without leaving a dead screen
+     * when no artist page exists.
+     */
+    fun openArtist(song: Song, onOpened: () -> Unit = {}) {
+        val name = song.artist.trim()
+        if (name.isEmpty()) return
+        val direct = song.artistId?.takeIf { it.isNotBlank() }
+            ?: song.artists.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                ?.browseId?.takeIf { it.isNotBlank() }
+        if (direct != null) {
+            openDetail(
+                browseId = direct,
+                title = name,
+                subtitle = "Artist",
+                thumbnailUrl = song.thumbnailUrl,
+                type = BrowseType.ARTIST
+            )
+            onOpened()
+            return
+        }
+        viewModelScope.launch {
+            val id = withContext(Dispatchers.IO) {
+                runCatching { YtMusicRepository.findArtistPageId(name) }
+                    .getOrNull()?.getOrNull()
+            }
+            if (!id.isNullOrBlank()) {
+                openDetail(
+                    browseId = id,
+                    title = name,
+                    subtitle = "Artist",
+                    thumbnailUrl = song.thumbnailUrl,
+                    type = BrowseType.ARTIST
+                )
+                onOpened()
+            }
+        }
+    }
+
     private fun openAccountDetail(
         browseId: String,
         title: String,

@@ -613,11 +613,11 @@ private fun RowHeader(lists: List<PanelRowTab>, selected: PanelRowTab, pillsFocu
             }
         }
         Spacer(Modifier.width(10.dp))
-        val keys = if (pillsFocused) listOf("◀ ▶" to "switch list", "▼" to "channels", "BACK" to "close row")
+        val keys = if (pillsFocused) listOf("◀ ▶" to "switch list", "▼" to "channels", "BACK" to "close")
         else listOfNotNull(
             if (lists.size > 1) "▲" to "pick a list" else null,
             if (lists.size > 1) "▼" to "next list" else null,
-            "◀ ▶" to "channels", "OK" to "watch", "BACK" to "close row"
+            "◀ ▶" to "channels", "OK" to "watch", "BACK" to "close"
         )
         keys.forEach { (k, what) ->
             LiveText(

@@ -255,6 +255,20 @@ object MusicPlayer {
         persistQueue()
     }
 
+    /**
+     * The Music section was closed. Music follows the user only when they opted in;
+     * otherwise pause it here (the queue and position are kept for the next visit).
+     */
+    fun onLeaveMusicScreen() {
+        if (MusicSettings.keepPlayingWhileBrowsing.value) return
+        if (_state.value.isPlaying || _state.value.isBuffering) pause()
+    }
+
+    /** A full-screen video is starting: never play music over it. */
+    fun pauseForVideo() {
+        if (_state.value.isPlaying || _state.value.isBuffering) pause()
+    }
+
     fun next(auto: Boolean = false) {
         val current = _state.value
         if (current.queue.isEmpty()) return

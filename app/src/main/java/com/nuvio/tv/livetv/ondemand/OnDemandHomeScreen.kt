@@ -98,12 +98,14 @@ fun OnDemandHomeScreen(
     var fixFor by remember { mutableStateOf<VodItem?>(null) }
     var providerItem by remember { mutableStateOf<VodItem?>(null) }
     // "See all" on a row: that row in Nuvio's See all grid, over this page.
-    var seeAllUid by remember { mutableStateOf<String?>(null) }
     // The Sort list over See all.
     var sortingUid by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
-    var focusState by remember { mutableStateOf(HomeScreenFocusState()) }
-    var gridFocusState by remember { mutableStateOf(HomeScreenFocusState()) }
+    // Where you were, kept while the app runs: opening a title and pressing Back returns to the
+    // same layout position (and the same See all grid position), not to the top.
+    var focusState by remember { mutableStateOf(OnDemandReturnState.focusState) }
+    var gridFocusState by remember { mutableStateOf(OnDemandReturnState.gridFocusState) }
+    var seeAllUid by remember { mutableStateOf(OnDemandReturnState.seeAllUid) }
 
     // Leaving this page (Back, the menu, opening a title): stop the trailer straight away, before
     // the switch animates. Tearing the trailer's player down mid-switch, while Home starts up its
@@ -165,6 +167,21 @@ fun OnDemandHomeScreen(
         // A fresh start in the other list (the saved position belongs to the old one).
         focusState = HomeScreenFocusState()
         gridFocusState = HomeScreenFocusState()
+        OnDemandReturnState.focusState = focusState
+        OnDemandReturnState.gridFocusState = gridFocusState
+        OnDemandReturnState.seeAllUid = null
+        OnDemandReturnState.seeAllIndex = 0
+        OnDemandReturnState.seeAllOffset = 0
+        OnDemandReturnState.seeAllFocusedId = null
+    }
+    fun openSeeAll(uid: String) {
+        if (OnDemandReturnState.seeAllUid != uid) {
+            OnDemandReturnState.seeAllIndex = 0
+            OnDemandReturnState.seeAllOffset = 0
+            OnDemandReturnState.seeAllFocusedId = null
+        }
+        OnDemandReturnState.seeAllUid = uid
+        seeAllUid = uid
     }
     val homeRows = remember(rows) { rows.map { HomeRow.Catalog(it) } }
     val gridItems = remember(rows) {
@@ -331,16 +348,31 @@ fun OnDemandHomeScreen(
                     posterCardStyle = posterCardStyle,
                     showLabels = ui.posterLabelsEnabled,
                     onOpen = { open(it) },
-                    onFocus = onItemFocus,
+                    onFocus = { card ->
+                        lastFocusedCard = card.id
+                        OnDemandReturnState.seeAllFocusedId = card.id
+                        viewModel.focusHome(card.id)
+                    },
                     onLoadMore = { seeAllUid?.let { viewModel.loadMoreHome(it) } },
-                    onBack = { viewModel.stopSeeAll(); seeAllUid = null },
+                    onBack = {
+                        viewModel.stopSeeAll()
+                        seeAllUid = null
+                        OnDemandReturnState.seeAllUid = null
+                    },
                     // The group's own sort, else Default Sort Order.
                     sortLabel = seeAllUid?.let { uid ->
                         sortLabel(state.groups.firstOrNull { it.uid == uid }?.sort) ?: viewModel.defaultSortLabel()
                     },
                     onSort = { sortingUid = seeAllUid },
                     isWatched = isWatched,
-                    onLongPress = longPress
+                    onLongPress = longPress,
+                    initialFirstVisibleIndex = OnDemandReturnState.seeAllIndex,
+                    initialFirstVisibleOffset = OnDemandReturnState.seeAllOffset,
+                    initialFocusId = OnDemandReturnState.seeAllFocusedId,
+                    onSavePosition = { index, offset ->
+                        OnDemandReturnState.seeAllIndex = index
+                        OnDemandReturnState.seeAllOffset = offset
+                    }
                 )
             }
             else -> when (ui.homeLayout) {
@@ -355,7 +387,7 @@ fun OnDemandHomeScreen(
                     onContinueWatchingStartFromBeginning = {},
                     onContinueWatchingPlayManually = {},
                     showContinueWatchingManualPlayOption = false,
-                    onNavigateToCatalogSeeAll = { catalogId, _, _ -> seeAllUid = catalogId },
+                    onNavigateToCatalogSeeAll = { catalogId, _, _ -> openSeeAll(catalogId) },
                     onNavigateToFolderDetail = { _, _ -> },
                     onRemoveContinueWatching = { _, _, _, _ -> },
                     isCatalogItemWatched = isWatched,
@@ -369,6 +401,7 @@ fun OnDemandHomeScreen(
                             focusedItemKeyByRow = ikm, catalogRowScrollStates = m, catalogRowScrollAnchors = ma,
                             focusedRowIndex = ri, focusedItemIndex = ii, hasSavedFocus = true
                         )
+                        OnDemandReturnState.focusState = focusState
                     },
                     onFocusedRowKeyChanged = {},
                     scrollToTopTrigger = 0,
@@ -382,7 +415,7 @@ fun OnDemandHomeScreen(
                     onContinueWatchingStartFromBeginning = {},
                     onContinueWatchingPlayManually = {},
                     showContinueWatchingManualPlayOption = false,
-                    onNavigateToCatalogSeeAll = { catalogId, _, _ -> seeAllUid = catalogId },
+                    onNavigateToCatalogSeeAll = { catalogId, _, _ -> openSeeAll(catalogId) },
                     onNavigateToFolderDetail = { _, _ -> },
                     onRemoveContinueWatching = { _, _, _, _ -> },
                     isCatalogItemWatched = isWatched,
@@ -393,6 +426,7 @@ fun OnDemandHomeScreen(
                     stickyTitle = homeHeader,
                     onSaveGridFocusState = { vi, vo, _ ->
                         gridFocusState = gridFocusState.copy(verticalScrollIndex = vi, verticalScrollOffset = vo, hasSavedFocus = true)
+                        OnDemandReturnState.gridFocusState = gridFocusState
                     },
                     onFocusedRowKeyChanged = {},
                     scrollToTopTrigger = 0
@@ -426,6 +460,7 @@ fun OnDemandHomeScreen(
                             focusedItemKeyByRow = ikm, catalogRowScrollStates = m, catalogRowScrollAnchors = ma,
                             focusedRowIndex = ri, focusedItemIndex = ii, hasSavedFocus = true
                         )
+                        OnDemandReturnState.focusState = focusState
                     },
                     onFocusedRowKeyChanged = {},
                     scrollToTopTrigger = 0,
@@ -558,6 +593,22 @@ class OnDemandTrailers(
 /** The Movies / Series choice, remembered while the app runs. */
 object OnDemandHomeTab {
     @Volatile var last: VodKind = VodKind.MOVIE
+}
+
+/**
+ * Where you were on the On Demand page, remembered while the app runs.
+ *
+ * The page is left behind when a title's details open, and its composition is rebuilt on the
+ * way back. Without this, Back landed on the top of the list (or closed See all) instead of the
+ * card you opened. It also keeps the position when switching pages from the menu.
+ */
+private object OnDemandReturnState {
+    @Volatile var focusState = HomeScreenFocusState()
+    @Volatile var gridFocusState = HomeScreenFocusState()
+    @Volatile var seeAllUid: String? = null
+    @Volatile var seeAllIndex: Int = 0
+    @Volatile var seeAllOffset: Int = 0
+    @Volatile var seeAllFocusedId: String? = null
 }
 
 @Composable

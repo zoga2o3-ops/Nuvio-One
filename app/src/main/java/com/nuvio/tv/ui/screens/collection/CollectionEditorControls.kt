@@ -42,12 +42,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,18 +101,26 @@ fun NuvioTextField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "",
-    focusRequester: FocusRequester? = null
+    focusRequester: FocusRequester? = null,
+    imeAction: ImeAction = ImeAction.Done
 ) {
     var isEditing by remember { mutableStateOf(false) }
     val textFieldFocusRequester = remember { FocusRequester() }
     val surfaceFocusRequester = focusRequester ?: remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(isEditing) {
         if (isEditing) {
             repeat(3) { androidx.compose.runtime.withFrameNanos { } }
             try { textFieldFocusRequester.requestFocus() } catch (_: Exception) {}
         }
+    }
+
+    val finishEditing = {
+        isEditing = false
+        keyboardController?.hide()
+        surfaceFocusRequester.requestFocus()
     }
 
     Surface(
@@ -140,15 +155,39 @@ fun NuvioTextField(
                             isEditing = false
                             keyboardController?.hide()
                         }
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent false
+                        }
+                        when (event.key) {
+                            Key.Back -> {
+                                if (!isEditing) return@onPreviewKeyEvent false
+                                isEditing = false
+                                keyboardController?.hide()
+                                surfaceFocusRequester.requestFocus()
+                                true
+                            }
+                            Key.DirectionUp, Key.DirectionDown -> {
+                                // While the field is editing, the on-screen keyboard owns the
+                                // direction keys. Only move focus once editing has ended.
+                                if (isEditing) return@onPreviewKeyEvent false
+                                focusManager.moveFocus(
+                                    if (event.key == Key.DirectionDown) FocusDirection.Down
+                                    else FocusDirection.Up
+                                )
+                                true
+                            }
+                            else -> false
+                        }
                     },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardOptions = KeyboardOptions(imeAction = imeAction),
                 keyboardActions = KeyboardActions(
-                    onDone = {
-                        isEditing = false
-                        keyboardController?.hide()
-                        surfaceFocusRequester.requestFocus()
-                    }
+                    onDone = { finishEditing() },
+                    onNext = { finishEditing() },
+                    onGo = { finishEditing() },
+                    onSearch = { finishEditing() }
                 ),
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = NuvioTheme.colors.TextPrimary,

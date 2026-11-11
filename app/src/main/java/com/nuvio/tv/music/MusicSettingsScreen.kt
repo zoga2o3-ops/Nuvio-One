@@ -62,6 +62,7 @@ internal fun MusicSettingsScreen(onClose: () -> Unit) {
     val autoplay by MusicSettings.autoplay.collectAsState()
     val skipSilence by MusicSettings.skipSilence.collectAsState()
     val playbackSpeed by MusicSettings.playbackSpeed.collectAsState()
+    val keepPlayingWhileBrowsing by MusicSettings.keepPlayingWhileBrowsing.collectAsState()
     val fadeSeconds by MusicSettings.fadeSeconds.collectAsState()
     val equalizerPreset by MusicSettings.equalizerPreset.collectAsState()
     val equalizerAvailable by MusicEqualizer.available.collectAsState()
@@ -149,6 +150,14 @@ internal fun MusicSettingsScreen(onClose: () -> Unit) {
                         options = listOf("Off", "On"),
                         selectedIndex = if (autoplay) 1 else 0,
                         onSelect = { MusicPlayer.setAutoplay(it == 1) }
+                    )
+                }
+                item(key = "keep-playing") {
+                    SettingsToggle(
+                        title = "Keep music playing",
+                        detail = "Music continues while you browse movies, Live TV and your libraries. It pauses when a video starts.",
+                        checked = keepPlayingWhileBrowsing,
+                        onToggle = MusicSettings::setKeepPlayingWhileBrowsing
                     )
                 }
                 item(key = "track-transition") {
@@ -377,6 +386,94 @@ private fun SettingsSelector(
                 contentDescription = null,
                 tint = if (focused) Color.White else MusicPalette.textMuted,
                 modifier = Modifier.size(15.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggle(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(72.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (focused) MusicPalette.surfaceFocused else MusicPalette.surface.copy(alpha = 0.55f)
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) MusicPalette.text else MusicPalette.border.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionCenter, Key.Enter -> {
+                        onToggle(!checked)
+                        true
+                    }
+                    Key.DirectionUp -> {
+                        focusManager.moveFocus(FocusDirection.Up)
+                        true
+                    }
+                    Key.DirectionDown -> {
+                        focusManager.moveFocus(FocusDirection.Down)
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .clickable { onToggle(!checked) }
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = MusicPalette.text,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = detail,
+                color = MusicPalette.textMuted,
+                fontSize = 11.5.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        Box(
+            Modifier
+                .width(46.dp)
+                .height(26.dp)
+                .clip(RoundedCornerShape(50))
+                .background(if (checked) MusicPalette.accent else MusicPalette.surfaceRaised)
+                .border(
+                    1.dp,
+                    if (checked) MusicPalette.accent else MusicPalette.border,
+                    RoundedCornerShape(50)
+                )
+                .padding(3.dp),
+            contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(
+                Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (checked) MusicPalette.background else MusicPalette.textMuted)
             )
         }
     }

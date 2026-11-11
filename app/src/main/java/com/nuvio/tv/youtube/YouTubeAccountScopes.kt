@@ -102,7 +102,13 @@ object YouTubeAccountScopes {
 
     /** [scope] signed in (or its accounts changed in the engine): keep the saved copy up to date. */
     fun save(context: Context, scope: AccountScope) {
-        synchronized(lock) { saveLocked(context, scope) }
+        synchronized(lock) {
+            // A sign-in finishes on its own thread and OneTube may have used the engine in the
+            // meantime. Make sure the engine really holds this scope before reading its export,
+            // otherwise the new sign-in was silently dropped from the saved copy.
+            ensure(context, scope)
+            saveLocked(context, scope)
+        }
     }
 
     /**
@@ -173,6 +179,17 @@ object YouTubeAccountScopes {
             selectFirstIfNoneLocked(svc)
             runCatching { YouTubeServiceManager.instance().invalidateCache() }
             p.edit().putString(ACTIVE, scope.tag).apply()
+        } else {
+            // Same owner as last time, but the engine can be empty for a moment while storage is
+            // read (or after a crash between the import and the saved write). Fall back to the
+            // saved copy so a sign-in is never silently lost at launch.
+            val savedBlob = p.getString(blobKey(scope), null)
+            if (!savedBlob.isNullOrEmpty() && svc.exportAccounts().isEmpty()) {
+                Log.i(TAG, "restore $scope from its saved copy: ${savedBlob.length} chars")
+                svc.importAccounts(savedBlob)
+                selectFirstIfNoneLocked(svc)
+                runCatching { YouTubeServiceManager.instance().invalidateCache() }
+            }
         }
         engineScope = scope
         Log.i(TAG, "engine now holds $scope: ${describe(context)}")

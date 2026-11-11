@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
@@ -283,6 +284,10 @@ fun SettingsScreen(
     var integrationHubReturnSection by remember { mutableStateOf(IntegrationSettingsSection.Hub) }
     var pendingContentFocusCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     var pendingContentFocusRequestId by remember { mutableLongStateOf(0L) }
+    var pendingPlaybackSection by remember { mutableStateOf<PlaybackSection?>(null) }
+    var showSettingsSearch by rememberSaveable { mutableStateOf(false) }
+    var restoreSearchFocus by remember { mutableStateOf(false) }
+    val searchButtonFocus = remember { FocusRequester() }
     // Saveable so it survives a trip out to one of the screens a category opens. The pane bounces
     // focus back to the rail whenever it gains focus while this is false, so a plain remember made
     // every return from those screens land on the rail rather than where the user had been.
@@ -399,6 +404,36 @@ fun SettingsScreen(
 
     val focusManager = LocalFocusManager.current
 
+    fun dismissSettingsSearch() {
+        showSettingsSearch = false
+        restoreSearchFocus = true
+    }
+
+    fun openSearchResult(result: SettingsSearchResult) {
+        showSettingsSearch = false
+        restoreSearchFocus = false
+        pendingPlaybackSection = result.playbackSection
+        when (result.route) {
+            SettingsSearchRoute.CloudStream -> onNavigateToPlugins()
+            SettingsSearchRoute.Addons -> onNavigateToAddons()
+            SettingsSearchRoute.LiveTv -> onNavigateToLiveTv()
+            SettingsSearchRoute.None -> {
+                allowDetailAutofocus = true
+                selectedCategory = result.category
+                pendingContentFocusCategory = result.category
+                pendingContentFocusRequestId += 1L
+            }
+        }
+    }
+
+    LaunchedEffect(restoreSearchFocus, showSettingsSearch) {
+        if (restoreSearchFocus && !showSettingsSearch) {
+            withFrameNanos { }
+            runCatching { searchButtonFocus.requestFocus() }
+            restoreSearchFocus = false
+        }
+    }
+
     LaunchedEffect(visibleSections) {
         if (visibleSections.none { it.category == selectedCategory }) {
             selectedCategory = visibleSections.firstOrNull()?.category ?: SettingsCategory.APPEARANCE
@@ -472,6 +507,7 @@ fun SettingsScreen(
                         integrationSection = IntegrationSettingsSection.Hub
                         integrationHubReturnSection = IntegrationSettingsSection.Hub
                     }
+                    pendingPlaybackSection = null
                     allowDetailAutofocus = true
                     selectedCategory = section.category
                     pendingContentFocusCategory = section.category
@@ -589,6 +625,16 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm, Alignment.CenterHorizontally),
                             contentPadding = PaddingValues(horizontal = NuvioTheme.spacing.md, vertical = NuvioTheme.spacing.xs)
                         ) {
+                            item(key = "settings_search_tab") {
+                                SettingsTopBarTab(
+                                    title = "Search",
+                                    icon = Icons.Default.Search,
+                                    isSelected = false,
+                                    focusRequester = searchButtonFocus,
+                                    onFocused = { focusedTabCategory = null },
+                                    onClick = { showSettingsSearch = true }
+                                )
+                            }
                             itemsIndexed(
                                 items = visibleSections,
                                 key = { _, section -> section.category }
@@ -674,6 +720,7 @@ fun SettingsScreen(
                                 selectedCategory = animatedCategory,
                                 isEssentialMode = isEssentialMode,
                                 allowDetailAutofocus = allowDetailAutofocus,
+                                initialPlaybackSection = pendingPlaybackSection,
                                 contentFocusRequesters = contentFocusRequesters,
                                 experienceModeViewModel = experienceModeViewModel,
                                 integrationSection = integrationSection,
@@ -708,7 +755,7 @@ fun SettingsScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .width(220.dp)
+                        .width(250.dp)
                         .fillMaxHeight()
                 ) {
                     LazyColumn(
@@ -766,6 +813,19 @@ fun SettingsScreen(
                             },
                         verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)
                     ) {
+                        item(key = "settings_search_row") {
+                            Column {
+                                SettingsRailButton(
+                                    title = "Search settings",
+                                    icon = Icons.Default.Search,
+                                    isSelected = false,
+                                    focusRequester = searchButtonFocus,
+                                    onFocused = { focusedTabCategory = null },
+                                    onClick = { showSettingsSearch = true }
+                                )
+                                SettingsRailDivider()
+                            }
+                        }
                         itemsIndexed(
                             items = visibleSections,
                             key = { _, section -> section.category }
@@ -835,6 +895,7 @@ fun SettingsScreen(
                         selectedCategory = selectedCategory,
                         isEssentialMode = isEssentialMode,
                         allowDetailAutofocus = allowDetailAutofocus,
+                        initialPlaybackSection = pendingPlaybackSection,
                         contentFocusRequesters = contentFocusRequesters,
                         experienceModeViewModel = experienceModeViewModel,
                         integrationSection = integrationSection,
@@ -863,6 +924,14 @@ fun SettingsScreen(
             }
             }
         }
+        if (showSettingsSearch) {
+            SettingsSearchOverlay(
+                sections = visibleSections,
+                isEssentialMode = isEssentialMode,
+                onDismiss = { dismissSettingsSearch() },
+                onOpen = { result -> openSearchResult(result) }
+            )
+        }
     }
 }
 
@@ -871,6 +940,7 @@ private fun SettingsDetailPane(
     selectedCategory: SettingsCategory,
     isEssentialMode: Boolean,
     allowDetailAutofocus: Boolean,
+    initialPlaybackSection: PlaybackSection? = null,
     contentFocusRequesters: Map<SettingsCategory, FocusRequester>,
     experienceModeViewModel: ExperienceModeSettingsViewModel,
     integrationSection: IntegrationSettingsSection,
@@ -944,7 +1014,8 @@ private fun SettingsDetailPane(
                     contentFocusRequesters[SettingsCategory.PLAYBACK]
                 } else {
                     null
-                }
+                },
+                initialSection = initialPlaybackSection
             )
         }
         SettingsCategory.ADVANCED -> if (isEssentialMode) {

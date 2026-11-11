@@ -131,6 +131,11 @@ fun MusicScreen(
         onDispose { view.keepScreenOn = false }
     }
 
+    // Leaving the Music section stops the audio unless "Keep music playing" is on.
+    DisposableEffect(Unit) {
+        onDispose { MusicPlayer.onLeaveMusicScreen() }
+    }
+
     // Leaving Nuvio for the TV launcher (or another app) must not leave audio running.
     // Pause instead of stop so the queue and position survive for the next visit.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -138,7 +143,9 @@ fun MusicScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
                 val current = MusicPlayer.state.value
-                if (current.isPlaying || current.isBuffering) {
+                if (!MusicSettings.keepPlayingWhileBrowsing.value &&
+                    (current.isPlaying || current.isBuffering)
+                ) {
                     MusicPlayer.pause()
                 }
                 MusicPlayer.persistNow()
@@ -472,6 +479,9 @@ fun MusicScreen(
                     MusicPlayer.pause()
                     musicVideo = MusicVideoRequest(video, startPositionMs)
                     showNowPlaying = false
+                },
+                onOpenArtist = { song ->
+                    viewModel.openArtist(song) { showNowPlaying = false }
                 }
             )
         }
@@ -485,6 +495,7 @@ fun MusicScreen(
                 onClose = {
                     musicVideo = null
                     showNowPlaying = true
+                    if (!MusicPlayer.state.value.isPlaying) MusicPlayer.toggle()
                 }
             )
         }

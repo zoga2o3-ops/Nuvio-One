@@ -2,9 +2,15 @@ package com.nuvio.tv.music
 
 import android.graphics.Color as AndroidColor
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +50,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
@@ -95,6 +107,19 @@ internal fun MusicVideoPlayerScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var ended by remember { mutableStateOf(false) }
     val playFocus = remember { FocusRequester() }
+    val rootFocus = remember { FocusRequester() }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsTick by remember { mutableIntStateOf(0) }
+    val showControls = {
+        controlsVisible = true
+        controlsTick++
+    }
+
+    LaunchedEffect(controlsTick, controlsVisible, loading, error, isPlaying) {
+        if (!controlsVisible || loading || error != null || !isPlaying) return@LaunchedEffect
+        delay(3_000L)
+        controlsVisible = false
+    }
 
     BackHandler(onBack = onClose)
 
@@ -190,12 +215,43 @@ internal fun MusicVideoPlayerScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        runCatching { playFocus.requestFocus() }
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) {
+            // A couple of frames: the controls are only attached once the enter animation
+            // starts. Retrying also avoids leaving the remote on the bare surface.
+            repeat(4) {
+                withFrameNanos { }
+                if (runCatching { playFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            }
+        } else {
+            // The buttons leave the composition while hidden, taking the focus with them.
+            // Hand it to the full-screen surface so the next key can bring the controls back.
+            withFrameNanos { }
+            runCatching { rootFocus.requestFocus() }
+        }
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(rootFocus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                // Back belongs to the BackHandler: it leaves the video and resumes the song,
+                // even while the controls are hidden.
+                if (event.key == Key.Back) return@onPreviewKeyEvent false
+                if (event.type == KeyEventType.KeyDown && !controlsVisible) {
+                    // First press only wakes the controls; consuming it stops the same press
+                    // from also toggling play on the focused button behind the overlay.
+                    showControls()
+                    true
+                } else {
+                    if (event.type == KeyEventType.KeyDown) showControls()
+                    false
+                }
+            }
+    ) {
         player?.let { exo ->
             AndroidView(
                 factory = { ctx ->
@@ -212,36 +268,54 @@ internal fun MusicVideoPlayerScreen(
             )
         }
 
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(170.dp)
-                .align(Alignment.TopCenter)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.78f), Color.Transparent)
-                    )
-                )
-        )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(210.dp)
-                .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f))
-                    )
-                )
-        )
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp, vertical = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(),
+            exit = fadeOut()
         ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.78f), Color.Transparent)
+                        )
+                    )
+            )
+        }
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(210.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.86f))
+                        )
+                    )
+            )
+        }
+
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             VideoCircleButton(
                 icon = Icons.AutoMirrored.Filled.ArrowBack,
                 label = "Back to Now Playing",
@@ -274,6 +348,7 @@ internal fun MusicVideoPlayerScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
         }
 
         if (loading) {
@@ -316,9 +391,14 @@ internal fun MusicVideoPlayerScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = controlsVisible,
+            modifier = Modifier.align(Alignment.BottomCenter),
+            enter = slideInVertically { it / 3 } + fadeIn(),
+            exit = slideOutVertically { it / 3 } + fadeOut()
+        ) {
         Column(
             Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 56.dp, vertical = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -398,10 +478,11 @@ internal fun MusicVideoPlayerScreen(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Music stays paused · Back returns to the song",
+                text = "Back resumes the song",
                 color = Color.White.copy(alpha = 0.34f),
                 fontSize = 10.sp
             )
+        }
         }
     }
 }

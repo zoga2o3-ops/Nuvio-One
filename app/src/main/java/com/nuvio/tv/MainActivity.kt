@@ -1587,7 +1587,9 @@ open class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         val music = com.nuvio.tv.music.MusicPlayer.state.value
-        if (music.isPlaying || music.isBuffering) {
+        if (!com.nuvio.tv.music.MusicSettings.keepPlayingWhileBrowsing.value &&
+            (music.isPlaying || music.isBuffering)
+        ) {
             com.nuvio.tv.music.MusicPlayer.pause()
         }
         externalPlaybackTracker.onExternalPlayerCoveredApp()

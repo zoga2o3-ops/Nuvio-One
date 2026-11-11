@@ -41,6 +41,7 @@ object MusicSettings {
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_WIFI_ONLY_DOWNLOADS = "wifi_only_downloads"
     private const val KEY_PREFER_ADDON_SOURCES = "prefer_addon_sources"
+    private const val KEY_KEEP_PLAYING_WHILE_BROWSING = "keep_playing_while_browsing"
 
     private var prefs: SharedPreferences? = null
 
@@ -73,6 +74,13 @@ object MusicSettings {
     private val _preferAddonSources = MutableStateFlow(false)
     val preferAddonSources: StateFlow<Boolean> = _preferAddonSources.asStateFlow()
 
+    /**
+     * Keep the audio playing after leaving the Music section. Off by default, so music
+     * only follows the user when they ask for it. Full-screen video still stops it.
+     */
+    private val _keepPlayingWhileBrowsing = MutableStateFlow(false)
+    val keepPlayingWhileBrowsing: StateFlow<Boolean> = _keepPlayingWhileBrowsing.asStateFlow()
+
     @Synchronized
     fun init(context: Context) {
         if (prefs != null) return
@@ -94,6 +102,7 @@ object MusicSettings {
         }.getOrDefault(MusicAudioQuality.HIGH)
         _wifiOnlyDownloads.value = store.getBoolean(KEY_WIFI_ONLY_DOWNLOADS, true)
         _preferAddonSources.value = store.getBoolean(KEY_PREFER_ADDON_SOURCES, false)
+        _keepPlayingWhileBrowsing.value = store.getBoolean(KEY_KEEP_PLAYING_WHILE_BROWSING, false)
     }
 
     fun setAudioQuality(value: MusicAudioQuality) {
@@ -141,6 +150,11 @@ object MusicSettings {
     fun setPreferAddonSources(value: Boolean) {
         _preferAddonSources.value = value
         edit { putBoolean(KEY_PREFER_ADDON_SOURCES, value) }
+    }
+
+    fun setKeepPlayingWhileBrowsing(value: Boolean) {
+        _keepPlayingWhileBrowsing.value = value
+        edit { putBoolean(KEY_KEEP_PLAYING_WHILE_BROWSING, value) }
     }
 
     private inline fun edit(block: SharedPreferences.Editor.() -> Unit) {

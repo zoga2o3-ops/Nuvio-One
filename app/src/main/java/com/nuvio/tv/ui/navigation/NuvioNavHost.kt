@@ -124,6 +124,22 @@ private fun PlaybackNavHost(
 ) {
     val playbackAvailability = LocalPlaybackAvailability.current
     val context = LocalContext.current
+
+    // Music follows the user only when they asked for it, and never plays over a
+    // full-screen video. Both checks are cheap and idempotent.
+    val musicRouteEntry by navController.currentBackStackEntryAsState()
+    val musicRoute = musicRouteEntry?.destination?.route
+    androidx.compose.runtime.LaunchedEffect(musicRoute) {
+        if (musicRoute == Screen.Player.route) {
+            com.nuvio.tv.music.MusicPlayer.pauseForVideo()
+        }
+    }
+    val liveTvFullscreenForMusic by com.nuvio.tv.livetv.ui.LiveTvFullscreen.active.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(liveTvFullscreenForMusic) {
+        if (liveTvFullscreenForMusic) {
+            com.nuvio.tv.music.MusicPlayer.pauseForVideo()
+        }
+    }
     fun isStreamToPlayer(from: String, to: String): Boolean {
         return from.startsWith("stream/") && to.startsWith("player/")
     }

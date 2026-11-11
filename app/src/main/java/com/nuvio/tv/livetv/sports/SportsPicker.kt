@@ -153,7 +153,7 @@ fun SportsPicker(viewModel: SportsViewModel, onClose: () -> Unit) {
                 SportsAction("‹  Sports", onClick = onClose)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    LiveText("Follow Teams & Leagues", size = 26.sp, weight = FontWeight.Black)
+                    LiveText("Follow Teams & Leagues", size = 24.sp, weight = FontWeight.Black, maxLines = 2)
                     LiveText(
                         "Teams: their games, reminders and scoring alerts. Leagues: their schedule on My Sports.",
                         color = colors.TextSecondary, size = 13.sp
