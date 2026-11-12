@@ -10,7 +10,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import android.graphics.RectF
 import com.nuvio.tv.ui.screens.detail.formatPlaybackTime
 import com.nuvio.tv.ui.theme.NuvioMotion
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 import com.nuvio.tv.ui.theme.NuvioTheme
 import com.nuvio.tv.ui.theme.accentBrush
@@ -99,6 +100,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -117,8 +119,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -248,6 +254,11 @@ fun PlayerScreen(
     youtubeChannelImage: String? = null,
     /** YouTube fork: the channel name, shown above the video title in the controls. */
     youtubeChannelName: String? = null,
+    /** YouTube fork: the video's view count, upload date and like/dislike counts. */
+    youtubeViewCount: String? = null,
+    youtubePublishedDate: String? = null,
+    youtubeLikeCount: String? = null,
+    youtubeDislikeCount: String? = null,
     /** YouTube fork: the live chat button (null when the stream has no chat), and whether chat is showing. */
     onYouTubeChat: (() -> Unit)? = null,
     youtubeChatOn: Boolean = false,
@@ -469,7 +480,6 @@ fun PlayerScreen(
                 viewModel.hideControls()
             } else if (uiState.showControls) {
                 restoreStreamInfoFocus = true
-                viewModel.onEvent(PlayerEvent.OnShowMoreDialog)
             }
             hideControlsAfterStreamInfo = false
         } else if (uiState.showPauseOverlay) {
@@ -702,10 +712,8 @@ fun PlayerScreen(
             // Wait for AnimatedVisibility animation to complete before focusing play/pause button
             kotlinx.coroutines.delay(250)
             try {
-                // YouTube: land on the action row above the seek bar, so its panel and
-                // channel buttons are always reachable with Up/Down.
-                if (showYouTubeButton) youtubeActionsFocusRequester.requestFocus()
-                else playPauseFocusRequester.requestFocus()
+                // Land on Play. Up from here reaches the YouTube action row when it is present.
+                playPauseFocusRequester.requestFocus()
             } catch (e: Exception) {
                 // Focus requester may not be ready yet
             }
@@ -738,10 +746,15 @@ fun PlayerScreen(
             subtitleTimingConsumeNextConfirmKeyUp = false
         }
     }
-    LaunchedEffect(uiState.showStreamInfoOverlay, uiState.showControls, uiState.showMoreDialog) {
-        if (!uiState.showStreamInfoOverlay && uiState.showControls && uiState.showMoreDialog && restoreStreamInfoFocus) {
+    LaunchedEffect(uiState.showStreamInfoOverlay, uiState.showControls, restoreStreamInfoFocus) {
+        if (uiState.showStreamInfoOverlay) return@LaunchedEffect
+        if (!uiState.showControls) {
+            restoreStreamInfoFocus = false
+            return@LaunchedEffect
+        }
+        if (restoreStreamInfoFocus) {
             delay(250)
-            runCatching { streamInfoFocusRequester.requestFocus() }
+            runCatching { playPauseFocusRequester.requestFocus() }
             restoreStreamInfoFocus = false
         }
     }
@@ -1129,7 +1142,6 @@ fun PlayerScreen(
                                     viewModel.hideControls()
                                 } else if (uiState.showControls) {
                                     restoreStreamInfoFocus = true
-                                    viewModel.onEvent(PlayerEvent.OnShowMoreDialog)
                                 }
                                 hideControlsAfterStreamInfo = false
                             } else {
@@ -1827,6 +1839,10 @@ fun PlayerScreen(
                 onYouTubeChannel = onYouTubeChannel,
                 youtubeChannelImage = youtubeChannelImage,
                 youtubeChannelName = youtubeChannelName,
+                youtubeViewCount = youtubeViewCount,
+                youtubePublishedDate = youtubePublishedDate,
+                youtubeLikeCount = youtubeLikeCount,
+                youtubeDislikeCount = youtubeDislikeCount,
                 onYouTubeChat = onYouTubeChat,
                 youtubeChatOn = youtubeChatOn,
                 onYouTubeLoop = onYouTubeLoop,
@@ -3061,6 +3077,10 @@ private fun PlayerControlsOverlay(
     onYouTubeChannel: (() -> Unit)?,
     youtubeChannelImage: String?,
     youtubeChannelName: String?,
+    youtubeViewCount: String? = null,
+    youtubePublishedDate: String? = null,
+    youtubeLikeCount: String? = null,
+    youtubeDislikeCount: String? = null,
     onYouTubeChat: (() -> Unit)?,
     youtubeChatOn: Boolean,
     onYouTubeLoop: (() -> Unit)?,
@@ -3107,6 +3127,12 @@ private fun PlayerControlsOverlay(
     val customAspectPainter = rememberRawSvgPainter(R.raw.ic_player_aspect_ratio)
     val customEpisodesPainter = rememberRawSvgPainter(R.raw.ic_player_episodes)
     var showEngineSwitchConfirm by remember { mutableStateOf(false) }
+    // Long-press Speed snaps back to 1x; long-pressing again restores the last chosen speed.
+    var lastNonNormalSpeed by remember { mutableFloatStateOf(1.25f) }
+    LaunchedEffect(uiState.playbackSpeed) {
+        val speed = uiState.playbackSpeed
+        if (speed > 0f && abs(speed - 1f) > 0.01f) lastNonNormalSpeed = speed
+    }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val isLivePlayback = playbackTimeline.isLive || youtubeLive
     val progressUpTarget = when {
@@ -3177,6 +3203,21 @@ private fun PlayerControlsOverlay(
                 exit = fadeOut(animationSpec = tween(NuvioMotion.tokens.durations.fast))
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    val playbackInfo = rememberPlaybackInfoText(viewModel, uiState)
+                    playbackInfo?.let { info ->
+                        Text(
+                            text = info,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.62f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = NuvioTheme.spacing.xs)
+                        )
+                    }
+
                     val displayName = if (uiState.currentSeason != null && uiState.currentEpisode != null) {
                         uiState.contentName ?: uiState.title
                     } else {
@@ -3186,8 +3227,8 @@ private fun PlayerControlsOverlay(
                     youtubeChannelName?.takeIf { it.isNotBlank() }?.let { channelName ->
                         Text(
                             text = channelName,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Color.White.copy(alpha = 0.9f),
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -3198,11 +3239,34 @@ private fun PlayerControlsOverlay(
                     Text(
                         text = displayName,
                         modifier = Modifier.reportRightEdge("name", titleRights),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = if (showYouTubeButton) {
+                            MaterialTheme.typography.titleLarge
+                        } else {
+                            MaterialTheme.typography.headlineMedium
+                        },
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    if (showYouTubeButton) {
+                        val videoMeta = buildList {
+                            youtubeViewCount?.takeIf { it.isNotBlank() }?.let(::add)
+                            youtubePublishedDate?.takeIf { it.isNotBlank() }?.let(::add)
+                            youtubeLikeCount?.takeIf { it.isNotBlank() }?.let { add("$it likes") }
+                            youtubeDislikeCount?.takeIf { it.isNotBlank() }?.let { add("$it dislikes") }
+                        }
+                        if (videoMeta.isNotEmpty()) {
+                            Text(
+                                text = videoMeta.joinToString("  •  "),
+                                modifier = Modifier.reportRightEdge("videoMeta", titleRights),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.68f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
 
                     if (uiState.currentSeason != null && uiState.currentEpisode != null) {
                         val seasonEpisodeCode = stringResource(
@@ -3444,6 +3508,11 @@ private fun PlayerControlsOverlay(
                         contentDescription = stringResource(R.string.cd_playback_speed),
                         onClick = {
                             onShowSpeedDialog()
+                        },
+                        onLongClick = {
+                            val current = uiState.playbackSpeed
+                            val target = if (abs(current - 1f) < 0.01f) lastNonNormalSpeed else 1f
+                            viewModel.onEvent(PlayerEvent.OnSetPlaybackSpeed(target))
                         },
                         upFocusRequester = progressUpTarget,
                         onDownKey = onMainDown,
@@ -3824,6 +3893,7 @@ private fun ControlButton(
     iconPainter: Painter? = null,
     contentDescription: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     focusRequester: FocusRequester? = null,
     upFocusRequester: FocusRequester? = null,
     downFocusRequester: FocusRequester? = null,
@@ -3835,6 +3905,9 @@ private fun ControlButton(
     avatarUrl: String? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var longPressJob by remember { mutableStateOf<Job?>(null) }
+    var longPressFired by remember { mutableStateOf(false) }
 
     IconButton(
         onClick = onClick,
@@ -3860,6 +3933,42 @@ private fun ControlButton(
                 }
             )
             .onPreviewKeyEvent { keyEvent ->
+                if (enabled && onLongClick != null) {
+                    val confirm = keyEvent.key == Key.DirectionCenter ||
+                        keyEvent.key == Key.Enter ||
+                        keyEvent.key == Key.Spacebar
+                    if (confirm) {
+                        when (keyEvent.type) {
+                            KeyEventType.KeyDown -> {
+                                if (keyEvent.nativeKeyEvent.flags and KeyEvent.FLAG_LONG_PRESS != 0) {
+                                    longPressFired = true
+                                    onLongClick.invoke()
+                                    return@onPreviewKeyEvent true
+                                }
+                                if (keyEvent.nativeKeyEvent.repeatCount == 0) {
+                                    longPressFired = false
+                                    longPressJob?.cancel()
+                                    longPressJob = scope.launch {
+                                        delay(550)
+                                        longPressFired = true
+                                        onLongClick.invoke()
+                                    }
+                                }
+                                return@onPreviewKeyEvent false
+                            }
+                            KeyEventType.KeyUp -> {
+                                longPressJob?.cancel()
+                                longPressJob = null
+                                if (longPressFired) {
+                                    longPressFired = false
+                                    return@onPreviewKeyEvent true
+                                }
+                                return@onPreviewKeyEvent false
+                            }
+                            else -> {}
+                        }
+                    }
+                }
                 if (
                     upFocusRequester != null &&
                     keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&

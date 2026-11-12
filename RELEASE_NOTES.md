@@ -1,68 +1,38 @@
-# Nuvio One 1.1.0-beta.11.2
+# Nuvio One 1.1.0-beta.13.4
 
-> Nuvio + IPTV + 1Tube is now Nuvio One.
+## Playback stability
 
-## Music
+- Fixed OneTube freezing and stutter caused by YouTube supplying 150+ auto-translated subtitle tracks per video. OneTube now loads only the video's own captions, your preferred language, and English. In testing, a 158-track video now loads 3.
+- Brought over the latest SmartTube playback-engine fixes: thread-pool handling, fallback URL validation, and live SABR handling.
+- Feeds refresh when you return to OneTube after 5 minutes.
 
-Nuvio One now includes a full Music section:
+## OneTube player
 
-- **YouTube Music** - sign in for playlists, liked songs and a personalised home. Likes sync across devices.
-- **Spotify playlists** - import a public playlist by pasting its link.
-- **Navidrome and WebDAV** - connect your own music server and stream your collection.
-- **Local music** - play music from the TV, a USB drive or a network share.
-- **Downloads and offline playback** - download tracks and keep listening without a connection.
-- **Synced lyrics and music videos** - follow the lyrics, then jump between the song and its video.
-- **Playlists, queue, radio and shuffle** - build a collection and control what plays next.
-- **Explore and search** - browse moods and genres, or find any track.
-- **Last.fm scrobbling** and **Party mode** for listening together.
-- **Remote-first layout** - top tabs, Up Next and straightforward Back navigation.
+- Smaller video title with channel name, views, upload date, likes and dislikes.
+- Resolution, codec and playback-speed readout, for example `1440x1080 · VP9 · 1.25x`.
+- Play receives focus when a video starts and when the video-info panel closes; Up reaches the action row.
+- Long-press Speed switches between 1x and your last speed.
+- Long card titles now scroll.
+- Primary YouTube actions now sit in the row above the progress bar.
 
-## OneTube and YouTube
+## Navigation
 
-- Fixed YouTube sign-in.
-- The OneTube header now stays visible while a tab loads, and only collapses when you scroll down. Switching tabs no longer hides it.
-- Removed the duplicate tab name next to the clock.
-- Fixed tab navigation: Down from a tab lands on the first card, including the Gaming tab's first row.
-- Improved focus across tabs, cards and the controls when returning from playback.
-- Search now opens and closes cleanly and returns focus to the right place.
-- The channel name is clearly shown above the video title.
-- The YouTube action buttons above the seek bar are reachable with Up.
-- Related videos now include CHANNEL cards, like the home tabs.
-- The Aspect Ratio button is available for Shorts and portrait videos through the More menu.
-- Seek previews now use storyboards, including older videos that only have the legacy preview.
-- The long-press menu now shows only the actions that are actually available.
-- Added the bug-report shortcut to the player.
-- Updated the clock setting description to match the OneTube header.
-- OneTube tabs can still be turned on or off and reordered in Settings.
+- Back at any top-level screen now shows "Press back again to exit"; the second press closes the app.
+- Back no longer reopens the sidebar or jumps to the section selected at startup.
+- Down from a tab returns to the first card, even after scrolling right.
+- The Channels list collapses after selecting a channel; Back restores it.
+- Search now shows channel cards and starts new pages at the top.
+- Added playlist deletion, "Not interested", and long-press card menus for signed-in OneTube accounts.
 
-## Continue Watching
+## Audio
 
-- Episodes now show a **# EP left** badge instead of a generic progress badge.
-- The setting is under **Settings -> Layout -> Continue Watching -> Show episodes left**.
-- The count only includes episodes after the latest watched episode.
-- Added **Mark as watched** to the Continue Watching menu.
-- Fixed the back-navigation and progress-threshold issues around binge watching.
+- Added **OneTube → Settings → Playback → Volume offset**: -12 dB to +6 dB, so OneTube can be matched to the rest of the app. Only OneTube playback is affected.
 
-## Player and subtitles
+## Plugins
 
-- Added a VLC playback option for streams that struggle in the default player.
-- Playback now ends cleanly on more devices when the video reaches the end, so watched progress, scrobbling and next episode still run.
-- Improved rendering for styled subtitles.
-- Playback now stays on the same player when a stream restarts.
-- Faster startup and source loading, with better memory use on lower-RAM TVs.
-- Fixed focus restoration when returning from add-ons and plugins.
-- Kept add-on episode numbers when the add-on provides them.
-- Streams from providers and plugins are grouped more clearly.
+- Improved plugin-list reliability when enabling a plugin while a repository is refreshing.
 
-## Live TV
+## Updates
 
-- New **Mute Preview Sound** setting under **Settings -> Live TV -> Guide Layout**. The guide preview stays silent by default; full-screen playback still has sound.
-- Add-on channel sources now sync with your playlists and logins.
-- The backup-channel list is smaller and opens right above its button.
-- Reordered channels stay beside their neighbours instead of dropping to the bottom.
-- The info bar while flipping channels is the same size as the normal one.
-
-## Good to know
-
-- Music works without an account for public browsing. Sign in for personalised YouTube Music shelves and likes.
-- Updating the app keeps your existing OneTube setup, CNCverse/add-on playlists and Live TV setup on your device.
+- New centered update card with Download now, Later, and live download progress.
+- Fixed the progress bar staying at 0% while the update was already downloading in the background.

@@ -310,11 +310,11 @@ fun OnDemandHomeScreen(
     // went to the page underneath (Home) on this one. The layouts' own Back handling (scroll a
     // row back to its start, close a full screen trailer) and any open dialog still come first,
     // and with the menu open Back is left to the app (exit).
-    val openSidebar = com.nuvio.tv.LocalOpenSidebar.current
+    val requestAppExit = com.nuvio.tv.LocalRequestAppExit.current
     val sidebarOpen = com.nuvio.tv.LocalSidebarExpanded.current
     val topFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val topContentFocus = com.nuvio.tv.LocalContentFocusRequester.current
-    androidx.activity.compose.BackHandler(enabled = !sidebarOpen) { openSidebar() }
+    androidx.activity.compose.BackHandler(enabled = !sidebarOpen) { requestAppExit() }
 
     androidx.compose.runtime.CompositionLocalProvider(com.nuvio.tv.core.player.LocalTrailerPlayerPool provides ownPool) {
     Box(

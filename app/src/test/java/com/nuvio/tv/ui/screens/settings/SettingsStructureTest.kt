@@ -21,6 +21,7 @@ class SettingsStructureTest {
                 PlaybackSection.AUDIO,
                 PlaybackSection.SUBTITLES,
                 PlaybackSection.VIDEO,
+                PlaybackSection.CAPABILITIES,
                 PlaybackSection.BUFFER_NETWORK,
                 PlaybackSection.P2P
             ),

@@ -30,6 +30,9 @@ import kotlinx.coroutines.launch
 
 internal const val AUDIO_AMPLIFICATION_MIN_DB = 0
 internal const val AUDIO_AMPLIFICATION_MAX_DB = 10
+/** The gain processor also accepts the OneTube offset, which can go below normal. */
+internal const val AUDIO_GAIN_MIN_DB = -12
+internal const val AUDIO_GAIN_MAX_DB = 16
 internal const val CENTER_MIX_LEVEL_MIN_DB = -10
 internal const val CENTER_MIX_LEVEL_MAX_DB = 30
 internal const val AUDIO_DELAY_MIN_MS = com.nuvio.tv.domain.model.AUDIO_DELAY_MIN_MS
@@ -229,11 +232,25 @@ internal fun PlayerRuntimeController.skipInterval(interval: SkipInterval): Boole
     return true
 }
 
+internal fun PlayerRuntimeController.effectiveAudioGainDb(baseDb: Int): Int {
+    val isOneTube = contentType?.equals("youtube", ignoreCase = true) == true ||
+        (contentId?.let { com.nuvio.tv.youtube.YouTubeProgress.isYouTubeId(it) } == true)
+    val offset = if (isOneTube) com.nuvio.tv.youtube.YouTubeSettings.volumeOffsetDb(context) else 0
+    return (baseDb + offset).coerceIn(AUDIO_GAIN_MIN_DB, AUDIO_GAIN_MAX_DB)
+}
+
 internal fun PlayerRuntimeController.applyAudioAmplification(db: Int) {
     val clampedDb = db.coerceIn(AUDIO_AMPLIFICATION_MIN_DB, AUDIO_AMPLIFICATION_MAX_DB)
+    val effectiveDb = effectiveAudioGainDb(clampedDb)
+    if (effectiveDb != clampedDb) {
+        android.util.Log.d(
+            PlayerRuntimeController.TAG,
+            "AUDIO_GAIN base=$clampedDb effective=$effectiveDb offset=${effectiveDb - clampedDb}"
+        )
+    }
     val isAudioAmplificationAvailable = isUsingMpvEngine() || _exoPlayer != null
     val wasActive = gainAudioProcessor.isGainEnabled()
-    gainAudioProcessor.setGainDb(if (isAudioAmplificationAvailable) clampedDb else AUDIO_AMPLIFICATION_MIN_DB)
+    gainAudioProcessor.setGainDb(if (isAudioAmplificationAvailable) effectiveDb else AUDIO_AMPLIFICATION_MIN_DB)
     val isActiveNow = gainAudioProcessor.isGainEnabled()
 
     if (wasActive != isActiveNow && !isUsingMpvEngine()) {
@@ -244,7 +261,7 @@ internal fun PlayerRuntimeController.applyAudioAmplification(db: Int) {
     }
 
     if (isUsingMpvEngine()) {
-        mpvView?.applyAudioAmplificationDb(clampedDb)
+        mpvView?.applyAudioAmplificationDb(effectiveDb)
     }
     _uiState.update {
         it.copy(
@@ -287,7 +304,7 @@ internal fun PlayerRuntimeController.updateAudioControlAvailability(
     val clampedDb = _uiState.value.audioAmplificationDb
         .coerceIn(AUDIO_AMPLIFICATION_MIN_DB, AUDIO_AMPLIFICATION_MAX_DB)
     gainAudioProcessor.setGainDb(
-        if (isAudioAmplificationAvailable) clampedDb else AUDIO_AMPLIFICATION_MIN_DB
+        if (isAudioAmplificationAvailable) effectiveAudioGainDb(clampedDb) else AUDIO_AMPLIFICATION_MIN_DB
     )
     _uiState.update { state ->
         state.copy(

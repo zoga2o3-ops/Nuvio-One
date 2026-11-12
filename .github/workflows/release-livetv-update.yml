@@ -1,4 +1,4 @@
-name: Release Nuvio + IPTV update
+name: Release Nuvio One update
 
 # Publishes an update of your fork between Nuvio releases, for example after you
 # change Live TV. Run it from the Actions tab. It picks the next version number
@@ -159,9 +159,19 @@ jobs:
           mkdir -p out
           for f in $(find app/build/outputs/apk/full/release -name "*.apk"); do
             name=$(basename "$f" .apk)
-            cp "$f" "out/NuvioPlusIPTV-$VERSION-${name#app-full-}.apk"
+            cp "$f" "out/NuvioOne-$VERSION-${name#app-full-}.apk"
           done
           ls -la out
+
+      - name: Choose release notes
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > release_body.md
+          else
+            cp RELEASE_NOTES.md release_body.md
+          fi
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -172,5 +182,4 @@ jobs:
           prerelease: true
           files: |
             out/*.apk
-          body: |
-            ${{ inputs.notes }}
+          body_path: release_body.md

@@ -705,7 +705,7 @@ private fun LiveTvGuideScreenBody(
 
     // Back: leave program browsing, then leave a group for All channels, then open Nuvio's menu.
     val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
-    val openSidebar = com.nuvio.tv.LocalOpenSidebar.current
+    val requestAppExit = com.nuvio.tv.LocalRequestAppExit.current
     // Right from Nuvio's menu back into Live TV: back to the group you left from. Left to
     // itself, the highlight went to whatever tile sat level with the menu item (often several
     // groups up, or the search button at the top of the list).
@@ -742,7 +742,7 @@ private fun LiveTvGuideScreenBody(
             settings.browseByChannelName && !nameFocus && !groupsOpen -> nameFocus = true
             // Back from the channels: the group list, with the group you're in highlighted.
             !groupsOpen -> focusGroups()
-            else -> openSidebar()
+            else -> requestAppExit()
         }
     }
 

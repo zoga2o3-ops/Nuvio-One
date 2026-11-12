@@ -237,6 +237,8 @@ val LocalSidebarExpanded = compositionLocalOf { false }
 
 /** Opens Nuvio's side menu from a screen (used by Live TV's back button). */
 val LocalOpenSidebar = compositionLocalOf<() -> Unit> { {} }
+/** Shows the shared "press back again to exit" prompt at the app root. */
+val LocalRequestAppExit = compositionLocalOf<() -> Unit> { {} }
 val LocalContentFocusRequester = compositionLocalOf { FocusRequester.Default }
 
 data class SplashBackground(
@@ -1281,27 +1283,7 @@ open class MainActivity : ComponentActivity() {
                     }?.route
                     val selectedDrawerItem = drawerItems.firstOrNull { it.route == selectedDrawerRoute } ?: drawerItems.first()
 
-                    val confirmExitEnabled by profileManager.confirmExitEnabled.collectAsState()
-                    var backPressedOnce by remember { mutableStateOf(false) }
-                    LaunchedEffect(backPressedOnce) {
-                        if (backPressedOnce) {
-                            delay(2000L)
-                            backPressedOnce = false
-                        }
-                    }
-                    val handleExitApp: () -> Unit = {
-                        if (!confirmExitEnabled || backPressedOnce) {
-                            finishAffinity()
-                            finishAndRemoveTask()
-                            if (confirmExitEnabled) {
-                                // Kill the process to free RAM on low-memory devices.
-                                android.os.Process.killProcess(android.os.Process.myPid())
-                            }
-                        } else {
-                            backPressedOnce = true
-                            Toast.makeText(this@MainActivity, getString(R.string.confirm_exit_toast), Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                    val handleExitApp: () -> Unit = { this@MainActivity.handleAppExit() }
 
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
                     val updateState by updateViewModel.uiState.collectAsState()
@@ -1363,6 +1345,7 @@ open class MainActivity : ComponentActivity() {
                                         onToggleLiveTvGroup = { liveTvGroupOpen = !liveTvGroupOpen },
                                         onSidebarExpandedChange = { expanded ->
                                             sidebarOpenNow = expanded
+                                            sidebarOpenForBack = expanded
                                             // Closed: ready for next time (unchanged when opening).
                                             if (!expanded) liveTvGroupOpen = false
                                         }
@@ -1388,6 +1371,7 @@ open class MainActivity : ComponentActivity() {
                                         onToggleLiveTvGroup = { liveTvGroupOpen = !liveTvGroupOpen },
                                         onSidebarExpandedChange = { expanded ->
                                             sidebarOpenNow = expanded
+                                            sidebarOpenForBack = expanded
                                             // Closed: ready for next time (unchanged when opening).
                                             if (!expanded) liveTvGroupOpen = false
                                         }
@@ -1542,6 +1526,34 @@ open class MainActivity : ComponentActivity() {
     // and then immediately exiting the app).
     val longPressBackHeld = mutableStateOf(false)
 
+    /** Sidebar state for the Activity-level Back handler, kept in step by the scaffolds. */
+    @Volatile private var sidebarOpenForBack = false
+    private var confirmExitPressedOnce = false
+    private val confirmExitHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val confirmExitReset = Runnable { confirmExitPressedOnce = false }
+
+    /**
+     * One place for the exit prompt. The Compose drawer's own Back handling was closing the
+     * sidebar before this could run, so Back is intercepted in [dispatchKeyEvent] while the
+     * sidebar is open.
+     */
+    private fun handleAppExit() {
+        val confirm = runCatching { profileManager.confirmExitEnabled.value }.getOrDefault(true)
+        if (!confirm || confirmExitPressedOnce) {
+            finishAffinity()
+            finishAndRemoveTask()
+            if (confirm) {
+                // Kill the process to free RAM on low-memory devices.
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
+        } else {
+            confirmExitPressedOnce = true
+            Toast.makeText(this, getString(R.string.confirm_exit_toast), Toast.LENGTH_SHORT).show()
+            confirmExitHandler.removeCallbacks(confirmExitReset)
+            confirmExitHandler.postDelayed(confirmExitReset, 2000L)
+        }
+    }
+
     private val ambientIdleController = AmbientIdleController()
 
     override fun onUserInteraction() {
@@ -1557,6 +1569,22 @@ open class MainActivity : ComponentActivity() {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (longPressBackHeld.value) {
                 if (event.action == KeyEvent.ACTION_UP) longPressBackHeld.value = false
+                return true
+            }
+            // Once the prompt is showing, the next Back exits even if the menu was closed
+            // by the prompt itself.
+            if (confirmExitPressedOnce) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    handleAppExit()
+                }
+                return true
+            }
+            // While the menu is open, Back is the exit prompt. Handling it here keeps the
+            // drawer's own Back handler from closing the sidebar first.
+            if (sidebarOpenForBack) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    handleAppExit()
+                }
                 return true
             }
         }
@@ -1688,8 +1716,8 @@ private fun LegacySidebarScaffold(
             com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
             return@BackHandler
         }
-        pendingSidebarFocusRequest = true
-        drawerState.setValue(DrawerValue.Open)
+        // Root page: Back is the app-exit prompt, not another way to open the menu.
+        onExitApp()
     }
 
     BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Open) {
@@ -1772,6 +1800,23 @@ private fun LegacySidebarScaffold(
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.type == KeyEventType.KeyDown) {
                                 legacyDrawerInteractionVersion++
+                            }
+                            if (keyEvent.key == Key.Back) {
+                                if (keyEvent.type == KeyEventType.KeyUp) {
+                                    if (longPressBackHeld.value) longPressBackHeld.value = false
+                                    // Consume the release too: otherwise the drawer's own
+                                    // handler still sees it and closes the menu.
+                                    if (drawerValue == DrawerValue.Open) return@onPreviewKeyEvent true
+                                }
+                                if (keyEvent.type == KeyEventType.KeyDown && drawerValue == DrawerValue.Open) {
+                                    // The menu is open: Back belongs to the exit confirmation, not
+                                    // to closing the drawer. Closing here made the second Back land
+                                    // on the startup page again.
+                                    if (!longPressBackHeld.value) {
+                                        if (liveTvListShowing) onToggleLiveTvGroup() else onExitApp()
+                                    }
+                                    return@onPreviewKeyEvent true
+                                }
                             }
                             val closeKey = if (isRtl) Key.DirectionLeft else Key.DirectionRight
                             if (keyEvent.key == closeKey && keyEvent.type == KeyEventType.KeyDown) {
@@ -2014,6 +2059,7 @@ private fun LegacySidebarScaffold(
             CompositionLocalProvider(
                 LocalSidebarExpanded provides (drawerState.currentValue == DrawerValue.Open),
                 LocalContentFocusRequester provides contentFocusRequester,
+                LocalRequestAppExit provides onExitApp,
                 LocalOpenSidebar provides {
                     pendingSidebarFocusRequest = true
                     drawerState.setValue(DrawerValue.Open)
@@ -2259,9 +2305,8 @@ private fun ModernSidebarScaffold(
             com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
             return@BackHandler
         }
-        isSidebarExpanded = true
-        sidebarCollapsePending = false
-        pendingSidebarFocusRequest = true
+        // Root page: Back is the app-exit prompt, not another way to open the menu.
+        onExitApp()
     }
 
     BackHandler(enabled = currentRoute in rootRoutes && isSidebarExpanded && !sidebarCollapsePending) {
@@ -2413,6 +2458,18 @@ private fun ModernSidebarScaffold(
                     if (keyEvent.type == KeyEventType.KeyUp) longPressBackHeld.value = false
                     return@onPreviewKeyEvent true
                 }
+                // The menu is open: Back belongs to the exit confirmation, not to closing
+                // the sidebar. Letting the drawer close here made the second Back return
+                // to the startup page instead of offering to exit.
+                if (keyEvent.key == Key.Back && isSidebarExpanded) {
+                    // Consume the release as well; otherwise the sidebar's own handler
+                    // still sees it and closes the menu after the prompt is shown.
+                    if (keyEvent.type == KeyEventType.KeyUp) return@onPreviewKeyEvent true
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        if (liveTvListShowing) onToggleLiveTvGroup() else onExitApp()
+                        return@onPreviewKeyEvent true
+                    }
+                }
                 false
             }
     ) {
@@ -2497,6 +2554,7 @@ private fun ModernSidebarScaffold(
             CompositionLocalProvider(
                 LocalSidebarExpanded provides isSidebarExpanded,
                 LocalContentFocusRequester provides contentFocusRequester,
+                LocalRequestAppExit provides onExitApp,
                 LocalOpenSidebar provides {
                     isSidebarExpanded = true
                     sidebarCollapsePending = false

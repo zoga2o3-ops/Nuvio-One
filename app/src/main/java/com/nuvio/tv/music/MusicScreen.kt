@@ -76,6 +76,7 @@ import com.music.bitchord.data.model.ShelfItem
 import com.music.bitchord.data.model.Song
 import com.nuvio.tv.youtube.YouTubeAccountViewModel
 import com.nuvio.tv.LocalOpenSidebar
+import com.nuvio.tv.LocalRequestAppExit
 import com.nuvio.tv.LocalSidebarExpanded
 
 /** One density scale for the whole Music section. */
@@ -118,6 +119,7 @@ fun MusicScreen(
     var openPlaylistId by remember { mutableStateOf<String?>(null) }
     val topNavFocus = remember { FocusRequester() }
     val openNuvioSidebar = LocalOpenSidebar.current
+    val requestAppExit = LocalRequestAppExit.current
     val sidebarExpanded = LocalSidebarExpanded.current
     val openPlaylist = playlists.firstOrNull { it.id == openPlaylistId }
     val view = LocalView.current
@@ -247,7 +249,7 @@ fun MusicScreen(
     // instead of letting the navigation stack pop back to Home. Overlays and the open menu
     // keep their own Back handling.
     BackHandler(enabled = !musicOverlayOpen && !sidebarExpanded) {
-        openNuvioSidebar()
+        requestAppExit()
     }
 
     MusicTextTheme {
