@@ -14,7 +14,7 @@ If you turn on Setup Sync, the app stores your Live TV setup (playlist and EPG d
 
 ## Google Drive (optional)
 
-If you connect Google Drive, the app stores a backup of the Live TV setup in your own Google Drive app data folder, and Music uploads go to a folder the app creates in your Drive. Google OAuth tokens are kept on the device. You can disconnect Google Drive at any time; the files remain in your Drive until you delete them.
+If you connect Google Drive, the app stores a backup of the Live TV setup in a file the app creates in your own Google Drive, and Music uploads go to a folder the app creates in your Drive. Google OAuth tokens are kept on the device. You can disconnect Google Drive at any time; the files remain in your Drive until you delete them.
 
 ## Diagnostics
 
