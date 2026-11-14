@@ -111,9 +111,10 @@ internal data class CwMetaSummary(
      * Regular episodes after the latest episode the user has watched, or null when the addon
      * has no episode list. Earlier unwatched episodes are ignored: someone who jumped to a
      * later episode should see what is left from that point, not the whole back catalogue.
+     * Only episodes that have actually aired are counted; future episodes are not "left".
      */
     fun remainingEpisodeCount(watched: Set<Pair<Int, Int>>): Int? {
-        val episodes = videos.mapNotNull { video ->
+        val episodes = watchableEpisodes().mapNotNull { video ->
             val season = video.season
             val episode = video.episode
             if (season != null && season > 0 && episode != null) season to episode else null

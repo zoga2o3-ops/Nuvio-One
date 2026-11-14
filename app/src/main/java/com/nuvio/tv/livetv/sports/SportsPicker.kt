@@ -140,7 +140,7 @@ fun SportsPicker(viewModel: SportsViewModel, onClose: () -> Unit) {
         fun teamLeague(l: League) = l.espnPath != null && l.kind == LeagueKind.TEAMS && !l.national
         val searchIn = (viewModel.repo.activeLeagues().filter(::teamLeague) +
             SportsCatalog.ordered(settings).filter(::teamLeague) +
-            SportsCatalog.leagues.filter { it.national }.distinctBy { it.nationalGroup } + SportsCatalog.extra).distinctBy { it.id }
+            SportsCatalog.all.filter { it.national }.distinctBy { it.nationalGroup }).distinctBy { it.id }
         // Filtering and duplicate removal stay on a worker after teams() returns from I/O.
         teamPickerSearchResults(searchIn, q, viewModel::teams).collect { value = it }
     }

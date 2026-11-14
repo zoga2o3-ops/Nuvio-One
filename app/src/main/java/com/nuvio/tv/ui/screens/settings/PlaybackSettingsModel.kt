@@ -81,5 +81,6 @@ internal enum class PlaybackDialog {
     MPV_HARDWARE_DECODE_MODE,
     P2P_CONSENT,
     TORRENT_PROFILE,
-    TORRENT_CACHE_SIZE
+    TORRENT_CACHE_SIZE,
+    PLAYER_BUTTONS
 }

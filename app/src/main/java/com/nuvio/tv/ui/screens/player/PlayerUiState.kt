@@ -10,6 +10,7 @@ import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.LibassRenderType
 import com.nuvio.tv.data.local.LibassRenderMode
 import com.nuvio.tv.data.local.NightMode
+import com.nuvio.tv.data.local.PlayerControlButton
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.data.local.SubtitleStyleSettings
 import com.nuvio.tv.data.repository.SkipInterval
@@ -86,6 +87,10 @@ data class PlayerUiState(
     val playbackSpeed: Float = 1f,
     val loadingOverlayEnabled: Boolean = true,
     val showPlayerLoadingStatus: Boolean = false,
+    /** The resolution, codec and speed line above the title. Off unless turned on. */
+    val showPlaybackInfo: Boolean = false,
+    /** Control-row buttons turned off in Playback settings. */
+    val hiddenPlayerControls: Set<PlayerControlButton> = PlayerControlButton.defaultHidden,
     /** Experimental seek-bar thumbnails, off unless the viewer turns them on. */
     val seekPreviewEnabled: Boolean = false,
     val playbackIssueReportsEnabled: Boolean = false,

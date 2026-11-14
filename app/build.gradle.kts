@@ -408,6 +408,13 @@ android.defaultConfig.buildConfigField(
     "String", "NUVIO_BASE_VERSION", "\"${android.defaultConfig.versionName ?: ""}\""
 )
 
+// Live TV setup sync service. Lets a test build point at a staging Worker without
+// changing the default used by everyone else.
+val livetvSyncUrl = (findProperty("livetvSyncUrl") as String?)
+    ?.takeIf { it.isNotBlank() }
+    ?: "https://nuvioone-sync.nuviotv-sync.workers.dev"
+android.defaultConfig.buildConfigField("String", "LIVETV_SYNC_URL", "\"$livetvSyncUrl\"")
+
 val livetvBuildNumber = (findProperty("livetvBuildNumber") as String?)?.toIntOrNull() ?: 0
 android.defaultConfig.versionCode = (android.defaultConfig.versionCode ?: 1) * 100 + livetvBuildNumber
 (findProperty("livetvVersionName") as String?)?.takeIf { it.isNotBlank() }?.let {
@@ -425,7 +432,9 @@ val livetvTesterKey = if (livetvIsTestBuild) {
     (System.getenv("LIVETV_TESTER_KEY") ?: localProperties.getProperty("LIVETV_TESTER_KEY", "")).trim()
 } else ""
 android.defaultConfig.buildConfigField("String", "NUVIO_CHANNEL", "\"${if (livetvIsTestBuild) "test" else "stable"}\"")
-android.defaultConfig.buildConfigField("String", "TEST_UPDATES_URL", "\"https://livetv-cloud.nuvioplusiptv.workers.dev\"")
+// Empty until our own tester update service exists. Test builds then report no update
+// instead of calling another project's Worker.
+android.defaultConfig.buildConfigField("String", "TEST_UPDATES_URL", "\"\"")
 android.defaultConfig.buildConfigField("String", "TESTER_KEY", buildConfigString(livetvTesterKey))
 if (livetvIsTestBuild) {
     // 1767225600 = 2026-01-01 00:00 UTC, in seconds.

@@ -93,19 +93,22 @@ internal class SportsFeeds {
      * The wrestling schedule (WWE, AEW…): a file a daily GitHub job makes from TheSportsDB, so
      * the app never asks TheSportsDB itself.
      */
-    fun wrestlingRaw(): String = get(WRESTLING_URL)
+    fun wrestlingRaw(): String = if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(WRESTLING_URL)
 
     /**
      * Every sport from TheSportsDB (the same GitHub job, from its leagues.txt): the leagues and
      * their teams. The sportsdb folder; the older football folder while that's all there is.
      */
-    fun footballIndexRaw(): String =
-        runCatching { get(DATA_URL + "sportsdb/index.json").also { tsdbFolder = "sportsdb/" } }.getOrElse {
+    fun footballIndexRaw(): String {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return ""
+        return runCatching { get(DATA_URL + "sportsdb/index.json").also { tsdbFolder = "sportsdb/" } }.getOrElse {
             get(DATA_URL + "football/index.json").also { tsdbFolder = "football/" }
         }
+    }
 
     /** One league's games or events (a few weeks back to the end of the season). */
     fun footballLeagueRaw(tsdbId: String): String {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return ""
         val first = tsdbFolder
         return runCatching { get(DATA_URL + first + "$tsdbId.json") }.getOrElse { e ->
             if (e !is java.io.IOException || e.message?.startsWith("HTTP 404") != true) throw e
@@ -117,16 +120,20 @@ internal class SportsFeeds {
     @Volatile private var tsdbFolder = "sportsdb/"
 
     /** Every game of the next week with its TV channels by country (TheSportsDB's TV listings, kept by the nuvio-data job). */
-    fun tvListingsRaw(): String = get(DATA_URL + "sportsdb/tv.json")
+    fun tvListingsRaw(): String =
+        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/tv.json")
 
     /** A TheSportsDB game's goals, cards, stats and line-ups (the nuvio-data job writes them). */
     /** The list of teams that have players (kept by the nuvio-data job). */
-    fun playersIndexRaw(): String = get(DATA_URL + "sportsdb/players/index.json")
+    fun playersIndexRaw(): String =
+        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/players/index.json")
 
     /** One team's players, by TheSportsDB's team id. */
-    fun playersRaw(teamId: String): String = get(DATA_URL + "sportsdb/players/$teamId.json")
+    fun playersRaw(teamId: String): String =
+        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/players/$teamId.json")
 
-    fun tsdbGameRaw(tsdbEventId: String): String = get(DATA_URL + "sportsdb/games/$tsdbEventId.json")
+    fun tsdbGameRaw(tsdbEventId: String): String =
+        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/games/$tsdbEventId.json")
 
     // ------------------------------------------------------------------ the shared ESPN schedule cache
 
@@ -134,7 +141,9 @@ internal class SportsFeeds {
      * One league's whole shared-cache file: a daily GitHub job asks ESPN so every TV doesn't have
      * to. Null when the job hasn't reached this league yet, or nuvio-data can't be reached.
      */
-    fun espnSharedRaw(leagueId: String): String? = runCatching { get(DATA_URL + "espn/" + safeFileId(leagueId) + ".json") }.getOrNull()
+    fun espnSharedRaw(leagueId: String): String? =
+        if (!SportsCatalog.SHARED_DATA_ENABLED) null
+        else runCatching { get(DATA_URL + "espn/" + safeFileId(leagueId) + ".json") }.getOrNull()
 
     /**
      * One day's ESPN scoreboard JSON out of a shared-cache file (as [espnSharedRaw] returns), if
@@ -179,6 +188,7 @@ internal class SportsFeeds {
      * as before. Null when the file can't be had.
      */
     fun espnSharedRead(leagueId: String, window: String, days: List<String>, now: Long, maxAgeFor: (Int) -> Long): SharedDays? {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return null
         val key = "$window|$leagueId"
         val memo = sharedMemo[key]
         val url = DATA_URL + "espn/" + safeFileId(leagueId) + ".json"
@@ -245,6 +255,7 @@ internal class SportsFeeds {
      * little while; null when there is none, or it's old (the caller then reads the old way).
      */
     fun compactIndex(now: Long): CompactIndex? {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return null
         val kept = compactIndexKept
         if (kept != null && now - compactIndexAt < 60_000L) return kept
         synchronized(this) {
@@ -277,13 +288,16 @@ internal class SportsFeeds {
     }
 
     /** One league's ready-made file ("day" or "week"); null when it can't be had or read. */
-    fun compactFile(leagueId: String, window: String): CompactFile? = runCatching {
-        val text = get(DATA_URL + "espn/compact/$window/" + safeFileId(leagueId) + ".json")
-        val o = JSONObject(text)
-        if (o.optInt("v") != 1) return@runCatching null
-        val games = SportsEventCodec.decode(o.optJSONArray("g")?.toString() ?: return@runCatching null) ?: return@runCatching null
-        CompactFile(games, o.optString("lg").takeIf { it.startsWith("http") }, compactHash(text))
-    }.getOrNull()
+    fun compactFile(leagueId: String, window: String): CompactFile? {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return null
+        return runCatching {
+            val text = get(DATA_URL + "espn/compact/$window/" + safeFileId(leagueId) + ".json")
+            val o = JSONObject(text)
+            if (o.optInt("v") != 1) return@runCatching null
+            val games = SportsEventCodec.decode(o.optJSONArray("g")?.toString() ?: return@runCatching null) ?: return@runCatching null
+            CompactFile(games, o.optString("lg").takeIf { it.startsWith("http") }, compactHash(text))
+        }.getOrNull()
+    }
 
     /** The fingerprint nuvio-data gives a ready-made file (the start of its SHA-256). */
     private fun compactHash(text: String): String =
@@ -308,7 +322,8 @@ internal class SportsFeeds {
 
     companion object {
         private const val ESPN = "https://site.api.espn.com/apis/site/v2/sports/"
-        const val DATA_URL = "https://raw.githubusercontent.com/homelessbrian/nuvio-data/main/"
+        /** Our own generated sports data repo. The flag in [SportsCatalog] decides whether it is read. */
+        const val DATA_URL = "https://raw.githubusercontent.com/zoga2o3-ops/nuvio-sports-data/main/"
         const val WRESTLING_URL = DATA_URL + "wrestling.json"
 
         /** A league id as the shared ESPN cache file is named ("football/nfl" -> "football_nfl"). */

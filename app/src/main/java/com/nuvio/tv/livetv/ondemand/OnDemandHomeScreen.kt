@@ -89,7 +89,12 @@ fun OnDemandHomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by viewModel.home.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { viewModel.loadHome() }
+    LaunchedEffect(Unit) {
+        // Opening a title and pressing Back rebuilds this screen over the same ViewModel.
+        // Rebuilding the page would reset every group to its first page and pull the saved
+        // position out from under the list, so keep it unless the catalog actually changed.
+        if (!viewModel.homeIsCurrent()) viewModel.loadHome()
+    }
 
     var showManage by remember { mutableStateOf(false) }
     // The card last highlighted, for the Menu button's "Fix poster".
@@ -310,11 +315,11 @@ fun OnDemandHomeScreen(
     // went to the page underneath (Home) on this one. The layouts' own Back handling (scroll a
     // row back to its start, close a full screen trailer) and any open dialog still come first,
     // and with the menu open Back is left to the app (exit).
-    val requestAppExit = com.nuvio.tv.LocalRequestAppExit.current
+    val openNuvioSidebar = com.nuvio.tv.LocalOpenSidebar.current
     val sidebarOpen = com.nuvio.tv.LocalSidebarExpanded.current
     val topFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val topContentFocus = com.nuvio.tv.LocalContentFocusRequester.current
-    androidx.activity.compose.BackHandler(enabled = !sidebarOpen) { requestAppExit() }
+    androidx.activity.compose.BackHandler(enabled = !sidebarOpen) { openNuvioSidebar() }
 
     androidx.compose.runtime.CompositionLocalProvider(com.nuvio.tv.core.player.LocalTrailerPlayerPool provides ownPool) {
     Box(

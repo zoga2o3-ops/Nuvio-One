@@ -58,14 +58,20 @@ internal fun rememberPlayerBadges(viewModel: PlayerViewModel, uiState: PlayerUiS
  * visible so it follows quality changes and the current speed.
  */
 @Composable
-internal fun rememberPlaybackInfoText(viewModel: PlayerViewModel, uiState: PlayerUiState): String? {
+internal fun rememberPlaybackInfoText(
+    viewModel: PlayerViewModel,
+    uiState: PlayerUiState,
+    enabled: Boolean = true
+): String? {
     var mediaInfo by remember { mutableStateOf(PlayerMediaInfo()) }
-    LaunchedEffect(uiState.showControls, uiState.currentStreamUrl, uiState.internalPlayerEngine) {
+    LaunchedEffect(enabled, uiState.showControls, uiState.currentStreamUrl, uiState.internalPlayerEngine) {
+        if (!enabled) return@LaunchedEffect
         while (uiState.showControls) {
             mediaInfo = runCatching { viewModel.playerMediaInfo() }.getOrDefault(PlayerMediaInfo())
             delay(1_000)
         }
     }
+    if (!enabled) return null
     val resolution = mediaInfo.videoWidth?.takeIf { it > 0 }?.let { width ->
         mediaInfo.videoHeight?.takeIf { it > 0 }?.let { height -> "${width}x$height" }
     }

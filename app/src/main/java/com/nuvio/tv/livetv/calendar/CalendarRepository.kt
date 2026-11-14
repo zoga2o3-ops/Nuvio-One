@@ -119,8 +119,10 @@ class CalendarRepository @Inject constructor(
                     CalendarFollow.encode(CalendarFollow.decode(raw).filter { !(it.isAiring && it.stopMs < cutoff) })
                 }
             }
+            waitForGuideIdle()
             build(fetch = false)
             while (!com.nuvio.tv.livetv.startup.AppSettled.settledFor(afterMs = 30_000, fallbackMs = 45_000)) delay(1_000)
+            waitForGuideIdle()
             refresh(force = false)
             // Then every few hours while the app is open.
             while (true) {
@@ -177,6 +179,22 @@ class CalendarRepository @Inject constructor(
         scope.launch {
             kotlinx.coroutines.flow.combine(liveRepo.programs, liveRepo.channels, liveRepo.guideGeneration) { _, c, g -> c.size to g }
                 .drop(1).debounce(15_000).collect { matchGuide() }
+        }
+    }
+
+    /**
+     * The guide's own start-up read and Sports' channel matching both scan the guide. The
+     * Calendar's first look used to run alongside them, which left a slow box with three
+     * guide scans at once. Wait for them (at most a minute) before its first build.
+     */
+    private suspend fun waitForGuideIdle() {
+        var waited = 0
+        while (liveRepo.guideReadBusy() && waited < 60_000) {
+            delay(1_000)
+            waited += 1_000
+        }
+        kotlinx.coroutines.withTimeoutOrNull(60_000) {
+            com.nuvio.tv.livetv.data.BackgroundWork.awaitNoHeavy()
         }
     }
 

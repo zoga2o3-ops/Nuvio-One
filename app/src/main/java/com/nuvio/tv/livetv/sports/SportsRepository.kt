@@ -65,7 +65,14 @@ class SportsRepository @Inject constructor(
     private val feeds = SportsFeeds()
     private val dir = File(context.filesDir, "sports").apply { mkdirs() }
     // Test builds also try the guide's sports-shows table (checked against the whole guide).
-    private val matcher = SportsMatcher(guideDb, dir, sportsTable = com.nuvio.tv.BuildConfig.NUVIO_CHANNEL == "test")
+    // The saved sports-shows table makes a match read a few thousand relevant listings instead of
+    // the whole guide. Only test builds also read the whole guide again to compare the table.
+    private val matcher = SportsMatcher(
+        guideDb,
+        dir,
+        sportsTable = true,
+        validateTable = com.nuvio.tv.BuildConfig.NUVIO_CHANNEL == "test"
+    )
 
     val settings: StateFlow<SportsSettings> = prefs.sportsSettingsJson
         .map { SportsSettings.fromJson(it) }
@@ -1087,6 +1094,7 @@ class SportsRepository @Inject constructor(
      * while one of their games is on).
      */
     private suspend fun updateTsdb(now: Long, force: Boolean) {
+        if (!SportsCatalog.SHARED_DATA_ENABLED) return
         val viewing = viewers.value > 0
         val f = follows.value
         val indexAge = now - tsdbIndexAt
@@ -1323,7 +1331,9 @@ class SportsRepository @Inject constructor(
             readSavedLeague(l, now)?.let { m[l.id] = it }
         }
         // TheSportsDB's list first: which of the app's leagues it fills.
-        runCatching { File(dir, "tsdb_index.json").takeIf { it.exists() }?.readText()?.let { applyTsdbIndex(it) } }
+        if (SportsCatalog.SHARED_DATA_ENABLED) {
+            runCatching { File(dir, "tsdb_index.json").takeIf { it.exists() }?.readText()?.let { applyTsdbIndex(it) } }
+        }
         val fx = HashMap<String, LeagueData>()
         for (l in SportsCatalog.leagues) {
             val slug = l.fixtureSlug ?: continue
@@ -1331,7 +1341,7 @@ class SportsRepository @Inject constructor(
             if (!file.exists()) continue
             runCatching { fx[l.id] = LeagueData(SportsFeeds.parseFixtures(l, file.readText()), 0L, null) }
         }
-        runCatching {
+        if (SportsCatalog.SHARED_DATA_ENABLED) runCatching {
             val file = File(dir, "fx_wrestling.json")
             if (file.exists()) SportsFeeds.parseWrestling(file.readText()).forEach { (id, list) -> fx[id] = LeagueData(list, 0L, null) }
         }
@@ -1372,16 +1382,18 @@ class SportsRepository @Inject constructor(
         }
         scheduleData.value = sched
         val ts = HashMap<String, LeagueData>()
-        for (id in (followedLeagueIds(f).filter { it.startsWith("tsdb/") } + tsdbAlias.keys).distinct()) {
-            val l = SportsCatalog.league(id) ?: continue
-            val file = File(dir, "tsdb_${tsdbFileId(id)}.json")
-            if (!file.exists()) continue
-            runCatching {
-                ts[id] = LeagueData(SportsFeeds.parseFootballLeague(l, file.readText(), tsdbTeams[id].orEmpty().associateBy { it.id }), 0L, null)
+        if (SportsCatalog.SHARED_DATA_ENABLED) {
+            for (id in (followedLeagueIds(f).filter { it.startsWith("tsdb/") } + tsdbAlias.keys).distinct()) {
+                val l = SportsCatalog.league(id) ?: continue
+                val file = File(dir, "tsdb_${tsdbFileId(id)}.json")
+                if (!file.exists()) continue
+                runCatching {
+                    ts[id] = LeagueData(SportsFeeds.parseFootballLeague(l, file.readText(), tsdbTeams[id].orEmpty().associateBy { it.id }), 0L, null)
+                }
             }
         }
         tsdbData.value = ts
-        runCatching {
+        if (SportsCatalog.SHARED_DATA_ENABLED) runCatching {
             File(dir, "tv.json").takeIf { it.exists() }?.readText()?.let { raw ->
                 val list = SportsTvListings.parse(raw)
                 if (list.isNotEmpty()) tvData.value = list
@@ -1459,10 +1471,13 @@ class SportsRepository @Inject constructor(
         }
         // Not before the saved games are read: a search with no games found nothing, then ran again.
         cacheLoaded.first { it }
-        combine(trigger, matchKick) { t, k -> t to k }.debounce { if (_matches.value.isEmpty()) 0L else 1_500L }.collect {
+        combine(trigger, matchKick, com.nuvio.tv.livetv.data.BackgroundWork.guideVisible) { t, k, g -> Triple(t, k, g) }.debounce { if (_matches.value.isEmpty()) 0L else 1_500L }.collect { (_, _, guideOpen) ->
             // Put off (not lost): it runs when the app is back in front / the update is done.
             if (!foreground.value && viewers.value == 0) { matchMissed = true; return@collect }
-            if (!settings.value.showInSidebar && viewers.value == 0) { matchMissed = true; return@collect }
+            // The channel search reads the whole guide: only while the Sports page or the Live TV
+            // guide is actually open. Running it in the background on Home pegged a core and
+            // made the whole app feel slow.
+            if (viewers.value == 0 && !guideOpen) { matchMissed = true; return@collect }
             val status = liveRepo.status.value
             // Never the very first match against a playlist that's still importing: it would
             // both fight the import for the database (which is what made this take minutes) and

@@ -1716,8 +1716,14 @@ private fun LegacySidebarScaffold(
             com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
             return@BackHandler
         }
-        // Root page: Back is the app-exit prompt, not another way to open the menu.
-        onExitApp()
+        // Home: Back is the app-exit prompt. Every other section: Back opens the side menu
+        // first; with the menu open, the next Back is the exit prompt.
+        if (currentRoute == Screen.Home.route) {
+            onExitApp()
+        } else {
+            pendingSidebarFocusRequest = true
+            drawerState.setValue(DrawerValue.Open)
+        }
     }
 
     BackHandler(enabled = currentRoute in rootRoutes && drawerState.currentValue == DrawerValue.Open) {
@@ -2305,8 +2311,15 @@ private fun ModernSidebarScaffold(
             com.nuvio.tv.livetv.ui.LiveTvGuideBack.suppressMenuUntilMs = 0L
             return@BackHandler
         }
-        // Root page: Back is the app-exit prompt, not another way to open the menu.
-        onExitApp()
+        // Home: Back is the app-exit prompt. Every other section: Back opens the side menu
+        // first; with the menu open, the next Back is the exit prompt.
+        if (currentRoute == Screen.Home.route) {
+            onExitApp()
+        } else {
+            isSidebarExpanded = true
+            sidebarCollapsePending = false
+            pendingSidebarFocusRequest = true
+        }
     }
 
     BackHandler(enabled = currentRoute in rootRoutes && isSidebarExpanded && !sidebarCollapsePending) {

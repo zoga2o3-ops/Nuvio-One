@@ -528,9 +528,9 @@ private fun SportsHub(
     // Back opens the side menu first, like the guide and On Demand (it used to go straight to
     // Home). With the menu open, Back is left to the app. A game page, Pick Your Teams and the
     // pop-ups handle Back themselves first.
-    val requestAppExit = com.nuvio.tv.LocalRequestAppExit.current
+    val openNuvioSidebar = com.nuvio.tv.LocalOpenSidebar.current
     val sidebarOpen = com.nuvio.tv.LocalSidebarExpanded.current
-    BackHandler(enabled = !sidebarOpen) { requestAppExit() }
+    BackHandler(enabled = !sidebarOpen) { openNuvioSidebar() }
 
     // ---- what this day holds
     // A league from the top bar: that league's whole week (yesterday to a week ahead), by date.

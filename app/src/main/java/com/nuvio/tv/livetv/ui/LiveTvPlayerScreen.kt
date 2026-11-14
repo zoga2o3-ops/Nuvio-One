@@ -402,7 +402,8 @@ fun LiveTvPlayerScreen(
     val pinGame = com.nuvio.tv.livetv.sports.rememberPinnableGame(current?.key).takeIf { playback.catchupTitle == null }
     val pinList = com.nuvio.tv.livetv.sports.SportsLive.pins.collectAsState().value
     // Other copies of this channel for the bar's backup button (live only; hidden channels included).
-    val backups = remember(current?.key, panelFull, playback.catchupTitle, backupsTick) {
+    val backupIndexVersion by viewModel.backupIndexVersion.collectAsState()
+    val backups = remember(current?.key, panelFull, playback.catchupTitle, backupsTick, backupIndexVersion) {
         current?.takeIf { playback.catchupTitle == null }?.let { viewModel.backupsFor(it) }.orEmpty()
     }
     val poster by androidx.compose.runtime.produceState<String?>(initialValue = null, watchingTitle, current?.key) {

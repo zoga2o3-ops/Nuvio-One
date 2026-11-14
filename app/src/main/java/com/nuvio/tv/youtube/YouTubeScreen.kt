@@ -264,7 +264,7 @@ fun YouTubeScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val sidebarExpanded = com.nuvio.tv.LocalSidebarExpanded.current
-    val requestAppExit = com.nuvio.tv.LocalRequestAppExit.current
+    val openNuvioSidebar = com.nuvio.tv.LocalOpenSidebar.current
 
     // Leaving the search behind (another tab, a card, settings) should put the magnifier back,
     // not leave a text box sitting in the header of the next page.
@@ -285,7 +285,7 @@ fun YouTubeScreen(
     }
 
     // Back goes up from a channel, playlist or search before it leaves the page.
-    BackHandler(enabled = state.subTitle == null && !showAccounts && !suggestionsOpen && !sidebarExpanded) { requestAppExit() }
+    BackHandler(enabled = state.subTitle == null && !showAccounts && !suggestionsOpen && !sidebarExpanded) { openNuvioSidebar() }
     BackHandler(enabled = state.subTitle != null) {
         viewModel.back()
         // Put focus back on the tab strip so Down can enter the restored feed. Without this,

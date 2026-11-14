@@ -1147,19 +1147,41 @@ class LiveTvRepository @Inject constructor(
         // they're ready without a Full Scan.
         if (_epgSources.value.isEmpty()) scope.launch(Dispatchers.IO) { loadSourceLists(targets) }
         LIVE_REPORT.add("First channels' listings ready: ${_programs.value.size} channels")
-        // Everything else (short form, the usual hours), in the background, in one read.
-        rangeBusy.set(true)
+        // Read every channel's listings in the background now, like before, so the guide is
+        // fully there when Live TV opens. The gray-card issue on Home was a separate redraw
+        // bug (fixed in the Home pipeline), not this read, so it no longer harms Home.
+        guideBulkStarted = false
+        guideTargets = targets
+        startGuideBulkRead()
+        true
+    }
+
+    /**
+     * The guide screen is open: read every channel's listings for the usual window, once.
+     * This is deliberately not done at app start: on Home it kept the processor and the
+     * database busy for minutes and left Nuvio's images as loading placeholders.
+     */
+    fun startGuideBulkRead() {
+        if (guideBulkStarted || !guideInDb) return
+        // The guide's own range read may already be running: let it finish and try again later
+        // instead of reading the same rows twice.
+        if (!rangeBusy.compareAndSet(false, true)) return
+        guideBulkStarted = true
+        val targets = guideTargets
         scope.launch(BackgroundWork.reads) {
           try {
             val t0 = System.currentTimeMillis()
             val (fullFrom, fullTo) = defaultWindow()
-            val rest = runCatching { guideDb.range(fullFrom, fullTo, light = true) }.getOrNull()
-            if (rest != null) rangeMutex.withLock {
-                val merged = HashMap<String, List<EpgProgram>>(rest)
-                _programs.value.forEach { (k, v) -> if ((merged[k]?.size ?: 0) < v.size) merged[k] = v }
-                _programs.value = merged
-                loadedFrom = minOf(loadedFrom, fullFrom)
-                loadedTo = maxOf(loadedTo, fullTo)
+            val alreadyLoaded = fullFrom >= loadedFrom && fullTo <= loadedTo
+            if (!alreadyLoaded) {
+                val rest = runCatching { guideDb.range(fullFrom, fullTo, light = true) }.getOrNull()
+                if (rest != null) rangeMutex.withLock {
+                    val merged = HashMap<String, List<EpgProgram>>(rest)
+                    _programs.value.forEach { (k, v) -> if ((merged[k]?.size ?: 0) < v.size) merged[k] = v }
+                    _programs.value = merged
+                    loadedFrom = minOf(loadedFrom, fullFrom)
+                    loadedTo = maxOf(loadedTo, fullTo)
+                }
             }
             LIVE_REPORT.add("All channels' listings ready: ${_programs.value.size} channels in ${System.currentTimeMillis() - t0} ms")
             // The stored guide has nothing for now or the next hours (it was stored empty, or
@@ -1195,7 +1217,6 @@ class LiveTvRepository @Inject constructor(
             pendingRange?.let { (f, t) -> pendingRange = null; ensureRange(f, t) }
           }
         }
-        true
     }
 
     /** Programs in memory may be the short form (no descriptions): see [programDetails]. */
@@ -1213,6 +1234,12 @@ class LiveTvRepository @Inject constructor(
      */
     /** A big read is running: further requests wait for it instead of starting another. */
     private val rangeBusy = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** The guide screen has started its one full read of every channel (see [startGuideBulkRead]). */
+    @Volatile private var guideBulkStarted = false
+
+    /** The guide's targets, kept for the coverage check the first time the guide opens. */
+    @Volatile private var guideTargets: List<EpgTarget> = emptyList()
 
     /** True while the guide is being read in bulk (start-up): other big guide searches wait for it. */
     fun guideReadBusy(): Boolean = rangeBusy.get()
@@ -1852,15 +1879,20 @@ class LiveTvRepository @Inject constructor(
             val file = playlistFile(pl.id)
             if (!file.exists()) continue
             setStatus(loading = true, message = "Reading channels from \"${pl.name}\"" + (if (playlists.size > 1) " (${plIndex + 1} of ${playlists.size})" else "") + "…")
-            val parsed = runCatching { openMaybeGzip(file).bufferedReader().use { M3uParser.parse(it) } }
+            val parsed = runCatching {
+                openMaybeGzip(file).reader(Charsets.UTF_8).buffered(64 * 1024)
+                    .use { M3uParser.parse(it) { url -> isVodEntry(url) } }
+            }
                 .onFailure { Log.w(TAG, "Parse ${pl.name} failed", it) }
                 .getOrNull() ?: continue
             embeddedEpgUrls[pl.id] = parsed.epgUrls
+            // One shared map and one group id per group instead of one of each per channel:
+            // a 100,000-channel playlist made 100,000 identical header maps before.
+            val playlistHeaders = if (pl.userAgent.isNotBlank()) mapOf("User-Agent" to pl.userAgent) else emptyMap()
+            val groupIds = HashMap<String, String>()
             for (e in parsed.entries) {
-                // Many providers' M3U links ("m3u_plus") also list every movie and episode,
-                // often 100,000+ entries. Those aren't TV channels, and loading them all into the
-                // guide used enough memory to crash Live TV on some devices.
-                if (isVodEntry(e.url)) continue
+                // Movies and episodes (often 100,000+ in an m3u_plus link) were left out while
+                // reading: they aren't TV channels and used enough memory to crash Live TV.
                 val groupTitle = e.group?.ifBlank { null } ?: "Uncategorized"
                 val baseKey = "${pl.id}|${e.tvgId ?: ""}|${e.name}"
                 var key = baseKey
@@ -1868,8 +1900,8 @@ class LiveTvRepository @Inject constructor(
                 while (!usedKeys.add(key)) { key = "$baseKey#${n++}" }
                 val number = e.chno ?: counter
                 counter = maxOf(counter, number) + 1
-                val headers = if (pl.userAgent.isNotBlank() && "User-Agent" !in e.headers) {
-                    e.headers + ("User-Agent" to pl.userAgent)
+                val headers = if (playlistHeaders.isNotEmpty() && "User-Agent" !in e.headers) {
+                    if (e.headers.isEmpty()) playlistHeaders else e.headers + ("User-Agent" to pl.userAgent)
                 } else e.headers
                 out += LiveChannel(
                     key = key,
@@ -1879,7 +1911,7 @@ class LiveTvRepository @Inject constructor(
                     tvgId = e.tvgId,
                     tvgName = e.tvgName,
                     logo = e.logo,
-                    groupId = if (multi) "${pl.id}::$groupTitle" else groupTitle,
+                    groupId = if (multi) groupIds.getOrPut(groupTitle) { "${pl.id}::$groupTitle" } else groupTitle,
                     // Names stay exactly as the playlist has them (the playlist is shown, if you want
                     // it, with "Group by playlist").
                     group = groupTitle,

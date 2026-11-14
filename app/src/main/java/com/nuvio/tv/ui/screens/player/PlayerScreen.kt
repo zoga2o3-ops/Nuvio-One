@@ -183,6 +183,7 @@ import com.nuvio.tv.ui.util.keepLtr
 import com.nuvio.tv.ui.util.localizeEpisodeTitle
 import com.nuvio.tv.data.local.InternalPlayerEngine
 import com.nuvio.tv.data.local.LibassRenderMode
+import com.nuvio.tv.data.local.PlayerControlButton
 import com.nuvio.tv.data.local.SubtitleStyleSettings
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.domain.model.StreamBadge
@@ -3135,6 +3136,10 @@ private fun PlayerControlsOverlay(
     }
     val playbackTimeline by viewModel.playbackTimeline.collectAsState()
     val isLivePlayback = playbackTimeline.isLive || youtubeLive
+    val hiddenControls = uiState.hiddenPlayerControls
+    LaunchedEffect(PlayerControlButton.MORE in hiddenControls) {
+        if (PlayerControlButton.MORE in hiddenControls && uiState.showMoreDialog) onToggleMoreActions()
+    }
     val progressUpTarget = when {
         // YouTube's action row sits above the seek bar; Up should always reach it, including
         // on live streams where the seek bar itself is not a focus stop.
@@ -3203,7 +3208,7 @@ private fun PlayerControlsOverlay(
                 exit = fadeOut(animationSpec = tween(NuvioMotion.tokens.durations.fast))
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    val playbackInfo = rememberPlaybackInfoText(viewModel, uiState)
+                    val playbackInfo = rememberPlaybackInfoText(viewModel, uiState, enabled = uiState.showPlaybackInfo)
                     playbackInfo?.let { info ->
                         Text(
                             text = info,
@@ -3479,7 +3484,7 @@ private fun PlayerControlsOverlay(
                         onFocused = onResetHideTimer
                     )
 
-                    if (showNextEpisodeButton) {
+                    if (showNextEpisodeButton && PlayerControlButton.NEXT_EPISODE !in hiddenControls) {
                         ControlButton(
                             icon = Icons.Default.SkipNext,
                             contentDescription = stringResource(R.string.next_episode_label),
@@ -3490,7 +3495,7 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    if (hasSubtitleControl) {
+                    if (hasSubtitleControl && PlayerControlButton.SUBTITLES !in hiddenControls) {
                         ControlButton(
                             icon = Icons.Default.ClosedCaption,
                             iconPainter = customSubtitlePainter,
@@ -3503,23 +3508,25 @@ private fun PlayerControlsOverlay(
                     }
 
                     // Playback speed sits up front, next to the subtitles, instead of behind "More".
-                    ControlButton(
-                        icon = Icons.Default.Speed,
-                        contentDescription = stringResource(R.string.cd_playback_speed),
-                        onClick = {
-                            onShowSpeedDialog()
-                        },
-                        onLongClick = {
-                            val current = uiState.playbackSpeed
-                            val target = if (abs(current - 1f) < 0.01f) lastNonNormalSpeed else 1f
-                            viewModel.onEvent(PlayerEvent.OnSetPlaybackSpeed(target))
-                        },
-                        upFocusRequester = progressUpTarget,
-                        onDownKey = onMainDown,
-                        onFocused = onResetHideTimer
-                    )
+                    if (PlayerControlButton.SPEED !in hiddenControls) {
+                        ControlButton(
+                            icon = Icons.Default.Speed,
+                            contentDescription = stringResource(R.string.cd_playback_speed),
+                            onClick = {
+                                onShowSpeedDialog()
+                            },
+                            onLongClick = {
+                                val current = uiState.playbackSpeed
+                                val target = if (abs(current - 1f) < 0.01f) lastNonNormalSpeed else 1f
+                                viewModel.onEvent(PlayerEvent.OnSetPlaybackSpeed(target))
+                            },
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onMainDown,
+                            onFocused = onResetHideTimer
+                        )
+                    }
 
-                    if (uiState.videoQualities.isNotEmpty() && !isLivePlayback) {
+                    if (uiState.videoQualities.isNotEmpty() && !isLivePlayback && PlayerControlButton.QUALITY !in hiddenControls) {
                         ControlButton(
                             icon = Icons.Default.HighQuality,
                             contentDescription = "Video quality",
@@ -3530,7 +3537,7 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    if (hasAudioControl) {
+                    if (hasAudioControl && PlayerControlButton.AUDIO !in hiddenControls) {
                         ControlButton(
                             icon = Icons.AutoMirrored.Filled.VolumeUp,
                             iconPainter = customAudioPainter,
@@ -3542,7 +3549,7 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    if (uiState.chapters.isNotEmpty() && !isLivePlayback) {
+                    if (uiState.chapters.isNotEmpty() && !isLivePlayback && PlayerControlButton.CHAPTERS !in hiddenControls) {
                         ControlButton(
                             icon = Icons.AutoMirrored.Filled.Toc,
                             contentDescription = stringResource(R.string.player_chapters),
@@ -3554,7 +3561,7 @@ private fun PlayerControlsOverlay(
                     }
 
                     // YouTube fork: a YouTube video has no other sources to switch to.
-                    if (!showYouTubeButton) {
+                    if (!showYouTubeButton && PlayerControlButton.SOURCES !in hiddenControls) {
                         ControlButton(
                             icon = Icons.Default.SwapHoriz,
                             iconPainter = customSourcePainter,
@@ -3566,7 +3573,7 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    if (hasEpisodeContext) {
+                    if (hasEpisodeContext && PlayerControlButton.EPISODES !in hiddenControls) {
                         ControlButton(
                             icon = Icons.AutoMirrored.Filled.List,
                             iconPainter = customEpisodesPainter,
@@ -3578,7 +3585,7 @@ private fun PlayerControlsOverlay(
                         )
                     }
 
-                    if (onShowPartyPanel != null) {
+                    if (onShowPartyPanel != null && PlayerControlButton.PARTY !in hiddenControls) {
                         ControlButton(
                             icon = Icons.Rounded.Groups,
                             contentDescription = stringResource(R.string.party_title),
@@ -3591,7 +3598,7 @@ private fun PlayerControlsOverlay(
                     }
 
                     AnimatedVisibility(
-                        visible = uiState.showMoreDialog,
+                        visible = PlayerControlButton.MORE !in hiddenControls && uiState.showMoreDialog,
                         enter = slideInHorizontally(
                             animationSpec = tween(NuvioMotion.tokens.durations.fast),
                             initialOffsetX = { it / 2 }
@@ -3634,17 +3641,19 @@ private fun PlayerControlsOverlay(
                                     onFocused = onResetHideTimer
                                 )
                             }
-                            ControlButton(
-                                icon = Icons.Default.Info,
-                                contentDescription = stringResource(R.string.cd_stream_info),
-                                onClick = {
-                                    onShowStreamInfo()
-                                },
-                                focusRequester = streamInfoFocusRequester,
-                                upFocusRequester = progressUpTarget,
-                                onDownKey = onMainDown,
-                                onFocused = onResetHideTimer
-                            )
+                            if (PlayerControlButton.STREAM_INFO !in hiddenControls) {
+                                ControlButton(
+                                    icon = Icons.Default.Info,
+                                    contentDescription = stringResource(R.string.cd_stream_info),
+                                    onClick = {
+                                        onShowStreamInfo()
+                                    },
+                                    focusRequester = streamInfoFocusRequester,
+                                    upFocusRequester = progressUpTarget,
+                                    onDownKey = onMainDown,
+                                    onFocused = onResetHideTimer
+                                )
+                            }
                             if (uiState.playbackIssueReportsEnabled) {
                                 ReportControlButton(
                                     reportId = uiState.playbackIssueReportId,
@@ -3660,14 +3669,16 @@ private fun PlayerControlsOverlay(
                         }
                     }
 
-                    ControlButton(
-                        icon = if (uiState.showMoreDialog) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = if (uiState.showMoreDialog) stringResource(R.string.cd_close_more_actions) else stringResource(R.string.cd_more_actions),
-                        onClick = onToggleMoreActions,
-                        upFocusRequester = progressUpTarget,
-                        onDownKey = onMainDown,
-                        onFocused = onResetHideTimer
-                    )
+                    if (PlayerControlButton.MORE !in hiddenControls) {
+                        ControlButton(
+                            icon = if (uiState.showMoreDialog) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = if (uiState.showMoreDialog) stringResource(R.string.cd_close_more_actions) else stringResource(R.string.cd_more_actions),
+                            onClick = onToggleMoreActions,
+                            upFocusRequester = progressUpTarget,
+                            onDownKey = onMainDown,
+                            onFocused = onResetHideTimer
+                        )
+                    }
                 }
 
                 // Right side - Time display only

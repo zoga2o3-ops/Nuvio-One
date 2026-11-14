@@ -934,12 +934,16 @@ class HomeViewModel @Inject constructor(
         if (catalogKey in lazyLoadRequestedKeys) {
             return
         }
+        // A lazy catalog is waiting in pendingLazyCatalogs. A row whose eager load was
+        // cancelled by a reload is in neither queue, so find its catalog again; otherwise
+        // that row stayed as gray loading cards forever.
         val pair = synchronized(catalogStateLock) {
             pendingLazyCatalogs.remove(catalogKey)
-        }
-        if (pair == null) {
-            return
-        }
+        } ?: addonsCache.firstNotNullOfOrNull { addon ->
+            addon.catalogs.firstOrNull { catalog ->
+                catalogKey(addon.id, catalog.apiType, catalog.id) == catalogKey
+            }?.let { catalog -> addon to catalog }
+        } ?: return
         if (!lazyLoadRequestedKeys.add(catalogKey)) {
             return
         }

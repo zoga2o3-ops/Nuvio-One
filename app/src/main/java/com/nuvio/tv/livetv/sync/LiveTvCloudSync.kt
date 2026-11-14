@@ -2,6 +2,7 @@ package com.nuvio.tv.livetv.sync
 
 import android.content.Context
 import android.os.Build
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.core.auth.AuthManager
 import com.nuvio.tv.domain.model.AuthState
 import com.nuvio.tv.domain.model.ServerConfiguration
@@ -74,7 +75,7 @@ enum class CloudChoice { UseSaved, Combine, Later }
  *  - signed in on a TV with no setup, and a saved copy exists: restored, no question;
  *  - an account with no saved copy and a TV with a setup: asks once whether to back it up;
  *  - an account with a saved copy and a TV with a different setup: asks once what to do;
- *  - after that: syncs by itself (when Live TV settings change, every 15 minutes, and at start).
+ *  - after that: syncs by itself (when Live TV settings change, every hour, and at start).
  */
 @Singleton
 class LiveTvCloudSync @Inject constructor(
@@ -135,7 +136,7 @@ class LiveTvCloudSync @Inject constructor(
         }
         scope.launch {
             while (isActive) {
-                delay(15 * 60_000L)
+                delay(60 * 60_000L)
                 com.nuvio.tv.livetv.data.BackgroundWork.awaitLiveHold()
                 if (isOn()) syncNow()
             }
@@ -336,7 +337,9 @@ class LiveTvCloudSync @Inject constructor(
                     } else {
                         val local = localView()
                         val remoteView = parts.strip(remote.data)
-                        val merged = drive.merge(null, local, remoteView, false, removedHere)
+                        // Like Google Drive: this TV's favorites, hidden channels and order
+                        // win the first combine; playlists and guides from both are kept.
+                        val merged = drive.merge(null, local, remoteView, true, removedHere)
                         if (merged.toString() != local.toString()) applyShared(merged)
                         if (merged.toString() == remoteView.toString()) {
                             saved(uid, remote.data, emptySet())
@@ -468,7 +471,9 @@ class LiveTvCloudSync @Inject constructor(
                 remote is Remote.Failed -> return failText(remote.code)
                 remote is Remote.Found && usable(remote.data) -> {
                     val remoteView = parts.strip(remote.data)
-                    val merged = drive.merge(readBase(uid), parts.freshen(local, remoteView), remoteView, false, removedHere)
+                    // First sync with no base: keep this TV's personal choices (favorites,
+                    // hidden channels, group order) exactly like the Google Drive sync does.
+                    val merged = drive.merge(readBase(uid), parts.freshen(local, remoteView), remoteView, true, removedHere)
                     val changedHere = merged.toString() != local.toString()
                     if (changedHere) apply(parts.keep(merged, localFull))
                     val news = if (changedHere) UPDATED_TEXT else null
@@ -636,8 +641,8 @@ class LiveTvCloudSync @Inject constructor(
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
     companion object {
-        /** Our own small service (the livetv-cloud Worker). */
-        const val CLOUD_URL = "https://livetv-cloud.nuvioplusiptv.workers.dev"
+        /** Nuvio One's own sync service (see the livetv-cloud Worker). */
+        val CLOUD_URL: String = BuildConfig.LIVETV_SYNC_URL
         private const val UPDATED_TEXT = "Updated from your other TV."
         private const val NETWORK_TEXT = "Couldn't reach sync. Will try again."
         private const val KEY_ENABLED = "enabled_"

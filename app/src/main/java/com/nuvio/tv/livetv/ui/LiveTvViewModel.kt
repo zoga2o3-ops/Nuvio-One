@@ -213,6 +213,8 @@ class LiveTvViewModel @Inject constructor(
 
     /** Channels by backup name (see [backupName]), worked out once for the whole app; null until then. */
     private val backupIndex: Map<String, List<LiveChannel>>? get() = hooks.backupIndex
+    /** Bumped when the backup list is rebuilt; the player panel uses it to reveal the button. */
+    val backupIndexVersion: kotlinx.coroutines.flow.StateFlow<Int> get() = hooks.backupIndexVersion
 
     /** A channel that won't play: another channel by the same name, if there is one. */
     override fun onLiveFailure(channelKey: String): Boolean = switchToBackup(channelKey)
@@ -243,6 +245,9 @@ class LiveTvViewModel @Inject constructor(
                 // Nothing to keep up to date while a movie or episode plays in Nuvio's player.
                 com.nuvio.tv.livetv.data.BackgroundWork.awaitIdle()
                 _now.value = System.currentTimeMillis()
+                // The guide is open now, so this is the right time for the full guide read and
+                // its coverage check (it no longer runs while the user is only on Home).
+                repository.startGuideBulkRead()
                 // Keep the hours around now loaded from the guide database as time passes.
                 repository.ensureRange(_now.value - 3 * 3_600_000L, _now.value + 12 * 3_600_000L)
                 delay(30_000)
@@ -1643,7 +1648,14 @@ internal fun buildUi(
     // Channels you hid one by one stay out everywhere. Hiding a playlist group only hides that
     // group: its channels still show in your own groups (customPool below).
     val notHidden = channels.filter { it.key !in user.hiddenChannels }
-    val shown = notHidden.filter { it.groupId !in user.hiddenGroups }
+    // Older setups (and the Drive backup) keep plain group names, while a TV with more than
+    // one playlist uses "playlistId::group" ids. Match both, or the hidden groups from a
+    // restore look listed in Settings but stay visible in the guide.
+    val shown = notHidden.filter {
+        it.groupId !in user.hiddenGroups &&
+            it.group !in user.hiddenGroups &&
+            it.groupId.substringAfter("::") !in user.hiddenGroups
+    }
     // Parental controls: channels in locked groups stay out of every list until unlocked.
     val lockedIds = HashSet<String>()
     notHidden.distinctBy { it.groupId }.forEach { c ->
@@ -1733,7 +1745,12 @@ internal fun buildUi(
         val copied = user.channelCopies[id].orEmpty().count { k -> byKey[k]?.let { it.groupId != id } == true }
         regular += ChannelGroup(id, v.first, v.second + copied, sourceId = groupSource[id], locked = id in lockedIds)
     }
-    val orderIndex = user.groupOrder.withIndex().associate { (i, id) -> id to i }
+    // A saved order may use plain names while the ids are "playlistId::group". Index both.
+    val orderIndex = HashMap<String, Int>()
+    user.groupOrder.forEachIndexed { i, id ->
+        orderIndex.putIfAbsent(id, i)
+        orderIndex.putIfAbsent(id.substringAfter("::"), i)
+    }
     // Playlists in their own order (your own groups first), for keeping each playlist's
     // groups together when sorting by name.
     val playlistIndex = HashMap<String, Int>().also { m -> shown.forEach { c -> m.putIfAbsent(c.sourceId, m.size) } }
@@ -1750,9 +1767,10 @@ internal fun buildUi(
         // Your order (Reorder groups). A group you haven't placed yet (e.g. one just added in
         // the playlist) goes right after the group above it in the playlist.
         else -> if (orderIndex.isEmpty()) regular else {
-            val result = regular.filter { it.id in orderIndex }.sortedBy { orderIndex[it.id] }.toMutableList()
+            fun orderPos(g: ChannelGroup): Int? = orderIndex[g.id] ?: orderIndex[g.title]
+            val result = regular.filter { orderPos(it) != null }.sortedBy { orderPos(it) }.toMutableList()
             regular.forEachIndexed { i, g ->
-                if (g.id !in orderIndex) {
+                if (orderPos(g) == null) {
                     val above = if (i > 0) result.indexOfFirst { it.id == regular[i - 1].id } else -1
                     result.add(above + 1, g)
                 }

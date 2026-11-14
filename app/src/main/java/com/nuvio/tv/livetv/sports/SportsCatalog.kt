@@ -9,6 +9,13 @@ import java.util.Locale
  */
 object SportsCatalog {
 
+    /**
+     * Whether the app reads the shared TheSportsDB/ESPN data files. Off while we build our own
+     * sports data service: the page then uses ESPN's public feed directly and hides the
+     * TheSportsDB-only leagues.
+     */
+    const val SHARED_DATA_ENABLED = false
+
     private val US = setOf("US")
     private val UK = setOf("UK", "IE")
     private val NA = setOf("US", "CA")
@@ -414,8 +421,10 @@ object SportsCatalog {
         extra = list
     }
 
-    /** Every league, built in and from the data. */
-    val all: List<League> get() = leagues + extra
+    /** Every league: built in, plus the shared-data extras when that source is on. */
+    val all: List<League>
+        get() = if (SHARED_DATA_ENABLED) leagues + extra
+        else leagues.filter { it.espnPath != null || it.fixtureSlug != null || it.guideOnly }
 
     private val UEFA_CLUB = listOf("soccer/uefa.champions", "soccer/uefa.europa", "soccer/uefa.europa.conf")
     private val EURO_MORE = setOf("soccer/ned.1", "soccer/por.1", "soccer/bel.1", "soccer/tur.1", "soccer/gre.1", "soccer/aut.1", "soccer/den.1", "soccer/swe.1", "soccer/nor.1")

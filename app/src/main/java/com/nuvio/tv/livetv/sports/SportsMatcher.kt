@@ -23,10 +23,15 @@ internal class SportsMatcher(
     /** Where what was found in the guide is saved, so a restart with the same guide doesn't search it all again. */
     private val dir: File? = null,
     /**
-     * Test builds: read the guide's sports-shows table instead of the whole guide (see
-     * [prepareTable]); after each rebuild the whole guide is read once more and the two compared.
+     * Read the guide's sports-shows table instead of the whole guide (see [prepareTable]). The
+     * table is built once from the guide and saved, so later starts don't scan the whole guide.
      */
-    private val sportsTable: Boolean = false
+    private val sportsTable: Boolean = false,
+    /**
+     * Test builds: after rebuilding the table, read the whole guide again and compare it. That
+     * second read is only for validation; release builds trust the table and skip it.
+     */
+    private val validateTable: Boolean = false
 ) {
 
     class Input(
@@ -893,7 +898,7 @@ internal class SportsMatcher(
     private fun tableNote(text: String) = synchronized(tableNotes) { tableNotes += text }
 
     private fun takeTableNotes(): String = synchronized(tableNotes) {
-        if (tableNotes.isEmpty()) "" else (" · guide sports table (test build): " + tableNotes.joinToString("; ")).also { tableNotes.clear() }
+        if (tableNotes.isEmpty()) "" else (" · guide sports table: " + tableNotes.joinToString("; ")).also { tableNotes.clear() }
     }
 
     private fun refreshTable() {
@@ -971,7 +976,7 @@ internal class SportsMatcher(
         }
         val secs = (System.currentTimeMillis() - t0) / 1000
         if (ok) {
-            checkSlots = true; checkDays = true
+            if (validateTable) { checkSlots = true; checkDays = true }
             tableNote("built: ${writer.rows} of $read shows kept, for ${words.size} words, in $secs s")
         } else {
             tableNote("guide changed while it was built (${secs} s): whole guide read until the next try")

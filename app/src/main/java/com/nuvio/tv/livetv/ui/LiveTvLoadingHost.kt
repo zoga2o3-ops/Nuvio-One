@@ -68,6 +68,11 @@ fun LiveTvLoadingHost(navController: NavController) {
     }.collectAsState(false)
     val route = navController.currentBackStackEntryAsState().value?.destination?.route.orEmpty()
     val liveFullscreen by LiveTvFullscreen.active.collectAsState()
+    // Sports' channel matching may run while the Live TV guide (or its player) is on screen.
+    val guideOpen = route == Screen.LiveTv.route || route == Screen.LiveTvPlayer.route || liveFullscreen
+    androidx.compose.runtime.LaunchedEffect(guideOpen) {
+        com.nuvio.tv.livetv.data.BackgroundWork.guideVisible.value = guideOpen
+    }
     val playing = route == Screen.LiveTvPlayer.route || route.startsWith("player/") || liveFullscreen
     // Nuvio's own player is opening (a movie, an episode, Watch On Demand): make sure the
     // Live TV player has let go of the audio first, so the two never hold it at once.

@@ -321,6 +321,10 @@ data class PlayerSettings(
     val secondaryPreferredAudioLanguage: String? = null,
     val loadingOverlayEnabled: Boolean = true,
     val showPlayerLoadingStatus: Boolean = true,
+    /** The resolution, codec and speed line above the player title. Off unless turned on. */
+    val showPlaybackInfo: Boolean = false,
+    /** Optional control-row buttons turned off in Playback > Player Interface. */
+    val hiddenPlayerControls: Set<PlayerControlButton> = PlayerControlButton.defaultHidden,
     /** Experimental: a second player grabs a frame above the seek bar. Off by default. */
     val seekPreviewEnabled: Boolean = DEFAULT_SEEK_PREVIEW_ENABLED,
     val playbackIssueReportsEnabled: Boolean = false,
@@ -461,6 +465,26 @@ data class PlayerSettings(
 
 enum class StreamAutoPlayMode {
     MANUAL, FIRST_STREAM, REGEX_MATCH
+}
+
+/** Buttons in the player's control row that can be turned off in Playback settings. */
+enum class PlayerControlButton {
+    NEXT_EPISODE,
+    SUBTITLES,
+    SPEED,
+    QUALITY,
+    AUDIO,
+    CHAPTERS,
+    SOURCES,
+    EPISODES,
+    PARTY,
+    STREAM_INFO,
+    MORE;
+
+    companion object {
+        /** Everything is shown by default except the stream-info shortcut. */
+        val defaultHidden: Set<PlayerControlButton> = setOf(STREAM_INFO)
+    }
 }
 
 enum class StreamAutoPlaySource {
@@ -651,6 +675,8 @@ class PlayerSettingsDataStore @Inject constructor(
     private val secondaryPreferredAudioLanguageKey = stringPreferencesKey("secondary_preferred_audio_language")
     private val loadingOverlayEnabledKey = booleanPreferencesKey("loading_overlay_enabled")
     private val showPlayerLoadingStatusKey = booleanPreferencesKey("show_player_loading_status")
+    private val showPlaybackInfoKey = booleanPreferencesKey("show_playback_info")
+    private val hiddenPlayerControlsKey = stringSetPreferencesKey("hidden_player_controls")
     private val seekPreviewEnabledKey = booleanPreferencesKey("seek_preview_enabled")
     private val playbackIssueReportsEnabledKey = booleanPreferencesKey("playback_issue_reports_enabled")
     private val pauseOverlayEnabledKey = booleanPreferencesKey("pause_overlay_enabled")
@@ -1047,6 +1073,11 @@ class PlayerSettingsDataStore @Inject constructor(
                     ?.let(::normalizeSecondaryAudioLanguageCode),
                 loadingOverlayEnabled = prefs[loadingOverlayEnabledKey] ?: true,
                 showPlayerLoadingStatus = prefs[showPlayerLoadingStatusKey] ?: true,
+                showPlaybackInfo = prefs[showPlaybackInfoKey] ?: false,
+                hiddenPlayerControls = prefs[hiddenPlayerControlsKey]
+                    ?.mapNotNull { runCatching { PlayerControlButton.valueOf(it) }.getOrNull() }
+                    ?.toSet()
+                    ?: PlayerControlButton.defaultHidden,
                 seekPreviewEnabled = prefs[seekPreviewEnabledKey] ?: PlayerSettings.DEFAULT_SEEK_PREVIEW_ENABLED,
                 playbackIssueReportsEnabled = prefs[playbackIssueReportsEnabledKey] ?: false,
                 pauseOverlayEnabled = prefs[pauseOverlayEnabledKey] ?: true,
@@ -1412,6 +1443,18 @@ class PlayerSettingsDataStore @Inject constructor(
     suspend fun setShowPlayerLoadingStatus(enabled: Boolean) {
         store().edit { prefs ->
             prefs[showPlayerLoadingStatusKey] = enabled
+        }
+    }
+
+    suspend fun setShowPlaybackInfo(enabled: Boolean) {
+        store().edit { prefs ->
+            prefs[showPlaybackInfoKey] = enabled
+        }
+    }
+
+    suspend fun setHiddenPlayerControls(controls: Set<PlayerControlButton>) {
+        store().edit { prefs ->
+            prefs[hiddenPlayerControlsKey] = controls.mapTo(HashSet()) { it.name }
         }
     }
 
