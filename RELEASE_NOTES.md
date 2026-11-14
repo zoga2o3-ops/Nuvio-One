@@ -19,7 +19,6 @@ Music queues, a faster Live TV guide, more sports leagues, player button control
 
 - Large M3U playlists parse about 19x faster: a synthetic 100,000-channel list went from 2.08 s to 0.11 s.
 - The player's Backups button appears as soon as the channel index is ready.
-- Fixed blank addon posters on Fire TV.
 
 ## Player
 
