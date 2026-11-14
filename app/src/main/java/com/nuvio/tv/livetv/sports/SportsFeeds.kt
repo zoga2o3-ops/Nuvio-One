@@ -90,47 +90,40 @@ internal class SportsFeeds {
     fun fixturesRaw(slug: String): String = get("https://sporting-events.org/data/$slug.json")
 
     /**
-     * The wrestling schedule (WWE, AEW…): a file a daily GitHub job makes from TheSportsDB, so
-     * the app never asks TheSportsDB itself.
+     * The wrestling schedule (WWE, AEW, TNA and boxing): a file the data job makes from those
+     * promotions' own listings, so the app never asks them itself.
      */
     fun wrestlingRaw(): String = if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(WRESTLING_URL)
 
     /**
-     * Every sport from TheSportsDB (the same GitHub job, from its leagues.txt): the leagues and
-     * their teams. The sportsdb folder; the older football folder while that's all there is.
+     * Every extra league from the shared data job: FotMob's leagues, their teams and badges.
+     * There is no older folder to fall back to any more.
      */
     fun footballIndexRaw(): String {
         if (!SportsCatalog.SHARED_DATA_ENABLED) return ""
-        return runCatching { get(DATA_URL + "sportsdb/index.json").also { tsdbFolder = "sportsdb/" } }.getOrElse {
-            get(DATA_URL + "football/index.json").also { tsdbFolder = "football/" }
-        }
+        return get(DATA_URL + "sportsdb/index.json")
     }
 
     /** One league's games or events (a few weeks back to the end of the season). */
     fun footballLeagueRaw(tsdbId: String): String {
         if (!SportsCatalog.SHARED_DATA_ENABLED) return ""
-        val first = tsdbFolder
-        return runCatching { get(DATA_URL + first + "$tsdbId.json") }.getOrElse { e ->
-            if (e !is java.io.IOException || e.message?.startsWith("HTTP 404") != true) throw e
-            val other = if (first == "sportsdb/") "football/" else "sportsdb/"
-            get(DATA_URL + other + "$tsdbId.json").also { tsdbFolder = other }
-        }
+        return get(DATA_URL + "sportsdb/$tsdbId.json")
     }
 
-    @Volatile private var tsdbFolder = "sportsdb/"
-
-    /** Every game of the next week with its TV channels by country (TheSportsDB's TV listings, kept by the nuvio-data job). */
+    /**
+     * Every game of the next week with its TV channels by country. The new data job does not
+     * build this file yet, so keep the call off instead of asking for a 404 every four hours.
+     */
     fun tvListingsRaw(): String =
-        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/tv.json")
+        if (!SportsCatalog.SHARED_DATA_ENABLED || !TV_LISTINGS_ENABLED) "" else get(DATA_URL + "sportsdb/tv.json")
 
-    /** A TheSportsDB game's goals, cards, stats and line-ups (the nuvio-data job writes them). */
-    /** The list of teams that have players (kept by the nuvio-data job). */
+    /** The list of teams that have players (not built by the new data job yet). */
     fun playersIndexRaw(): String =
-        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/players/index.json")
+        if (!SportsCatalog.SHARED_DATA_ENABLED || !PLAYERS_ENABLED) "" else get(DATA_URL + "sportsdb/players/index.json")
 
-    /** One team's players, by TheSportsDB's team id. */
+    /** One team's players, by team id (not built by the new data job yet). */
     fun playersRaw(teamId: String): String =
-        if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/players/$teamId.json")
+        if (!SportsCatalog.SHARED_DATA_ENABLED || !PLAYERS_ENABLED) "" else get(DATA_URL + "sportsdb/players/$teamId.json")
 
     fun tsdbGameRaw(tsdbEventId: String): String =
         if (!SportsCatalog.SHARED_DATA_ENABLED) "" else get(DATA_URL + "sportsdb/games/$tsdbEventId.json")
@@ -255,7 +248,7 @@ internal class SportsFeeds {
      * little while; null when there is none, or it's old (the caller then reads the old way).
      */
     fun compactIndex(now: Long): CompactIndex? {
-        if (!SportsCatalog.SHARED_DATA_ENABLED) return null
+        if (!SportsCatalog.SHARED_DATA_ENABLED || !COMPACT_FILES_ENABLED) return null
         val kept = compactIndexKept
         if (kept != null && now - compactIndexAt < 60_000L) return kept
         synchronized(this) {
@@ -289,7 +282,7 @@ internal class SportsFeeds {
 
     /** One league's ready-made file ("day" or "week"); null when it can't be had or read. */
     fun compactFile(leagueId: String, window: String): CompactFile? {
-        if (!SportsCatalog.SHARED_DATA_ENABLED) return null
+        if (!SportsCatalog.SHARED_DATA_ENABLED || !COMPACT_FILES_ENABLED) return null
         return runCatching {
             val text = get(DATA_URL + "espn/compact/$window/" + safeFileId(leagueId) + ".json")
             val o = JSONObject(text)
@@ -323,15 +316,21 @@ internal class SportsFeeds {
     companion object {
         private const val ESPN = "https://site.api.espn.com/apis/site/v2/sports/"
         /** Our own generated sports data repo. The flag in [SportsCatalog] decides whether it is read. */
-        const val DATA_URL = "https://raw.githubusercontent.com/zoga2o3-ops/nuvio-sports-data/main/"
+        const val DATA_URL = "https://raw.githubusercontent.com/zoga2o3-ops/nuvioone-sports-data/data/"
         const val WRESTLING_URL = DATA_URL + "wrestling.json"
+
+        /** The new data job does not build these files yet. */
+        const val TV_LISTINGS_ENABLED = false
+        const val PLAYERS_ENABLED = false
+        /** Ready-made compact score files are not built either; the raw espn/ cache is used. */
+        const val COMPACT_FILES_ENABLED = false
 
         /** A league id as the shared ESPN cache file is named ("football/nfl" -> "football_nfl"). */
         fun safeFileId(id: String): String = id.replace(Regex("[^a-zA-Z0-9]+"), "_")
 
         /**
-         * A league from the nuvio-data files, with its teams (for Pick Your Teams). [tsdbId] is
-         * its TheSportsDB id; for one that fills one of the app's own leagues (WWE, MotoGP...)
+         * A league from the shared data files, with its teams (for Pick Your Teams). [tsdbId] is
+         * its file id; for one that fills one of the app's own leagues (WWE, MotoGP...)
          * [league] is that league and [alias] is true.
          */
         class TsdbLeague(val league: League, val teams: List<TeamInfo>, val tsdbId: String = league.id.removePrefix("tsdb/"), val alias: Boolean = false)
@@ -498,8 +497,8 @@ internal class SportsFeeds {
         }
 
         /**
-         * A TheSportsDB game file (see [tsdbGameRaw]) in the shape of ESPN's game summary, so the
-         * game page shows its goals, team stats and line-ups like any other game's.
+         * An extra-league game file (see [tsdbGameRaw]) in the shape of ESPN's game summary, so
+         * the game page shows its goals, team stats and line-ups like any other game's.
          */
         fun tsdbSummary(raw: String, ev: SportsEvent): JSONObject {
             val g = JSONObject(raw)
@@ -559,6 +558,7 @@ internal class SportsFeeds {
         private fun wrestlingLeague(key: String?): String = when (key) {
             "wwe" -> "guide/wwe"
             "aew" -> "guide/aew"
+            "tna" -> "guide/tna"
             "boxing" -> "guide/boxing"
             else -> "guide/wrestling"
         }

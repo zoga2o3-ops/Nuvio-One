@@ -282,7 +282,7 @@ fun SportsPicker(viewModel: SportsViewModel, onClose: () -> Unit) {
                         when {
                             league.sport == Sport.WRESTLING || league.id == "guide/boxing" -> LiveText(
                                 "${league.name}'s schedule (" + (if (league.id == "guide/boxing") "fight cards" else "weekly shows and big events") +
-                                    ", with times and venues) comes from TheSportsDB, updated every day. " +
+                                    ", with times and venues) comes from our sports data service, updated through the day. " +
                                     "Your own TV guide is checked too, to find the channel it's on. Follow it to see every show on My Sports.",
                                 color = colors.TextSecondary, size = 13.sp, maxLines = 4
                             )
@@ -309,7 +309,7 @@ fun SportsPicker(viewModel: SportsViewModel, onClose: () -> Unit) {
                             }
                             league.id.startsWith("tsdb/") && teams.orEmpty().isNotEmpty() -> Column(Modifier.weight(1f)) {
                                 LiveText(
-                                    "Fixtures and results from TheSportsDB. On match days, scores update about every 15 minutes.",
+                                    "Fixtures, results and tables from FotMob through our sports data service. On match days, scores update every few minutes.",
                                     color = colors.TextSecondary, size = 12.sp, maxLines = 2
                                 )
                                 Spacer(Modifier.height(8.dp))

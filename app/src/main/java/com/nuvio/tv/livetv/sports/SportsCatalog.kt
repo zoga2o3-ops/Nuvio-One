@@ -10,11 +10,10 @@ import java.util.Locale
 object SportsCatalog {
 
     /**
-     * Whether the app reads the shared TheSportsDB/ESPN data files. Off while we build our own
-     * sports data service: the page then uses ESPN's public feed directly and hides the
-     * TheSportsDB-only leagues.
+     * Whether the app reads our shared sports data files (ESPN cache, FotMob extra leagues and
+     * wrestling/boxing schedules). On: the page adds those leagues to the built-in ones.
      */
-    const val SHARED_DATA_ENABLED = false
+    const val SHARED_DATA_ENABLED = true
 
     private val US = setOf("US")
     private val UK = setOf("UK", "IE")
@@ -205,7 +204,7 @@ object SportsCatalog {
         soc("fifa.friendly.w", "Women's International Friendlies", "W FRIEND", listOf("Women's International", "Women's Friendly"), color = 0xFF33415C, women = true, national = true),
         // More from ESPN: Brazil's state leagues, the other World Cup qualifiers and continental
         // cups, US college soccer. (Ireland, Northern Ireland, Wales, Scottish League One and Two
-        // and Switzerland aren't on ESPN any more: they come from TheSportsDB's files.)
+        // and Switzerland aren't on ESPN any more: they come from the shared data files.)
         soc("bra.camp.paulista", "Campeonato Paulista", "PAULISTA", listOf("Paulista", "Paulistão"), color = 0xFF111111),
         soc("bra.camp.carioca", "Campeonato Carioca", "CARIOCA", listOf("Carioca", "Cariocão"), color = 0xFF0B4F2E),
         soc("bra.camp.mineiro", "Campeonato Mineiro", "MINEIRO", listOf("Mineiro"), color = 0xFF1A1A1A),
@@ -362,7 +361,12 @@ object SportsCatalog {
         League("guide/aew", Sport.WRESTLING, "AEW", "AEW",
             guideWords = listOf("AEW", "AEW Dynamite", "AEW Collision", "AEW Rampage", "All Elite Wrestling"),
             regions = EVERYWHERE, guideOnly = true, kind = LeagueKind.EVENT, minutes = 120, color = 0xFF8C6D1F, liveByDefault = true),
-        League("guide/wrestling", Sport.WRESTLING, "Wrestling", "WRESTLING", guideWords = listOf("TNA Wrestling", "TNA iMPACT", "NJPW", "Wrestling"),
+        League("guide/tna", Sport.WRESTLING, "TNA", "TNA",
+            guideWords = listOf("TNA", "TNA iMPACT", "TNA Wrestling", "Impact Wrestling",
+                "Destination X", "Bound For Glory", "TNA+"),
+            regions = EVERYWHERE, guideOnly = true, kind = LeagueKind.EVENT,
+            minutes = 180, color = 0xFFB31B1B, liveByDefault = true),
+        League("guide/wrestling", Sport.WRESTLING, "Wrestling", "WRESTLING", guideWords = listOf("NJPW", "Wrestling"),
             regions = setOf("US", "CA", "UK", "OTHER"), guideOnly = true, kind = LeagueKind.EVENT, color = 0xFF3A3A3A),
         // ---- Racing
         League("racing/f1", Sport.RACING, "Formula 1", "F1", "racing/f1", LeagueKind.EVENT,
@@ -409,8 +413,8 @@ object SportsCatalog {
     fun league(id: String): League? = byId[id] ?: extraById[id]
 
     /**
-     * Leagues that arrive with the data rather than being built in: non-league football from
-     * the nuvio-data files (ids "tsdb/<TheSportsDB id>"). Set when that data loads.
+     * Leagues that arrive with the data rather than being built in: extra football from the
+     * shared data files (ids "tsdb/<FotMob id>"). Set when that data loads.
      */
     @Volatile var extra: List<League> = emptyList()
         private set

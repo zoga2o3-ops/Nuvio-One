@@ -1107,9 +1107,9 @@ class SportsRepository @Inject constructor(
             } ?: run { tsdbIndexAt = now - 11 * HOUR }
         }
         // Every one of these (non-league football, rugby league and cricket outside the big
-        // competitions...), not just your region's: they're nuvio-data's own files, already
-        // fetched once a day by its shared job, so reading one more of them costs nothing extra
-        // against TheSportsDB itself — the region gate here was only ever about tidiness.
+        // competitions...), not just your region's: they're the data service's own files,
+        // already fetched by its shared job, so reading one more of them costs nothing extra
+        // against the sources themselves — the region gate here was only ever about tidiness.
         val wanted = (followedLeagueIds(f) + SportsCatalog.all.map { it.id }).distinct().filter { fromTsdb(it) }
         for (id in wanted) {
             val l = SportsCatalog.league(id) ?: continue
@@ -1233,6 +1233,8 @@ class SportsRepository @Inject constructor(
 
     /** TheSportsDB's TV listings (a few hundred games' channels in many countries); the last saved copy when the file can't be reached. */
     private suspend fun updateTv() {
+        // The new data job does not build sportsdb/tv.json yet: don't ask for a file that 404s.
+        if (!SportsFeeds.TV_LISTINGS_ENABLED) return
         val file = File(dir, "tv.json")
         val raw = runCatching { feeds.tvListingsRaw() }.onSuccess { runCatching { file.writeText(it) } }.getOrNull() ?: return
         val list = runCatching { SportsTvListings.parse(raw) }.getOrDefault(emptyList())
@@ -1246,6 +1248,8 @@ class SportsRepository @Inject constructor(
      * a week old is used as it is; an older one only when the file can't be reached.
      */
     suspend fun teamPlayers(team: TeamInfo): Roster? = withContext(Dispatchers.IO) {
+        // Player pages are not built by the new data job yet: show no roster rather than 404.
+        if (!SportsFeeds.PLAYERS_ENABLED) return@withContext null
         runCatching {
             fun cached(f: File): String? = f.takeIf { it.exists() }?.let { runCatching { it.readText() }.getOrNull() }
             fun fresh(f: File) = f.exists() && System.currentTimeMillis() - f.lastModified() < 7L * 24 * 3600 * 1000
@@ -1295,6 +1299,20 @@ class SportsRepository @Inject constructor(
         }
     }
 
+    /**
+     * Saved league files belong to the data source that wrote them. After moving from the old
+     * nuvio-data repo to the NuvioOne service, drop the old league cache: the same file names
+     * now mean different FotMob leagues.
+     */
+    private fun migrateCacheSource() {
+        val marker = File(dir, "sports_source.txt")
+        val saved = runCatching { marker.readText().trim() }.getOrNull()
+        if (saved == SportsFeeds.DATA_URL) return
+        runCatching { dir.listFiles { f -> f.name.startsWith("tsdb_") }?.forEach { it.delete() } }
+        runCatching { File(dir, "fx_wrestling.json").delete() }
+        runCatching { marker.writeText(SportsFeeds.DATA_URL) }
+    }
+
     /** The saved scores of [ids] (leagues read from their files; too old ones are left out). */
     private fun readSavedScores(ids: Set<String>): Map<String, LeagueData> {
         val now = System.currentTimeMillis()
@@ -1323,6 +1341,7 @@ class SportsRepository @Inject constructor(
 
     /** Everything else saved last time ([skip]: leagues whose scores were already read). */
     private fun loadCache(skip: Set<String> = emptySet()) {
+        migrateCacheSource()
         val now = System.currentTimeMillis()
         loadCompactSeen()
         val m = HashMap<String, LeagueData>()
@@ -1949,7 +1968,7 @@ class SportsRepository @Inject constructor(
     private suspend fun loadSummary(ev: SportsEvent): GameSummary? = withContext(Dispatchers.IO) {
         val league = SportsCatalog.league(ev.leagueId) ?: return@withContext null
         if (league.kind != LeagueKind.TEAMS) return@withContext null
-        // TheSportsDB's games: the details the nuvio-data job keeps (finished and live games).
+        // Extra-league games: the details the data job keeps (finished and live games).
         val tsdbId = if (league.espnPath == null && ev.id.startsWith("tsdb:") && ev.home != null) ev.id.substringAfterLast(':') else null
         val id = ev.espnId ?: tsdbId ?: return@withContext null
         if (league.espnPath == null && tsdbId == null) return@withContext null

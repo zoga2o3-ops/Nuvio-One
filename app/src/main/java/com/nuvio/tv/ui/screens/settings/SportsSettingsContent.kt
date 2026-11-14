@@ -260,9 +260,9 @@ fun SportsSettingsContent(
             }
             item(key = "about") {
                 Text(
-                    text = "Scores, schedules, team logos and colors come from ESPN's free public feed. " +
+                    text = "Scores, schedules, team logos and colors come from ESPN's free public feed and FotMob's league data through our sports data service. " +
                         "Some event dates come from sporting-events.org" +
-                        (if (SportsCatalog.SHARED_DATA_ENABLED) ", and the wrestling schedule and logos from TheSportsDB" else "") +
+                        (if (SportsCatalog.SHARED_DATA_ENABLED) ", and wrestling/boxing schedules from WWE, AEW, TNA and boxing sources" else "") +
                         ". Darts, snooker, rugby and other sports they don't cover are found in your own TV guide.",
                     style = MaterialTheme.typography.bodySmall,
                     color = NuvioTheme.colors.TextTertiary,

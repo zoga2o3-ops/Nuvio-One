@@ -39,7 +39,7 @@
 
 ## Sports
 
-- Sports now reads ESPN's public feed directly for scores, schedules, teams and logos. `sporting-events.org` still supplies date-only events. TV listings, player rosters and some TheSportsDB-only schedules are temporarily unavailable while a new data service is prepared.
+- Sports now uses the new NuvioOne sports data service: ESPN scores, schedules and game details, plus 97 extra FotMob leagues with tables and team badges, and WWE, AEW, TNA and boxing schedules. `sporting-events.org` still supplies date-only events. TV listings and player rosters are not built yet.
 
 ## On Demand
 
