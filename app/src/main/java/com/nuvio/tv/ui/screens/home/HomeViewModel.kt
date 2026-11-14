@@ -766,7 +766,8 @@ class HomeViewModel @Inject constructor(
                         episodeDescription = cached.episodeDescription,
                         episodeImdbRating = if (cached.ratingVisible) cached.episodeImdbRating else null,
                         genres = cached.genres,
-                        releaseInfo = cached.releaseInfo
+                        releaseInfo = cached.releaseInfo,
+                        remainingEpisodes = cached.remainingEpisodes
                     )
                 }
             val nextUpItems = cachedNextUp
@@ -800,7 +801,8 @@ class HomeViewModel @Inject constructor(
                         isNewSeasonRelease = cached.isNewSeasonRelease,
                         seedSeason = cached.seedSeason,
                         seedEpisode = cached.seedEpisode,
-                        contentLanguage = cached.contentLanguage
+                        contentLanguage = cached.contentLanguage,
+                        remainingEpisodes = cached.remainingEpisodes
                     )
                 )
             }

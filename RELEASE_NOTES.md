@@ -12,6 +12,7 @@
 ## Home
 
 - Home rows now populate on their own once their catalog loads, without needing to move focus. Previously a completed catalog could stay as gray loading cards until a row was highlighted.
+- Continue Watching's “X EP left” badge now appears immediately from the last known count and updates as soon as the show's episode list loads, instead of waiting for the rest of the card enrichment.
 - A catalog addon that stops responding no longer holds up the rest of Home. Its row is removed after a timeout instead of staying as gray loading cards.
 
 ## Live TV
