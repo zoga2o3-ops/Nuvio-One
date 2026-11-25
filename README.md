@@ -8,6 +8,8 @@
 
 [![Latest release](https://img.shields.io/github/v/release/zoga2o3-ops/Nuvio-One?label=latest&style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
 [![Downloads](https://img.shields.io/github/downloads/zoga2o3-ops/Nuvio-One/total?style=for-the-badge)](https://github.com/zoga2o3-ops/Nuvio-One/releases)
+[![Mobile version: Nuvio One M](https://img.shields.io/badge/mobile-Nuvio%20One%20M-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/zoga2o3-ops/Nuvio-One-M)
+[![Desktop version: Nuvio One Desktop](https://img.shields.io/badge/desktop-Nuvio%20One%20Desktop-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/zoga2o3-ops/Nuvio-One-Desktop)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue?style=for-the-badge)](LICENSE)
 <a href="https://ko-fi.com/zoga2o3"><img src="https://img.shields.io/badge/Ko--fi-Support%20the%20project-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support the project on Ko-fi" /></a>
 
