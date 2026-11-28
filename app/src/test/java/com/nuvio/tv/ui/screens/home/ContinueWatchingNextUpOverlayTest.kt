@@ -103,4 +103,45 @@ class ContinueWatchingNextUpOverlayTest {
         assertEquals("Episode 6", shown.episodeTitle)
         assertNull(shown.episodeDescription)
     }
+
+    /**
+     * The "N EP left" badge used to disappear and come back as enrichment re-ran, because this
+     * merge carried every series field except the count. Users saw the badge flash.
+     */
+    @Test
+    fun `the episode-left badge survives a move to the next episode`() {
+        val enriched = info(episode = 5).copy(remainingEpisodes = 7)
+        val moved = info(episode = 6)
+
+        assertEquals(7, moved.withSeriesFieldsFrom(enriched).remainingEpisodes)
+    }
+
+    @Test
+    fun `the episode-left badge survives a card leaving in-progress`() {
+        val inProgress = ContinueWatchingItem.InProgress(
+            progress = WatchProgress(
+                contentId = "tt43691412",
+                contentType = "series",
+                name = "Show",
+                poster = null,
+                backdrop = null,
+                logo = null,
+                videoId = "tt43691412:1:5",
+                season = 1,
+                episode = 5,
+                episodeTitle = "Episode 5",
+                position = 10L,
+                duration = 100L,
+                lastWatched = 1L
+            ),
+            remainingEpisodes = 4
+        )
+
+        assertEquals(4, info(episode = 6).withSeriesFieldsFrom(inProgress).remainingEpisodes)
+    }
+
+    @Test
+    fun `a card with no known count is not given a stale one`() {
+        assertNull(info(episode = 6).withSeriesFieldsFrom(info(episode = 5)).remainingEpisodes)
+    }
 }

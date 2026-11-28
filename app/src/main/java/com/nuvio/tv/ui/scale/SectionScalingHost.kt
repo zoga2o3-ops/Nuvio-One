@@ -33,7 +33,11 @@ fun SectionScaleHost(
     }
 
     val baseDensity = LocalDensity.current
-    val scaledDensity = remember(baseDensity, scale) {
+    // Keyed on the factors rather than the [SectionScale] instance: the map is rebuilt on every
+    // preference emission, so the data class would compare equal but the density must still be
+    // recomputed when the percentages actually change. Keying on the instance alone meant a
+    // page could keep the size it was composed with and never shrink back.
+    val scaledDensity = remember(baseDensity, scale.textFactor, scale.uiFactor) {
         Density(
             density = baseDensity.density * scale.uiFactor,
             fontScale = baseDensity.fontScale * scale.textFactor

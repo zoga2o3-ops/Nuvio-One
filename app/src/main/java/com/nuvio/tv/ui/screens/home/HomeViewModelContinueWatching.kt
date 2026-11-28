@@ -2149,7 +2149,19 @@ private suspend fun HomeViewModel.enrichInProgressItem(
         return@coroutineScope item
     }
     val remainingEpisodes = if (isSeriesTypeCW(item.progress.contentType)) {
-        meta.remainingEpisodeCount(watchedEpisodes)
+        // The badge job's list is the same one the early publish above used, and it already
+        // excludes episodes that have not aired. Metadata can include those, so the smaller of
+        // the two is the honest count. Taking one and then the other is what made the badge
+        // alternate between two numbers.
+        val fromMeta = meta.remainingEpisodeCount(watchedEpisodes)
+        val fromCache = cachedAiredEpisodes(item.progress.contentId)?.let { episodes ->
+            remainingEpisodeCountFrom(episodes, watchedEpisodes)
+        }
+        when {
+            fromMeta == null -> fromCache
+            fromCache == null -> fromMeta
+            else -> minOf(fromMeta, fromCache)
+        }
     } else {
         null
     }
@@ -2255,7 +2267,17 @@ private suspend fun HomeViewModel.enrichNextUpItem(
 
     val meta = resolveMetaForProgress(progressSeed, metaCache, debug) ?: return@coroutineScope item
     val remainingEpisodes = if (isSeriesTypeCW(progressSeed.contentType)) {
-        meta.remainingEpisodeCount(watchedEpisodes)
+        // Reconciled with the early publish above for the same reason as the in-progress branch:
+        // two different sources publishing two different counts made the badge alternate.
+        val fromMeta = meta.remainingEpisodeCount(watchedEpisodes)
+        val fromCache = cachedAiredEpisodes(progressSeed.contentId)?.let { episodes ->
+            remainingEpisodeCountFrom(episodes, watchedEpisodes)
+        }
+        when {
+            fromMeta == null -> fromCache
+            fromCache == null -> fromMeta
+            else -> minOf(fromMeta, fromCache)
+        }
     } else {
         null
     }
@@ -3051,7 +3073,11 @@ private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
                         airDateLabel = effectiveOverlay.airDateLabel ?: item.info.airDateLabel,
                         releaseTimestamp = effectiveOverlay.releaseTimestamp ?: item.info.releaseTimestamp,
                         contentLanguage = effectiveOverlay.contentLanguage ?: item.info.contentLanguage,
-                        mdbListRatings = effectiveOverlay.mdbListRatings ?: item.info.mdbListRatings
+                        mdbListRatings = effectiveOverlay.mdbListRatings ?: item.info.mdbListRatings,
+                        // Carried like every other field. Leaving it out wiped the "N EP left"
+                        // badge at the start of each enrichment cycle, then the cycle's own
+                        // enrichment put it back — which is what made the badge flash.
+                        remainingEpisodes = effectiveOverlay.remainingEpisodes ?: item.info.remainingEpisodes
                     ))
                 }
                 is ContinueWatchingItem.InProgress -> {
@@ -3071,7 +3097,9 @@ private suspend fun HomeViewModel.applyContinueWatchingEnrichmentOverlay(
                         genres = overlay.genres.ifEmpty { item.genres },
                         releaseInfo = overlay.releaseInfo ?: item.releaseInfo,
                         contentLanguage = overlay.contentLanguage ?: item.contentLanguage,
-                        mdbListRatings = overlay.mdbListRatings ?: item.mdbListRatings
+                        mdbListRatings = overlay.mdbListRatings ?: item.mdbListRatings,
+                        // See the next-up branch above: dropping this flashed the badge.
+                        remainingEpisodes = overlay.remainingEpisodes ?: item.remainingEpisodes
                     )
                 }
             }
@@ -3558,7 +3586,9 @@ internal fun NextUpInfo.withSeriesFieldsFrom(source: NextUpInfo): NextUpInfo = c
     genres = source.genres.ifEmpty { genres },
     releaseInfo = source.releaseInfo ?: releaseInfo,
     contentLanguage = source.contentLanguage ?: contentLanguage,
-    mdbListRatings = source.mdbListRatings ?: mdbListRatings
+    mdbListRatings = source.mdbListRatings ?: mdbListRatings,
+    // Without this the "N EP left" badge vanished whenever the card changed episode.
+    remainingEpisodes = source.remainingEpisodes ?: remainingEpisodes
 )
 
 /** [withSeriesFieldsFrom] for a card that was in progress, e.g. an episode marked watched mid-way. */
@@ -3570,5 +3600,7 @@ internal fun NextUpInfo.withSeriesFieldsFrom(source: ContinueWatchingItem.InProg
     genres = source.genres.ifEmpty { genres },
     releaseInfo = source.releaseInfo ?: releaseInfo,
     contentLanguage = source.contentLanguage ?: contentLanguage,
-    mdbListRatings = source.mdbListRatings ?: mdbListRatings
+    mdbListRatings = source.mdbListRatings ?: mdbListRatings,
+    // Same reason as the overload above: the badge must survive the move to Next Up.
+    remainingEpisodes = source.remainingEpisodes ?: remainingEpisodes
 )

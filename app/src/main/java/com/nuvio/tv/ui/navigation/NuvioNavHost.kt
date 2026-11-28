@@ -158,6 +158,24 @@ private fun sectionKeyForRoute(route: String): String? = when (route) {
     else -> null
 }
 
+/**
+ * A destination that follows a section's size, re-read as the setting changes.
+ *
+ * Details and Sources are opened from Home and have no size of their own, so they take Home's.
+ * They are separate destinations rather than children of Home, so without this they would be the
+ * one pair of pages the setting never reached.
+ */
+private fun NavGraphBuilder.scaledComposable(
+    route: String,
+    sectionKey: String,
+    arguments: List<androidx.navigation.NamedNavArgument> = emptyList(),
+    content: @Composable (NavBackStackEntry) -> Unit
+) {
+    composable(route = route, arguments = arguments) { entry ->
+        SectionScaleHost(sectionKey) { content(entry) }
+    }
+}
+
 // Root destinations carry the legacy sidebar inset themselves so the NavHost container
 // keeps a constant width while navigating between root and non-root routes.
 private fun NavGraphBuilder.rootComposable(
@@ -639,8 +657,9 @@ private fun PlaybackNavHost(
             }
         }
 
-        composable(
+        scaledComposable(
             route = Screen.Detail.route,
+            sectionKey = SectionScales.HOME,
             arguments = listOf(
                 navArgument("itemId") { type = NavType.StringType },
                 navArgument("itemType") { type = NavType.StringType },
@@ -684,7 +703,7 @@ private fun PlaybackNavHost(
             val detailArgs = backStackEntry.arguments
             if (ServerCatalog.isCollection(detailArgs?.getString("itemId"), detailArgs?.getString("itemType"))) {
                 ServerCatalogDestination(navController, backStackEntry)
-                return@composable
+                return@scaledComposable
             }
             val savedState = backStackEntry.savedStateHandle
             val returnToHomeOnBack = detailArgs
@@ -874,8 +893,9 @@ private fun PlaybackNavHost(
             }
         }
 
-        composable(
+        scaledComposable(
             route = Screen.Stream.route,
+            sectionKey = SectionScales.HOME,
             arguments = listOf(
                 navArgument("videoId") { type = NavType.StringType },
                 navArgument("contentType") { type = NavType.StringType },
