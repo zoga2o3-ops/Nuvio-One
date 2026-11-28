@@ -143,10 +143,14 @@ val requiredReleaseKeys = listOf(
 )
 
 fun missingReleaseKeys(): List<String> = requiredReleaseKeys.filter { name ->
-    val fromEnv = providers.environmentVariable(name).orNull?.trim()
-    val fromFile = localProperties.getProperty(name)?.trim()
-        ?: devProperties.getProperty(name)?.trim()
-    (fromEnv ?: fromFile).isNullOrBlank()
+    val fromEnv = providers.environmentVariable(name).orNull?.trim()?.takeIf { it.isNotEmpty() }
+    val fromFile = localProperties.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: devProperties.getProperty(name)?.trim()?.takeIf { it.isNotEmpty() }
+    val value = fromEnv ?: fromFile
+    if (value == null) {
+        logger.lifecycle("  missing: $name")
+        true
+    } else false
 }
 
 // Only asked for when a release is being put together, so ordinary debug builds stay quick.
