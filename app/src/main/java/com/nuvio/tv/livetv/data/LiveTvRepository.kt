@@ -453,6 +453,34 @@ class LiveTvRepository @Inject constructor(
     }
 
     /**
+     * A guide from a file rather than a link: the XML is copied straight to where a downloaded
+     * guide lives, so it is read and stored exactly like one.
+     *
+     * This exists because a provider's guide only sometimes covers the whole playlist, and where
+     * it doesn't the app fills the gaps by asking the provider for one channel at a time —
+     * thousands of requests that providers rate-limit. A guide file covering every channel needs
+     * no such requests at all. [source] supplies the bytes; the caller closes it.
+     */
+    suspend fun importEpgFile(name: String, fileName: String?, source: java.io.InputStream): String =
+        withContext(Dispatchers.IO) {
+            val id = UUID.randomUUID().toString()
+            epgDir.mkdirs()
+            val target = epgFile(id)
+            // Written next to the target first: a half-copied guide must never be read as a whole.
+            val temp = File(epgDir, "$id.xml.tmp")
+            temp.outputStream().use { out -> source.copyTo(out, DEFAULT_BUFFER_SIZE) }
+            if (!temp.renameTo(target)) {
+                temp.delete()
+                error("The guide could not be saved")
+            }
+            // The file has no URL to refresh from; "file:" marks it so a download is never tried.
+            val localUrl = "file:${fileName.orEmpty()}"
+            prefs.updateEpgSources { it + EpgSource(id = id, name = name.ifBlank { "EPG" }, url = localUrl) }
+            refreshInternal(forcePlaylists = false, forceEpg = false, forceIds = setOf(id))
+            id
+        }
+
+    /**
      * The id of a source another profile already has (same URL), so both profiles use one downloaded
      * file. Not an id this profile already has: that would be the same source listed twice.
      */
@@ -630,6 +658,8 @@ class LiveTvRepository @Inject constructor(
     private fun restoreShiftedGuide() {
         // Past listings from the Xtream API are fetched again (with the new shift) as you browse.
         archiveFetched.clear()
+        archiveFetchedLoaded = true
+        if (guideInDb) runCatching { guideDb.clearArchiveFilled() }
         rematchEpg()
     }
 
@@ -804,6 +834,8 @@ class LiveTvRepository @Inject constructor(
         for (target in epgTargets) {
             outOfTheWay()
             val file = epgFile(target.fileId)
+            // A guide that was imported from a file has nothing to download.
+            if (target.url.startsWith("file:")) continue
             val stale = !file.exists() ||
                 now - file.lastModified() > settings.epgRefreshHours.coerceAtLeast(1) * HOUR
             // A playlist saved again (its login, user agent…): its own guide is downloaded again too.
@@ -1601,11 +1633,65 @@ class LiveTvRepository @Inject constructor(
 
     // ---------------------------------------------------------------- Xtream catch-up archive
 
-    /** Channels whose archive listings were already fetched this session. */
+    /** Channels whose archive listings were already fetched, remembered across runs (see [archiveFilled]). */
     private val archiveFetched = java.util.Collections.synchronizedSet(HashSet<String>())
+    /**
+     * The channels actually finished, as opposed to merely asked for this run.
+     *
+     * Only these are written to disk: [archiveFetched] also holds the ones queued right now, and
+     * saving those would make the next run skip work that never happened.
+     */
+    private val archiveDone = java.util.Collections.synchronizedSet(HashSet<String>())
+    @Volatile private var archiveFetchedLoaded = false
+    @Volatile private var archiveDoneUnflushed = 0
+
+    private fun ensureArchiveFetchedLoaded() {
+        if (archiveFetchedLoaded || !guideInDb) return
+        archiveFetchedLoaded = true
+        runCatching {
+            val done = guideDb.archiveFilled()
+            archiveFetched.addAll(done)
+            archiveDone.addAll(done)
+        }
+    }
+
+    /** Records one finished channel, writing the list out every so often rather than each time. */
+    private fun markArchiveDone(channelKey: String) {
+        archiveDone += channelKey
+        if (!guideInDb) return
+        if (++archiveDoneUnflushed < ARCHIVE_SAVE_EVERY) return
+        archiveDoneUnflushed = 0
+        val snapshot = synchronized(archiveDone) { archiveDone.toList() }
+        scope.launch(Dispatchers.IO) { guideDb.putArchiveFilled(snapshot) }
+    }
+
     private val archivePermits = kotlinx.coroutines.sync.Semaphore(3)
-    @Volatile private var archivePausedUntil = 0L
+
+    /**
+     * How long to wait before the next archive request.
+     *
+     * Providers limit requests per minute, and the previous code treated one refusal as "stop
+     * everything for five minutes", which is why a large playlist filled about thirty channels and
+     * then sat still. This grows while the provider is refusing and shrinks again once it is
+     * answering, so a provider that never refuses never waits at all.
+     */
+    @Volatile private var archiveBackoffMs = 0L
+
     @Volatile private var apiFillReported = false
+
+    private fun isRateLimited(error: Throwable?): Boolean {
+        val message = error?.message.orEmpty()
+        return message.contains("429") || message.contains("too many requests", ignoreCase = true)
+    }
+
+    private fun backOffAfterRefusal() {
+        archiveBackoffMs = if (archiveBackoffMs <= 0L) ARCHIVE_BACKOFF_START_MS
+        else (archiveBackoffMs * 2).coerceAtMost(ARCHIVE_BACKOFF_MAX_MS)
+    }
+
+    private fun relaxAfterAnswer() {
+        if (archiveBackoffMs > 0L) archiveBackoffMs = (archiveBackoffMs / 2).takeIf { it >= ARCHIVE_BACKOFF_START_MS } ?: 0L
+    }
 
     /**
      * Past listings for Xtream catch-up channels, the way TiviMate gets them: many providers'
@@ -1617,6 +1703,7 @@ class LiveTvRepository @Inject constructor(
         // missingOnly: channels the guide file has nothing for. Most Xtream apps read each
         // channel's listings from the provider's API by stream number, so they show a guide
         // even when the guide file's ids don't line up with the channel list; this does the same.
+        ensureArchiveFetchedLoaded()
         val wanted = channels.filter { ch ->
             ch.key !in archiveFetched && (!missingOnly || ch.stalkerRef == null) &&
                 (if (missingOnly) _programs.value[ch.key].isNullOrEmpty() else ch.catchup != null)
@@ -1624,10 +1711,6 @@ class LiveTvRepository @Inject constructor(
         if (wanted.isEmpty()) return
 
         wanted.forEach { archiveFetched += it.key }
-        if (System.currentTimeMillis() < archivePausedUntil) {
-            wanted.forEach { archiveFetched -= it.key }
-            return
-        }
         scope.launch {
             val playlists = prefs.currentPlaylists().associateBy { it.id }
             val settings = prefs.currentSettings()
@@ -1647,9 +1730,10 @@ class LiveTvRepository @Inject constructor(
                 val streamId = Regex("""/(\d+)(?:\.[a-z0-9]+)?(?:\?.*)?$""", RegexOption.IGNORE_CASE)
                     .find(ch.url)?.groupValues?.get(1) ?: return@forEach
                 archivePermits.withPermit {
-                    // The provider said "too many requests": leave it alone for a few minutes, so
-                    // these lookups never stand between you and playing something.
-                    if (System.currentTimeMillis() < archivePausedUntil) { archiveFetched -= ch.key; return@withPermit }
+                    // Space the requests out once the provider has started refusing. At 0 this
+                    // costs nothing, so a provider that never refuses sees no change at all.
+                    val wait = archiveBackoffMs
+                    if (wait > 0L) kotlinx.coroutines.delay(wait)
                     runCatching {
                         val url = "${pl.xtreamBase()}/player_api.php?username=" +
                             java.net.URLEncoder.encode(pl.xtreamUsername.trim(), "UTF-8") +
@@ -1657,6 +1741,9 @@ class LiveTvRepository @Inject constructor(
                             "&action=get_simple_data_table&stream_id=$streamId"
                         val json = JSONObject(getText(url, pl.userAgent.ifBlank { DEFAULT_UA }))
                         val arr = json.optJSONArray("epg_listings") ?: return@runCatching
+                        // The provider answered: ease the spacing back down, so once the limit
+                        // clears, a large playlist returns to full speed rather than crawling.
+                        relaxAfterAnswer()
                         fun b64(v: String): String = runCatching {
                             String(android.util.Base64.decode(v, android.util.Base64.DEFAULT), Charsets.UTF_8)
                         }.getOrDefault(v)
@@ -1705,16 +1792,26 @@ class LiveTvRepository @Inject constructor(
                         }
                         _programs.value = _programs.value + (ch.key to merged)
                         loadedFrom = minOf(loadedFrom, from)
+                        // Saved as we go, so closing the app mid-fill doesn't lose the channels
+                        // already done: the next visit carries on from here instead of the start.
+                        markArchiveDone(ch.key)
                         if (missingOnly && !apiFillReported) {
                             apiFillReported = true
                             LIVE_REPORT.add("Guide: listings for channels the guide file doesn't cover are coming from the Xtream API (first: ${ch.name})")
                         }
                     }.onFailure {
                         Log.w(TAG, "Catch-up archive for ${ch.name} unavailable", it)
-                        if (it.message?.contains("429") == true) {
-                            archivePausedUntil = System.currentTimeMillis() + 5 * 60_000L
+                        // A refusal means "not yet", not "never": give the channel back so the
+                        // next look tries it again, and space the remaining requests out. The
+                        // old code dropped this channel and stopped everything for five minutes,
+                        // which is why a large playlist never got past about thirty.
+                        if (isRateLimited(it)) {
                             archiveFetched -= ch.key
-                            LIVE_REPORT.add("Provider said too many requests (HTTP 429): catch-up lookups paused for 5 minutes")
+                            backOffAfterRefusal()
+                            LIVE_REPORT.add(
+                                "Provider is limiting requests: asking for one channel's listings " +
+                                    "every ${archiveBackoffMs} ms until it stops refusing (${ch.name})"
+                            )
                         }
                     }
                 }
@@ -4123,6 +4220,13 @@ class LiveTvRepository @Inject constructor(
     companion object {
         private const val TAG = "LiveTvRepository"
         private const val HOUR = 60L * 60L * 1000L
+
+        /** Spacing applied after the first refusal from a provider, doubled while it keeps refusing. */
+        private const val ARCHIVE_BACKOFF_START_MS = 250L
+        /** Longest gap between archive requests, so a big playlist still finishes. */
+        private const val ARCHIVE_BACKOFF_MAX_MS = 4_000L
+        /** Finished channels gathered up before the progress list is written to disk. */
+        private const val ARCHIVE_SAVE_EVERY = 25
         /** How far below any guide channel with listings an empty guide channel scores. */
         private const val EMPTY_GUIDE_CHANNEL_PENALTY = 4_000_000L
         /** A server time zone lookup that failed is tried again after this long. */

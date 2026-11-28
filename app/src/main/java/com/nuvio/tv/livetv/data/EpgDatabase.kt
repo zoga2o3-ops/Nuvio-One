@@ -413,6 +413,35 @@ class EpgDatabase @Inject constructor(@ApplicationContext context: Context) :
     fun channelRange(ch: String, fromMs: Long, toMs: Long): List<EpgProgram> =
         range(fromMs, toMs, ch)[ch].orEmpty()
 
+    /**
+     * Channels whose listings this app has already asked an Xtream provider for.
+     *
+     * Kept on disk rather than in memory: a playlist can hold thousands of channels, providers
+     * only allow so many requests a minute, and the fill takes several visits to finish. Remembering
+     * it only for one run meant every restart began again at the first channel, so a large playlist
+     * never got past the handful the provider allowed in one sitting.
+     */
+    fun archiveFilled(): Set<String> = runCatching {
+        readableDatabase.rawQuery("SELECT v FROM meta WHERE k = 'archive_filled'", null).use { c ->
+            if (c.moveToFirst()) c.getString(0).orEmpty().split('\n').filter { it.isNotBlank() }.toHashSet()
+            else HashSet()
+        }
+    }.getOrDefault(HashSet())
+
+    fun putArchiveFilled(channels: Collection<String>) {
+        if (channels.isEmpty()) return
+        runCatching {
+            writableDatabase.insertWithOnConflict("meta", null, ContentValues().apply {
+                put("k", "archive_filled"); put("v", channels.joinToString("\n"))
+            }, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    /** Wipes the record, so the next look asks for every channel again (e.g. after a guide shift). */
+    fun clearArchiveFilled() {
+        runCatching { writableDatabase.delete("meta", "k = ?", arrayOf("archive_filled")) }
+    }
+
     fun autoMatches(): Map<String, EpgAssignment> {
         val out = HashMap<String, EpgAssignment>()
         readableDatabase.rawQuery("SELECT ch, source, xmltv FROM auto", null).use { c ->

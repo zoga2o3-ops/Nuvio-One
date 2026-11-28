@@ -3012,8 +3012,26 @@ private fun AddFromPhoneDialog(viewModel: LiveTvSettingsViewModel, onDismiss: ()
         val h = com.nuvio.tv.livetv.crash.AddFromPhoneServer.start(
             texts = phoneTexts,
             accent = String.format(java.util.Locale.US, "#%06X", accentArgb and 0xFFFFFF),
-            logo = { logoBytes }
-        ) { e ->
+            logo = { logoBytes },
+            // An uploaded guide is copied into the guide folder from the phone's stream, so a
+            // large file is never held in memory. It is then read like any downloaded guide.
+            onFile = { name, fileName, bytes ->
+                val guideName = name.ifBlank {
+                    fileName?.substringBeforeLast('.')?.ifBlank { null } ?: "EPG"
+                }
+                // The phone is waiting on this answer, so wait for the copy to finish rather than
+                // replying before the guide is actually on the TV.
+                val done = java.util.concurrent.CountDownLatch(1)
+                var failure: String? = null
+                viewModel.importEpgFile(guideName, fileName, bytes) { result ->
+                    failure = result.exceptionOrNull()?.message
+                    done.countDown()
+                }
+                done.await(5, java.util.concurrent.TimeUnit.MINUTES)
+                if (failure == null) receipt(R.string.iptv_settings_tv_guide_1_s, guideName)
+                else context.getString(R.string.iptv_phone_could_not_add)
+            },
+            onEntry = { e ->
             val line = when (e.kind) {
                 "xtream" -> {
                     val name = e.name.ifBlank { "Xtream" }
@@ -3035,6 +3053,11 @@ private fun AddFromPhoneDialog(viewModel: LiveTvSettingsViewModel, onDismiss: ()
                     viewModel.addEpg(name, e.url)
                     receipt(R.string.iptv_settings_tv_guide_1_s, name)
                 }
+                // The file was stored by onFile above; this only reports the guide that was added.
+                "epgfile" -> receipt(
+                    R.string.iptv_settings_tv_guide_1_s,
+                    e.fileName?.substringBeforeLast('.')?.ifBlank { null } ?: "EPG"
+                )
                 else -> {
                     val name = e.name.ifBlank { receipt(R.string.iptv_settings_playlist) }
                     // The guide link goes with the playlist (switched on for it only), like the TV's own form.
@@ -3044,7 +3067,8 @@ private fun AddFromPhoneDialog(viewModel: LiveTvSettingsViewModel, onDismiss: ()
             }
             added = added + line
             receipt(R.string.iptv_settings_added_1_s_it_s_loading_on_your, line)
-        }
+            }
+        )
         handle = h
         noNetwork = h == null
         onDispose { h?.stop() }

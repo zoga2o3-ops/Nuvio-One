@@ -50,6 +50,9 @@ object AddFromPhoneServer {
         val includeLive: String,
         val includeVod: String,
         val epgLabel: String,
+        val epgFileLabel: String,
+        val uploading: String,
+        val processing: String,
         val send: String,
         val networkNote: String,
         val guidePlaceholder: String,
@@ -116,6 +119,9 @@ object AddFromPhoneServer {
                     includeLive = resources.getString(R.string.iptv_phone_include_live),
                     includeVod = resources.getString(R.string.iptv_phone_include_vod),
                     epgLabel = resources.getString(R.string.iptv_phone_epg_label),
+                    epgFileLabel = resources.getString(R.string.iptv_phone_epg_file_label),
+                    uploading = resources.getString(R.string.iptv_phone_uploading),
+                    processing = resources.getString(R.string.iptv_phone_processing),
                     send = resources.getString(R.string.iptv_phone_send),
                     networkNote = resources.getString(R.string.iptv_phone_network_note),
                     guidePlaceholder = resources.getString(R.string.iptv_phone_guide_placeholder),
@@ -168,7 +174,9 @@ object AddFromPhoneServer {
         val password: String,
         val includeLive: Boolean,
         val includeVod: Boolean,
-        val stalker: com.nuvio.stalker.StalkerConfig? = null
+        val stalker: com.nuvio.stalker.StalkerConfig? = null,
+        /** The uploaded guide's original name, for "epgfile" (already stored when this arrives). */
+        val fileName: String? = null
     )
 
     class Handle(val url: String, private val socket: ServerSocket) {
@@ -183,7 +191,9 @@ object AddFromPhoneServer {
         texts: Texts,
         accent: String,
         logo: () -> ByteArray?,
-        onEntry: (Entry) -> String
+        onEntry: (Entry) -> String,
+        /** Receives an uploaded guide file as a stream, and returns the line shown on the phone. */
+        onFile: ((name: String, fileName: String?, bytes: InputStream) -> String)? = null
     ): Handle? {
         val ip = localAddress() ?: return null
         val server = bind() ?: return null
@@ -191,7 +201,7 @@ object AddFromPhoneServer {
         Thread {
             while (!server.isClosed) {
                 val client = try { server.accept() } catch (e: Exception) { break }
-                Thread { serve(client, token, texts, accent, logo, onEntry) }.apply { isDaemon = true; start() }
+                Thread { serve(client, token, texts, accent, logo, onEntry, onFile) }.apply { isDaemon = true; start() }
             }
         }.apply { isDaemon = true; name = "add-from-phone"; start() }
         return Handle("http://$ip:${server.localPort}/$token", server)
@@ -236,7 +246,8 @@ object AddFromPhoneServer {
         texts: Texts,
         accent: String,
         logo: () -> ByteArray?,
-        onEntry: (Entry) -> String
+        onEntry: (Entry) -> String,
+        onFile: ((name: String, fileName: String?, bytes: InputStream) -> String)?
     ) {
         runCatching {
             client.use { c ->
@@ -244,10 +255,14 @@ object AddFromPhoneServer {
                 val input = c.getInputStream().buffered()
                 val request = readLine(input).orEmpty()
                 var length = 0
+                val headers = HashMap<String, String>()
                 while (true) {
                     val l = readLine(input) ?: break
                     if (l.isEmpty()) break
-                    if (l.startsWith("content-length:", ignoreCase = true)) length = l.substringAfter(':').trim().toIntOrNull() ?: 0
+                    val name = l.substringBefore(':').trim().lowercase()
+                    val value = l.substringAfter(':', "").trim()
+                    if (name.isNotEmpty()) headers[name] = value
+                    if (name == "content-length") length = value.toIntOrNull() ?: 0
                 }
                 val method = request.substringBefore(' ')
                 val path = request.split(' ').getOrNull(1).orEmpty().substringBefore('?').trim('/')
@@ -269,8 +284,28 @@ object AddFromPhoneServer {
                         else send("404 Not Found", "text/plain; charset=utf-8", texts.notFound.toByteArray(Charsets.UTF_8))
                     }
                     method == "POST" && path == "$token/add" -> {
-                        if (length !in 1..65_536) {
+                        if (length !in 1..MAX_UPLOAD_BYTES) {
                             send("400 Bad Request", "application/json", json(false, texts.nothingToSend))
+                            return@use
+                        }
+                        // A guide file is sent as the raw request body with its name in the query,
+                        // so the bytes go straight to disk. A browser cannot read a local file
+                        // without a form upload, but it can send the bytes it was handed.
+                        val query = request.split(' ').getOrNull(1).orEmpty().substringAfter("?", "")
+                        fun queryValue(key: String): String = runCatching {
+                            java.net.URLDecoder.decode(
+                                query.split('&').firstOrNull { it.startsWith("$key=") }
+                                    ?.substringAfter('=', "") ?: "",
+                                "UTF-8"
+                            )
+                        }.getOrDefault("")
+                        val fileName = queryValue("fname").takeIf { it.isNotBlank() }
+                        if (fileName != null && onFile != null) {
+                            val name = queryValue("n")
+                            val part = LimitedStream(input, length.toLong())
+                            val message = runCatching { onFile(name, fileName, part) }
+                                .getOrElse { texts.couldNotAdd }
+                            send("200 OK", "application/json", json(true, message))
                             return@use
                         }
                         val bytes = ByteArray(length)
@@ -303,10 +338,43 @@ object AddFromPhoneServer {
             dec(k) to dec(v).trim()
         }
 
+    private fun contentTypeOf(headers: Map<String, String>): String =
+        headers.entries.firstOrNull { it.key == "content-type" }?.value.orEmpty()
+
+    /**
+     * The first [length] bytes of a request body, and no more.
+     *
+     * A guide is copied straight from the connection to disk through this, so a file of many
+     * megabytes never has to be held in memory to be saved.
+     */
+    internal class LimitedStream(private val source: InputStream, length: Long) : InputStream() {
+        private var left = length
+
+        override fun read(): Int {
+            if (left <= 0L) return -1
+            val b = source.read()
+            if (b >= 0) left--
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (left <= 0L) return -1
+            val n = source.read(b, off, minOf(len.toLong(), left).toInt())
+            if (n > 0) left -= n
+            return n
+        }
+
+        override fun close() { }
+    }
+
+
     private fun isWeb(s: String) = s.startsWith("http://", true) || s.startsWith("https://", true)
 
+    /** A guide file can be far larger than the little text form. */
+    private const val MAX_UPLOAD_BYTES = 256 * 1024 * 1024
+
     /** The entry, or why it can't be added (shown on the phone). */
-    private fun validate(f: Map<String, String>, texts: Texts): Pair<Entry?, String?> {
+    private fun validate(f: Map<String, String>, texts: Texts, fileOnly: Boolean = false): Pair<Entry?, String?> {
         val kind = f["kind"].orEmpty()
         val name = f["name"].orEmpty().take(80)
         val url = f["url"].orEmpty()
@@ -353,8 +421,9 @@ object AddFromPhoneServer {
                 }
             }
             "epg" -> when {
-                url.isEmpty() -> null to texts.epgMissing
-                !isWeb(url) -> null to texts.epgScheme
+                // A file on its own is a complete answer: nothing to type.
+                url.isEmpty() && !fileOnly -> null to texts.epgMissing
+                url.isNotEmpty() && !isWeb(url) -> null to texts.epgScheme
                 else -> entry to null
             }
             else -> null to texts.kindMissing
@@ -422,6 +491,8 @@ details .field{margin-bottom:16px}
 .send{height:52px;border:0;border-radius:12px;background:var(--accent);color:#0B0B10;font-size:16px;font-weight:700;font-family:inherit;margin-top:4px}
 .send:disabled{opacity:.6}
 #msg{min-height:20px;font-size:15px;text-align:center;line-height:1.4}
+#progress{height:8px;border-radius:4px;background:#26232F;overflow:hidden;margin-top:6px}
+#bar{height:100%;width:0%;background:var(--accent);border-radius:4px;transition:width .2s linear}
 #msg.ok{color:#3DDC97}#msg.bad{color:#FF8A80}
 .note{margin:0;font-size:12px;color:#8E8E9B;text-align:center;line-height:1.5}
 [hidden]{display:none!important}
@@ -460,13 +531,15 @@ details .field{margin-bottom:16px}
 <label class="check" data-for="xtream stalker" hidden><input id="vod" type="checkbox" checked>${esc(texts.includeVod)}</label>
 <div class="field" data-for="m3u xtream stalker"><label for="epg">${esc(texts.epgOptionalLabel)}</label><input id="epg" name="epg" type="url" dir="ltr" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${esc(texts.epgPlaceholder)}"></div>
 <div class="field" data-for="epg" hidden><label for="eurl">${esc(texts.epgLabel)}</label><input id="eurl" type="url" dir="ltr" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="${esc(texts.epgPlaceholder)}"></div>
+<div class="field" data-for="epg" hidden><label for="efile">${esc(texts.epgFileLabel)}</label><input id="efile" type="file" accept=".xml,.xmltv,.gz,text/xml,application/xml,application/gzip" dir="ltr"></div>
 <button class="send" type="submit" id="send">${esc(texts.send)}</button>
+<div id="progress" hidden><div id="bar"></div></div>
 <div id="msg" role="status"></div>
 </form>
 <p class="note">${esc(texts.networkNote)}</p>
 </main>
 <script>
-var labels={provider:${quote(texts.providerPlaceholder)},guide:${quote(texts.guidePlaceholder)},sending:${quote(texts.sending)},unreachable:${quote(texts.unreachable)}};
+var labels={provider:${quote(texts.providerPlaceholder)},guide:${quote(texts.guidePlaceholder)},sending:${quote(texts.sending)},unreachable:${quote(texts.unreachable)},uploading:${quote(texts.uploading)},processing:${quote(texts.processing)}};
 var kind='m3u';
 var tabs=document.querySelectorAll('.tabs button');
 function show(k){kind=k;tabs.forEach(function(b){b.setAttribute('aria-pressed',b.dataset.kind===k)});
@@ -482,7 +555,9 @@ else if(kind==='xtream'){p.set('server',v('server'));p.set('user',v('user'));p.s
 p.set('live',document.getElementById('live').checked?'1':'0');p.set('vod',document.getElementById('vod').checked?'1':'0');p.set('epg',v('epg'))}
 else if(kind==='stalker'){['portal','mac','suser','serial','devid','devid2','sig','tz','lang'].forEach(function(id){p.set(id,v(id))});p.set('spass',document.getElementById('spass').value);
 p.set('live',document.getElementById('live').checked?'1':'0');p.set('vod',document.getElementById('vod').checked?'1':'0');p.set('epg',v('epg'))}
-else{p.set('url',v('eurl'))}
+else{p.set('url',v('eurl'));
+var f=document.getElementById('efile').files[0];
+if(f){uploadGuide(f);return}}
 var b=document.getElementById('send');b.disabled=true;msg(labels.sending,'');
 fetch(location.pathname.replace(/\/$/,'')+'/add',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
 .then(function(r){return r.json()}).then(function(j){
@@ -490,6 +565,40 @@ if(j.ok){msg(j.message,'ok');document.querySelectorAll('input[type=text],input[t
 else msg(j.message,'bad')})
 .catch(function(){msg(labels.unreachable,'bad')})
 .finally(function(){b.disabled=false})};
+function send(body){var b=document.getElementById('send');b.disabled=true;
+fetch(location.pathname.replace(/\/$/,'')+'/add',{method:'POST',body:body})
+.then(function(r){return r.json()}).then(function(j){
+if(j.ok){msg(j.message,'ok');document.querySelectorAll('input[type=text],input[type=url],input[type=password]').forEach(function(i){i.value=''});
+document.getElementById('efile').value=''}
+else msg(j.message,'bad')})
+.catch(function(){msg(labels.unreachable,'bad')})
+.finally(function(){b.disabled=false})}
+// A guide file goes up as the raw request body, so the phone can report real progress.
+// XHR rather than fetch: only XHR reports upload progress.
+function uploadGuide(f){
+var b=document.getElementById('send');b.disabled=true;
+var bar=document.getElementById('bar'),box=document.getElementById('progress');
+box.hidden=false;bar.style.width='0%';
+msg('', '');
+var q='?fname='+encodeURIComponent(f.name)+'&n='+encodeURIComponent(v('name'));
+var x=new XMLHttpRequest();
+x.open('POST', location.pathname.replace(/\/$/,'')+'/add'+q);
+x.setRequestHeader('Content-Type','application/octet-stream');
+x.upload.onprogress=function(e){
+if(e.lengthComputable){
+var pct=Math.round(e.loaded/e.total*100);
+// 0-90% is the upload; the rest is the TV reading the file.
+bar.style.width=Math.round(pct*0.9)+'%';
+msg((pct<100?labels.uploading:labels.processing)+' '+pct+'%','');}
+else{msg(labels.uploading,'')}};
+x.onload=function(){
+b.disabled=false;
+var j={};try{j=JSON.parse(x.responseText)}catch(e){}
+bar.style.width='100%';
+if(j.ok){msg(j.message,'ok');document.getElementById('efile').value='';box.hidden=true}
+else msg(j.message||labels.unreachable,'bad')};
+x.onerror=function(){b.disabled=false;box.hidden=true;msg(labels.unreachable,'bad')};
+x.send(f)}
 </script>
 </body></html>"""
 }

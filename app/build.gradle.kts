@@ -119,6 +119,54 @@ if (debugReportDiscordWebhook.isNullOrBlank()) {
     )
 }
 
+/**
+ * Keys a release build must carry, or features ship silently broken.
+ *
+ * A local release once went out with an empty Discord webhook while CI had it, so debug reports
+ * stopped working for everyone. The same shape of mistake silently disables Simkl, MDBList,
+ * Premiumize, Trakt, TMDB or Last.fm — each one just looks like "not configured" in the app.
+ * Gradle supplies these from the environment on CI and from local.properties on a workstation;
+ * a build is refused when one is missing rather than quietly shipping without it.
+ */
+val requiredReleaseKeys = listOf(
+    "TMDB_API_KEY",
+    "TRAKT_CLIENT_ID",
+    "TRAKT_CLIENT_SECRET",
+    "SIMKL_CLIENT_ID",
+    "MDBLIST_CLIENT_ID",
+    "PREMIUMIZE_CLIENT_ID",
+    "LASTFM_API_KEY",
+    "LASTFM_SECRET",
+    "DEBUG_REPORT_DISCORD_WEBHOOK",
+    "NUVIO_SUPABASE_URL",
+    "NUVIO_SUPABASE_ANON_KEY"
+)
+
+fun missingReleaseKeys(): List<String> = requiredReleaseKeys.filter { name ->
+    val fromEnv = providers.environmentVariable(name).orNull?.trim()
+    val fromFile = localProperties.getProperty(name)?.trim()
+        ?: devProperties.getProperty(name)?.trim()
+    (fromEnv ?: fromFile).isNullOrBlank()
+}
+
+// Only asked for when a release is being put together, so ordinary debug builds stay quick.
+gradle.taskGraph.whenReady {
+    val buildingRelease = allTasks.any { task ->
+        task.name.startsWith("assemble") && task.name.contains("Release", ignoreCase = true)
+    }
+    if (buildingRelease) {
+        val missing = missingReleaseKeys()
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Refusing to build a release without: ${missing.joinToString(", ")}.\n" +
+                    "Put them in local.properties (or the environment, which CI uses). " +
+                    "Shipping without them silently disables those integrations."
+            )
+        }
+        logger.lifecycle("Release keys: all ${requiredReleaseKeys.size} present.")
+    }
+}
+
 fun env(name: String): String? = providers.environmentVariable(name).orNull
 
 // Release-like local/test builds may receive the official client config from the environment,

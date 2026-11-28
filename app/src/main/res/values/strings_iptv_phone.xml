@@ -25,6 +25,9 @@
     <string name="iptv_phone_include_live">Include TV channels</string>
     <string name="iptv_phone_include_vod">Include movies &amp; series (On Demand)</string>
     <string name="iptv_phone_epg_label">EPG link</string>
+    <string name="iptv_phone_epg_file_label">Or pick an EPG file (.xml)</string>
+    <string name="iptv_phone_uploading">Sending</string>
+    <string name="iptv_phone_processing">Reading on your TV</string>
     <string name="iptv_phone_send">Send to TV</string>
     <string name="iptv_phone_network_note">Only works on the same Wi‑Fi as your TV. This page stops working when you close the screen on your TV.</string>
     <string name="iptv_phone_guide_placeholder">Guide</string>

@@ -733,6 +733,21 @@ private fun LiveTvGuideScreenBody(
         val to = (row + 14).coerceAtMost(channels.size)
         viewModel.loadMissingListings(channels.subList(from, to))
     }
+    // Once the guide is open, carry on past what's on screen.
+    //
+    // A playlist can hold thousands of channels and a provider only answers so many requests a
+    // minute, so filling only the visible rows meant a large playlist stayed mostly empty however
+    // long it was left. This walks the rest in the background, at whatever pace the provider
+    // allows; the fill remembers what it has done, so closing the app continues rather than
+    // starting over.
+    LaunchedEffect(channels.size) {
+        if (channels.isEmpty()) return@LaunchedEffect
+        delay(5_000)
+        while (true) {
+            viewModel.loadMissingListings(channels)
+            delay(30_000)
+        }
+    }
     // Leaving full screen: the guide lands on the channel you were watching (in its group,
     // at the current time), not where you'd been browsing before going full screen.
     LaunchedEffect(exitFullscreenTick) {

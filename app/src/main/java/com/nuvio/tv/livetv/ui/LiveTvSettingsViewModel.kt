@@ -222,6 +222,23 @@ class LiveTvSettingsViewModel @Inject constructor(
     }
 
     fun addEpg(name: String, url: String) = viewModelScope.launch { repository.addEpg(name, url) }
+
+    /**
+     * A guide uploaded from a phone. Blocks until the bytes are stored, because the caller has to
+     * answer the phone before the connection closes; the read that follows runs in the background
+     * like any other guide's.
+     */
+    fun importEpgFile(
+        name: String,
+        fileName: String?,
+        bytes: java.io.InputStream,
+        onDone: (Result<Unit>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching { repository.importEpgFile(name, fileName, bytes) }
+            onDone(result.map { })
+        }
+    }
     fun saveEpg(source: EpgSource) = viewModelScope.launch { repository.updateEpg(source) }
     fun removeEpg(id: String) = viewModelScope.launch { repository.removeEpg(id) }
     fun setEpgEnabled(id: String, enabled: Boolean) = viewModelScope.launch { repository.setEpgEnabled(id, enabled) }
