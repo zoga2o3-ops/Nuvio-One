@@ -158,6 +158,7 @@ class LiveTvPreferences @Inject constructor(
         val pageLiveTvOptions = booleanPreferencesKey("page_live_tv_options")
         val calendarHideSpoilers = booleanPreferencesKey("calendar_hide_spoilers")
         val calendarCountry = stringPreferencesKey("calendar_country")
+        val calendarJapanAnime = booleanPreferencesKey("calendar_japan_anime")
         val calendarSkipNewsTalk = booleanPreferencesKey("calendar_skip_news_talk")
         val calendarView = stringPreferencesKey("calendar_view")
         val calendarOkAction = stringPreferencesKey("calendar_ok_action")
@@ -720,6 +721,7 @@ class LiveTvPreferences @Inject constructor(
             pageLiveTvOptions = p[Keys.pageLiveTvOptions] ?: d.pageLiveTvOptions,
             calendarHideSpoilers = p[Keys.calendarHideSpoilers] ?: d.calendarHideSpoilers,
             calendarCountry = p[Keys.calendarCountry] ?: d.calendarCountry,
+            calendarJapanAnime = p[Keys.calendarJapanAnime] ?: d.calendarJapanAnime,
             calendarSkipNewsTalk = p[Keys.calendarSkipNewsTalk] ?: d.calendarSkipNewsTalk,
             calendarView = p[Keys.calendarView] ?: d.calendarView,
             calendarOkAction = p[Keys.calendarOkAction] ?: d.calendarOkAction,
@@ -1131,6 +1133,7 @@ class LiveTvPreferences @Inject constructor(
         p[Keys.pageLiveTvOptions] = s.pageLiveTvOptions
         p[Keys.calendarHideSpoilers] = s.calendarHideSpoilers
         p[Keys.calendarCountry] = s.calendarCountry
+        p[Keys.calendarJapanAnime] = s.calendarJapanAnime
         p[Keys.calendarSkipNewsTalk] = s.calendarSkipNewsTalk
         p[Keys.calendarView] = s.calendarView
         p[Keys.calendarOkAction] = s.calendarOkAction

@@ -264,9 +264,11 @@ private fun LiveTvHomeRowContent(
     }
     if (entries.isEmpty()) return
     val open by LiveTvHomeReveal.open.collectAsStateWithLifecycle()
-    // A one-pixel spot above the top row (always there): Up from the top row lands here, which
-    // opens the row. The highlight stays here while the row slides open, then moves onto the
-    // first channel, so the page doesn't lurch while the row is still growing.
+    // A one-pixel spot above the top row: Up from the top row lands here, which opens the row. It
+    // only exists while the row is tucked away. While it stayed focusable after the row opened, Up
+    // from anywhere above it landed on this spot, which then threw the highlight onto the row's
+    // first card — the "snapping back to the Live TV row". Once the row is open it is a normal row
+    // and Up simply leaves it, so the catcher is disabled.
     var catcherFocused by remember { mutableStateOf(false) }
     var rowHasFocus by remember { mutableStateOf(false) }
     // With an update banner above the page, Up from the Live TV row goes on to the banner: the
@@ -277,7 +279,7 @@ private fun LiveTvHomeRowContent(
         modifier = Modifier
             .fillMaxWidth()
             .height(1.dp)
-            .focusProperties { canFocus = !(bannerShown && rowHasFocus) }
+            .focusProperties { canFocus = !open && !(bannerShown && rowHasFocus) }
             .onFocusChanged {
                 catcherFocused = it.isFocused
                 if (it.isFocused) LiveTvHomeReveal.open.value = true
@@ -327,8 +329,12 @@ private fun LiveTvHomeRowContent(
                 .onFocusChanged {
                     if (rowHasFocus && !it.hasFocus) {
                         LiveTvHomeFocus.lostAt = android.os.SystemClock.uptimeMillis()
-                        // Highlight gone back into your rows (or anywhere else): tuck the row away.
-                        LiveTvHomeReveal.open.value = false
+                        // It used to tuck the row away here, the moment the highlight left it. That
+                        // made the row and the one-pixel reveal target above it take turns: the row
+                        // closed, the target became focusable again, and Up (or a recomposition
+                        // putting the highlight back) reopened it — the highlight appeared to jump
+                        // back to the Live TV row on its own. The row now stays open once shown;
+                        // it still closes when Home goes away (the DisposableEffect above).
                     }
                     rowHasFocus = it.hasFocus
                     LiveTvHomeFocus.rowHasFocus = it.hasFocus

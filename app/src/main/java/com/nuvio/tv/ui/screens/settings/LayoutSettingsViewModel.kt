@@ -49,6 +49,11 @@ data class LayoutSettingsUiState(
     val heroCatalogKeys: List<String> = emptyList(),
     val sidebarCollapsedByDefault: Boolean = false,
     val modernSidebarEnabled: Boolean = false,
+    // Navigation sound. It lives here rather than under Advanced: it is how the interface
+    // responds to the remote, which is a layout/motion concern.
+    val uiSoundsEnabled: Boolean = false,
+    val uiSoundChoice: String = com.nuvio.tv.core.sound.UiSound.DEFAULT.id,
+    val uiSoundVolume: Int = 70,
     val modernSidebarBlurEnabled: Boolean = false,
     val modernLandscapePostersEnabled: Boolean = false,
     val modernHeroFullScreenBackdropEnabled: Boolean = false,
@@ -115,6 +120,11 @@ data class CatalogInfo(
 
 sealed class LayoutSettingsEvent {
     data class SelectLayout(val layout: HomeLayout) : LayoutSettingsEvent()
+    data class SetUiSoundsEnabled(val enabled: Boolean) : LayoutSettingsEvent()
+    /** Choosing a sound plays it once, so the pick is audible without leaving the page. */
+    data class SetUiSoundChoice(val id: String) : LayoutSettingsEvent()
+    data class SetUiSoundVolume(val percent: Int) : LayoutSettingsEvent()
+    data class PreviewUiSound(val sound: com.nuvio.tv.core.sound.UiSound) : LayoutSettingsEvent()
     data class ToggleHeroCatalog(val catalogKey: String) : LayoutSettingsEvent()
     data class SetSidebarCollapsed(val collapsed: Boolean) : LayoutSettingsEvent()
     data class SetModernSidebarEnabled(val enabled: Boolean) : LayoutSettingsEvent()
@@ -216,6 +226,21 @@ class LayoutSettingsViewModel @Inject constructor(
     }
 
     init {
+        viewModelScope.launch {
+            layoutPreferenceDataStore.uiSoundsEnabled.collectLatest { on ->
+                updateUiStateIfChanged { it.copy(uiSoundsEnabled = on) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.uiSoundChoice.collectLatest { id ->
+                updateUiStateIfChanged { it.copy(uiSoundChoice = id) }
+            }
+        }
+        viewModelScope.launch {
+            layoutPreferenceDataStore.uiSoundVolume.collectLatest { percent ->
+                updateUiStateIfChanged { it.copy(uiSoundVolume = percent) }
+            }
+        }
         viewModelScope.launch {
             streamBadgeSettingsDataStore.settings.collectLatest { settings ->
                 _streamBadgeUiState.update { it.copy(settings = settings) }
@@ -514,9 +539,33 @@ class LayoutSettingsViewModel @Inject constructor(
         loadAvailableCatalogs()
     }
 
+    /** Even at 0 the preview stays audible, otherwise a silent preview reads as broken. */
+    private fun previewVolume(): Float =
+        (_uiState.value.uiSoundVolume.coerceIn(0, 100) / 100f).coerceAtLeast(0.15f)
+
     fun onEvent(event: LayoutSettingsEvent) {
         when (event) {
             is LayoutSettingsEvent.SelectLayout -> selectLayout(event.layout)
+            is LayoutSettingsEvent.SetUiSoundsEnabled -> viewModelScope.launch {
+                layoutPreferenceDataStore.setUiSoundsEnabled(event.enabled)
+            }
+            is LayoutSettingsEvent.SetUiSoundChoice -> {
+                viewModelScope.launch { layoutPreferenceDataStore.setUiSoundChoice(event.id) }
+                // Picking one plays it: the point of a sound setting is hearing it.
+                viewModelScope.launch {
+                    com.nuvio.tv.core.sound.UiSoundPlayer.preview(
+                        context,
+                        com.nuvio.tv.core.sound.UiSound.fromId(event.id),
+                        previewVolume(),
+                    )
+                }
+            }
+            is LayoutSettingsEvent.SetUiSoundVolume -> viewModelScope.launch {
+                layoutPreferenceDataStore.setUiSoundVolume(event.percent)
+            }
+            is LayoutSettingsEvent.PreviewUiSound -> viewModelScope.launch {
+                com.nuvio.tv.core.sound.UiSoundPlayer.preview(context, event.sound, previewVolume())
+            }
             is LayoutSettingsEvent.ToggleHeroCatalog -> toggleHeroCatalog(event.catalogKey)
             is LayoutSettingsEvent.SetSidebarCollapsed -> setSidebarCollapsed(event.collapsed)
             is LayoutSettingsEvent.SetModernSidebarEnabled -> setModernSidebarEnabled(event.enabled)

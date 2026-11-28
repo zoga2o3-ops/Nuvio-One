@@ -2909,6 +2909,39 @@ class LiveTvRepository @Inject constructor(
         // Unassigned in Assign EPG: no guide for these channels, automatic match included.
         val unassigned = overrides.filterValues { it.isNone }.keys
         unassigned.forEach { key -> auto.remove(key) }
+        // Why a guide covers only part of a playlist. Written every time (guides are usually
+        // reused from the store, so the per-guide lines above often don't run), and it says how
+        // many channels the guide actually lists, which NAME matching alone can't reveal.
+        run {
+            val guideChannels = reads.values.sumOf { it.entries.size }
+            val matched = auto.size
+            LIVE_REPORT.add(
+                "Guide matching: $matched of ${channels.size} channels matched automatically " +
+                    "(${overrides.size} set by hand, ${unassigned.size} deliberately unassigned); " +
+                    "the guides list $guideChannels channels between them"
+            )
+            if (channels.size > 0 && matched < channels.size) {
+                // A few unmatched channels with the name the matcher compares, so a name mismatch
+                // can be told from a guide that has nothing for these channels at all.
+                val shown = channels.asSequence()
+                    .filter { it.key !in auto && it.key !in overrides }
+                    .take(4)
+                    .joinToString { c ->
+                        val name = normalize(c.name).ifEmpty { "?" }
+                        val tvg = c.tvgId?.takeIf { it.isNotBlank() }?.let { " tvg=$it" } ?: ""
+                        "\"${c.name}\"→$name$tvg"
+                    }
+                // What the guides offer, for comparing against the above.
+                val offered = reads.values.asSequence()
+                    .flatMap { it.entries.asSequence() }
+                    .take(4)
+                    .joinToString { e -> e.names.firstOrNull()?.let { "\"$it\"→${normalize(it)}" } ?: e.id }
+                if (shown.isNotEmpty()) {
+                    LIVE_REPORT.add("  unmatched, this side: $shown")
+                    LIVE_REPORT.add("  guide side: $offered")
+                }
+            }
+        }
         // Which guide channels ended up feeding a playlist channel (for "Unassigned" in Assign EPG).
         val usedBySource = HashMap<String, MutableSet<String>>()
         auto.values.forEach { usedBySource.getOrPut(it.sourceId) { HashSet() } += it.xmltvId }
@@ -4163,6 +4196,12 @@ class LiveTvRepository @Inject constructor(
         const val PLAYER_UA = "VLC/3.0.20 LibVLC/3.0.20"
 
         private val qualityTokens = Regex("""\b(fhd|uhd|hd|sd|4k|8k|hevc|h265|h264|1080p|720p|backup|raw)\b""")
+        // Frame rates ("BBC One FHD 50FPS", "Sky Sports 25 FPS", "BBC One HD50FPS") surface as a
+        // trailing number the quality words don't cover: "50fps" has no word boundary between the
+        // digits and "fps", so a channel carrying one never matched a guide without it
+        // ("bbcone50fps" against "bbcone"). Matched without a leading boundary so the digits are
+        // reached even when glued to the quality word; the quality pass then clears what's left.
+        private val frameRateTokens = Regex("""\d+\s*fps\b""", RegexOption.IGNORE_CASE)
         private val prefixToken = Regex("""^[a-z]{2,3}\s*[:|]\s*""")
         private val bracketed = Regex("""\[.*?]|\(.*?\)""")
 
@@ -4175,6 +4214,7 @@ class LiveTvRepository @Inject constructor(
             var n = name.lowercase().trim()
             n = n.replace(prefixToken, "")
             n = n.replace(bracketed, " ")
+            n = n.replace(frameRateTokens, " ")
             n = n.replace(qualityTokens, " ")
             return n.filter { it.isLetterOrDigit() }
         }

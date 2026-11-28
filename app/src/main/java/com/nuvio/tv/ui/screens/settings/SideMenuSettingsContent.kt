@@ -465,6 +465,13 @@ fun CalendarSettingsContent(initialFocusRequester: FocusRequester? = null) {
                         s.calendarSkipNewsTalk,
                         { update { it.copy(calendarSkipNewsTalk = !it.calendarSkipNewsTalk) } }
                     )
+                    SettingsToggleRow(
+                        "Airing Today: Include Japanese Anime",
+                        "Anime that airs first in Japan is in neither the country list nor the " +
+                            "streaming list, so it never appears without this",
+                        s.calendarJapanAnime,
+                        { update { it.copy(calendarJapanAnime = !it.calendarJapanAnime) } }
+                    )
                 }
             }
             item(key = "data") {

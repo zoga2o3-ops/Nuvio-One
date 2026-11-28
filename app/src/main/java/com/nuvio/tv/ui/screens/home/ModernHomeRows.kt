@@ -333,9 +333,18 @@ private fun ModernCatalogRowItem(
         }
     }
 
+    // Claim the highlight once, when this card BECOMES the row's target. It used to re-run for as
+    // long as isTargetItem stayed true, and isTargetItem is true the whole time the row is active —
+    // so any moment the card was not focused (moving up into the Live TV row above it, for one)
+    // pulled the highlight straight back down here. Re-arming on `isCardFocused` as well would keep
+    // that behaviour, so only the false→true change of isTargetItem triggers it.
+    var claimedForTarget by remember { mutableStateOf(false) }
     LaunchedEffect(isTargetItem) {
-        if (isTargetItem && !isCardFocused) {
-            runCatching { requester.requestFocus() }
+        if (isTargetItem && !claimedForTarget) {
+            claimedForTarget = true
+            if (!isCardFocused) runCatching { requester.requestFocus() }
+        } else if (!isTargetItem) {
+            claimedForTarget = false
         }
     }
 

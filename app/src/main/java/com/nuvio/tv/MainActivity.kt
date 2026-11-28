@@ -449,6 +449,28 @@ open class MainActivity : ComponentActivity() {
         // Live TV fork: start reading the saved channel list and guide as the app opens (before
         // any screen, even the profile picker), so Live TV is ready when you get to it.
         lifecycleScope.launch { runCatching { com.nuvio.tv.livetv.startup.LiveTvPreload.start(this@MainActivity) } }
+        // Navigation sounds: load the chosen sound once, then keep the player's enabled/volume in
+        // step with settings. The key handler only ever reads those two fields.
+        runCatching {
+            com.nuvio.tv.core.sound.UiSoundPlayer.init(this)
+            lifecycleScope.launch {
+                runCatching {
+                    kotlinx.coroutines.flow.combine(
+                        layoutPreferenceDataStore.uiSoundsEnabled,
+                        layoutPreferenceDataStore.uiSoundChoice,
+                        layoutPreferenceDataStore.uiSoundVolume,
+                    ) { on, choice, volumePercent -> Triple(on, choice, volumePercent) }
+                        .collect { (on, choice, volumePercent) ->
+                            com.nuvio.tv.core.sound.UiSoundPlayer.enabled = on
+                            com.nuvio.tv.core.sound.UiSoundPlayer.volume = volumePercent / 100f
+                            com.nuvio.tv.core.sound.UiSoundPlayer.setSound(
+                                this@MainActivity,
+                                com.nuvio.tv.core.sound.UiSound.fromId(choice),
+                            )
+                        }
+                }.onFailure { android.util.Log.w("UiSound", "settings observer stopped", it) }
+            }
+        }.onFailure { android.util.Log.w("UiSound", "couldn't start navigation sounds", it) }
         // Live TV fork: Home drawn (see AppSettled): Sports' first scores round and the Calendar's
         // first look-ups wait for it, so they don't land while Home is still loading.
         runCatching { fullyDrawnReporter.addOnReportDrawnListener { com.nuvio.tv.livetv.startup.AppSettled.markDrawn() } }
@@ -1655,6 +1677,12 @@ open class MainActivity : ComponentActivity() {
         // Live TV fork: remember when the remote was last used (the home screen's Live TV row
         // only claims the first highlight while nobody has pressed anything yet).
         if (event.action == KeyEvent.ACTION_DOWN) com.nuvio.tv.livetv.home.LiveTvHomeFocus.lastKeyAt = android.os.SystemClock.uptimeMillis()
+        // Navigation sound on a direction press. Done here rather than per-card: every DPAD move
+        // goes through this, so one call covers the rows, grids, dialogs and the sidebar alike.
+        // Held-key repeats are filtered inside the player.
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && isDirectionKey(event.keyCode)) {
+            com.nuvio.tv.core.sound.UiSoundPlayer.play()
+        }
         if (ambientIdleController.consumeKeyEvent(event)) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (longPressBackHeld.value) {
@@ -1690,6 +1718,13 @@ open class MainActivity : ComponentActivity() {
             return true
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    /** The four directions a remote moves the highlight with. */
+    private fun isDirectionKey(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> true
+        else -> false
     }
 
     override fun onStart() {

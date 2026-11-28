@@ -148,6 +148,7 @@ internal fun ModernHomeRowsList(
 ) {
     // Live TV fork: where the Live TV row goes (null = hidden).
     val liveTvRowAbove = com.nuvio.tv.livetv.home.rememberLiveTvHomeRowPosition()
+    val focusManager = LocalFocusManager.current
     // Unwrap StableRef wrappers for internal use (not passed to child composables)
     val focusedItemByRowMap = focusedItemByRow.value
     val rowListStatesMap = rowListStates.value
@@ -294,17 +295,9 @@ internal fun ModernHomeRowsList(
                 .onPreviewKeyEvent { event ->
                     val firstRowKey = carouselRows.list.firstOrNull()?.key
                     val lastRowKey = carouselRows.list.lastOrNull()?.key
-                    // The Live TV Favorites row is tucked above the first carousel row. Let
-                    // normal focus search reach its reveal target before routing Up to Downloads.
-                    val liveTvRowWaitingAbove = liveTvRowAbove == true &&
-                        com.nuvio.tv.livetv.home.LiveTvHomeReveal.available.value &&
-                        !com.nuvio.tv.livetv.home.LiveTvHomeReveal.open.value
-                    if (event.type == KeyEventType.KeyDown &&
-                        event.key == Key.DirectionUp &&
-                        activeRowKey.value == firstRowKey &&
-                        !liveTvRowWaitingAbove &&
-                        onMoveFocusToDownloads()
-                    ) return@onPreviewKeyEvent true
+                    // The Live TV Favorites row is tucked above the first carousel row.
+                    val liveTvAbove = liveTvRowAbove == true &&
+                        com.nuvio.tv.livetv.home.LiveTvHomeReveal.available.value
                     // Live TV fork: not when the Live TV row is waiting above the top row (with no
                     // Continue watching, the top row is a catalog whose card expands, and this
                     // swallowed Up, so the Live TV row could never be opened).
@@ -313,8 +306,28 @@ internal fun ModernHomeRowsList(
                         effectiveExpandEnabled &&
                         expandedCatalogFocusKey.value != null &&
                         activeRowKey.value == firstRowKey &&
-                        !(liveTvRowAbove == true && com.nuvio.tv.livetv.home.LiveTvHomeReveal.available.value)
+                        !liveTvAbove
                     ) return@onPreviewKeyEvent true
+                    // Jumping to the Downloads button is the last resort for Up from the top row,
+                    // so it is checked after everything above.
+                    //
+                    // It used to swallow the press whenever there was a Live TV row above, unless
+                    // the row had already reported itself "available" — which it does from its own
+                    // composition, later than the first Up. In that window Up went to Downloads
+                    // instead of opening the tucked-away row.
+                    //
+                    // Now the reveal target is asked to take the highlight first: if it does, it
+                    // gets the press and this returns false. Downloads is only used when that fails,
+                    // i.e. when there is genuinely no Live TV row above to open.
+                    if (event.type == KeyEventType.KeyDown &&
+                        event.key == Key.DirectionUp &&
+                        activeRowKey.value == firstRowKey
+                    ) {
+                        if (liveTvRowAbove == true && focusManager.moveFocus(FocusDirection.Up)) {
+                            return@onPreviewKeyEvent true
+                        }
+                        if (onMoveFocusToDownloads()) return@onPreviewKeyEvent true
+                    }
                     if (event.type == KeyEventType.KeyDown &&
                         event.key == Key.DirectionDown &&
                         effectiveExpandEnabled &&

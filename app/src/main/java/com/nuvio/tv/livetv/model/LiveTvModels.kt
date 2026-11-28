@@ -565,6 +565,14 @@ data class LiveTvSettings(
     val calendarHideSpoilers: Boolean = true,
     /** Calendar: the country for Airing Today and movie release dates (two letters). */
     val calendarCountry: String = "US",
+    /**
+     * Calendar: also read Japan's schedule, for anime that airs there first.
+     *
+     * That anime is in neither of the other two feeds (the chosen country's TV, and streaming), so
+     * without this it never appears in Airing Today at all. Off by default: Japanese TV lists a lot
+     * of Animation, and a US/EU viewer doesn't want it filling the day.
+     */
+    val calendarJapanAnime: Boolean = false,
     /** Calendar: Airing Today leaves out news, talk and sports shows. */
     val calendarSkipNewsTalk: Boolean = true,
     /** Calendar: games for the teams you follow in Sports. */

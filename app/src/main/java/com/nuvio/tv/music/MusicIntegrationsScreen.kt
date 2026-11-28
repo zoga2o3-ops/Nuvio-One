@@ -74,12 +74,15 @@ internal fun MusicIntegrationsScreen(
     onClose: () -> Unit,
     onOpenWebDav: () -> Unit,
     onOpenNavidrome: () -> Unit,
+    onOpenEmby: () -> Unit,
     onOpenSources: () -> Unit
 ) {
     val context = LocalContext.current
     val lastFm by MusicScrobbler.config.collectAsState()
     val webDav by MusicWebDav.config.collectAsState()
     val navidrome by MusicNavidrome.config.collectAsState()
+    val emby by MusicEmby.config.collectAsState()
+    var showEmbySetup by remember { mutableStateOf(false) }
     val addons by MusicAddonRegistry.configs.collectAsState()
     val geminiViewModel: MusicGeminiViewModel = hiltViewModel()
     val gemini by geminiViewModel.state.collectAsState()
@@ -114,6 +117,7 @@ internal fun MusicIntegrationsScreen(
     LaunchedEffect(Unit) {
         MusicWebDav.init(context)
         MusicNavidrome.init(context)
+        MusicEmby.init(context)
         MusicScrobbler.init(context)
         MusicAddonRegistry.init(context)
         MusicSpotifyWebSession.init(context)
@@ -179,6 +183,35 @@ internal fun MusicIntegrationsScreen(
                         primary = !navidrome.configured,
                         onClick = onOpenNavidrome
                     )
+                }
+
+                // Emby / Jellyfin music. The app already browses these servers for video; this
+                // adds their music libraries, which were previously ignored entirely.
+                IntegrationCard(
+                    icon = Icons.Default.Album,
+                    tint = MusicPalette.accentTeal,
+                    title = "Emby / Jellyfin",
+                    subtitle = if (emby.configured) {
+                        "Connected to ${emby.server}" + if (emby.isJellyfin) " (Jellyfin)" else " (Emby)"
+                    } else {
+                        "Your music on an Emby or Jellyfin server. The video side of these servers " +
+                            "is under Sources; this adds their music."
+                    }
+                ) {
+                    IntegrationPill(
+                        icon = Icons.Default.Album,
+                        label = if (emby.configured) "Open" else "Connect",
+                        primary = !emby.configured,
+                        onClick = { if (emby.configured) onOpenEmby() else showEmbySetup = true }
+                    )
+                    if (emby.configured) {
+                        IntegrationPill(
+                            icon = Icons.Default.Album,
+                            label = "Setup",
+                            primary = false,
+                            onClick = { showEmbySetup = true }
+                        )
+                    }
                 }
 
                 IntegrationCard(
@@ -523,6 +556,9 @@ internal fun MusicIntegrationsScreen(
         }
         phoneTarget?.let {
             MusicPhoneLinkPanel(target = it, onClose = { phoneTarget = null })
+        }
+        if (showEmbySetup) {
+            EmbyMusicSetupDialog(initial = emby, onDismiss = { showEmbySetup = false })
         }
     }
 }

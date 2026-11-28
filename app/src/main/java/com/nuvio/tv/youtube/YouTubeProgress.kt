@@ -2,6 +2,7 @@ package com.nuvio.tv.youtube
 
 import android.content.Context
 import android.util.Log
+import com.liskovsoft.mediaserviceinterfaces.data.MediaItem
 import com.liskovsoft.sharedutils.prefs.GlobalPreferences
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -163,11 +164,83 @@ object YouTubeProgress {
             .toList()
     }
 
-    /** The videos that belong in Continue Watching: started, not finished, with a real length. */
-    fun continueWatching(context: Context, limit: Int = 30): List<YouTubeHistoryItem> =
-        history(context, limit = limit * 2)
-            .filter { it.durationMs > 0L && it.positionMs >= 5_000L && !it.isFinished }
+    /**
+     * The account's own YouTube history, for the videos this device never saved.
+     *
+     * The local store above only knows what was played here since it was introduced, so a fresh
+     * install started the Home row from one or two videos. YouTube already has the full list (it
+     * is what the History tab shows), so it is read through the engine and used to fill the rest
+     * of the row. Only entries the engine reports a length and a position for are usable.
+     */
+    fun accountHistory(context: Context, limit: Int = 40): List<YouTubeHistoryItem> {
+        val group = runCatching {
+            YouTubeAccountScopes.engine(context, AccountScope.ONETUBE)
+                .contentService
+                .historyObserve
+                .blockingFirst()
+        }.getOrNull() ?: return emptyList()
+        val now = System.currentTimeMillis()
+        // The engine returns the history newest-first, and it is the same list the OneTube History
+        // tab shows. Its order has to be kept, so each entry gets a descending timestamp: stamping
+        // them all with `now` made them tie, and the caller's newest-first sort then reshuffled them
+        // into an order that didn't match OneTube's History at all.
+        return group.mediaItems.orEmpty().asSequence()
+            .filter { !it.videoId.isNullOrBlank() }
+            // Videos only: the History feed also carries channels and playlist rows.
+            .filter { it.type == MediaItem.TYPE_VIDEO && !it.isLive && !it.isShorts }
             .take(limit)
+            .mapIndexed { index, mi ->
+                val id = mi.videoId!!
+                YouTubeHistoryItem(
+                    videoId = id,
+                    title = mi.title.orEmpty(),
+                    channel = mi.author,
+                    poster = mi.cardImageUrl ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+                    positionMs = mi.startTimeSeconds.coerceAtLeast(0) * 1000L,
+                    durationMs = mi.durationMs.coerceAtLeast(0L),
+                    // One step per position, so keepOrder() can restore the engine's sequence.
+                    lastWatched = now - index,
+                )
+            }
+            .toList()
+    }
+
+    /**
+     * The videos that belong in Continue Watching: started, not finished, with a real length.
+     *
+     * [fillFromHistory]: videos watched to the end are normally dropped (there is nowhere left to
+     * resume), which left the Home row with only one or two cards. With this on, recently finished
+     * ones fill the row out after the unfinished ones. They keep their real position, so a card
+     * that is nearly done still reads that way and clicking it starts from the beginning.
+     *
+     * [withAccountHistory]: also read the account's YouTube history, so videos watched before this
+     * device started keeping its own list still make up the row.
+     */
+    fun continueWatching(
+        context: Context,
+        limit: Int = 30,
+        fillFromHistory: Boolean = false,
+        withAccountHistory: Boolean = false,
+    ): List<YouTubeHistoryItem> {
+        val local = history(context, limit = if (fillFromHistory) 200 else limit * 2)
+        // This device's own list first (it is what was watched here, most recently), then the
+        // account history in the order OneTube's History tab shows it.
+        val merged = if (withAccountHistory) {
+            val mine = local.mapTo(HashSet()) { it.videoId }
+            local + accountHistory(context, limit = limit * 3).filter { it.videoId !in mine }
+        } else {
+            local
+        }
+        val started = merged.filter { it.durationMs > 0L && it.positionMs >= 5_000L }
+        val unfinished = started.filter { !it.isFinished }
+        if (!fillFromHistory) return unfinished.take(limit)
+        // Keep the order the entries arrived in. Sorting by lastWatched was wrong once the two
+        // sources were mixed: the account entries carry synthetic timestamps, so the sort pulled
+        // them out of the order OneTube's own History shows.
+        return (unfinished + started.filter { it.isFinished })
+            .distinctBy { it.videoId }
+            .take(limit)
+    }
 
     /**
      * Fills in title/channel for videos saved by an older version, which kept only the place.

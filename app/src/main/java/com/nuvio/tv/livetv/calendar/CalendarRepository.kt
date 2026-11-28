@@ -773,7 +773,9 @@ class CalendarRepository @Inject constructor(
         _airing.value = AiringToday(day, _airing.value.entries.takeIf { _airing.value.day == day }.orEmpty(), loading = true)
         scope.launch {
             val s = settings.value
-            val list = runCatching { sources.airingOn(day, s.calendarCountry.ifBlank { "US" }) }.getOrNull()
+            val list = runCatching {
+                sources.airingOn(day, s.calendarCountry.ifBlank { "US" }, s.calendarJapanAnime)
+            }.getOrNull()
             if (list == null) {
                 _airing.value = AiringToday(day, emptyList(), false, "Couldn't get today's shows. Check your connection.")
                 return@launch

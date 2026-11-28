@@ -135,6 +135,7 @@ fun MusicScreen(
     var showIntegrations by remember { mutableStateOf(false) }
     var showSources by remember { mutableStateOf(false) }
     var showNavidrome by remember { mutableStateOf(false) }
+    var showEmby by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
     var lastAccountKey by remember { mutableStateOf<String?>(null) }
     var openPlaylistId by remember { mutableStateOf<String?>(null) }
@@ -325,7 +326,7 @@ fun MusicScreen(
     val musicOverlayOpen = showNowPlaying || state.detail.open ||
         state.explore.selected != null || openPlaylistId != null ||
         showSettings || showDownloads || showParty || showWebDav ||
-        showIntegrations || showSources || showNavidrome || showAccount ||
+        showIntegrations || showSources || showNavidrome || showEmby || showAccount ||
         (musicVideo != null && !musicVideoMinimized)
 
     // Re-anchor focus to the selected top tab whenever the tab changes or an overlay closes.
@@ -444,6 +445,18 @@ fun MusicScreen(
                             showNowPlaying = true
                         }
                     )
+                    showEmby -> MusicEmbyScreen(
+                        onClose = {
+                            showEmby = false
+                            showIntegrations = true
+                        },
+                        onPlay = { songs, index ->
+                            showEmby = false
+                            showIntegrations = false
+                            MusicPlayer.playQueue(songs, index)
+                            showNowPlaying = true
+                        }
+                    )
                     showSources -> MusicSourcesScreen(
                         onClose = {
                             showSources = false
@@ -459,6 +472,10 @@ fun MusicScreen(
                         onOpenNavidrome = {
                             showIntegrations = false
                             showNavidrome = true
+                        },
+                        onOpenEmby = {
+                            showIntegrations = false
+                            showEmby = true
                         },
                         onOpenSources = {
                             showIntegrations = false

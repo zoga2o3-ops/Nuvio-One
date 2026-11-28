@@ -21,18 +21,36 @@ import kotlinx.coroutines.launch
  */
 internal fun HomeViewModel.observeYouTubeContinueWatching() {
     viewModelScope.launch {
+        // Why the counters are part of the emitted value: combine{} of two StateFlows produces a
+        // new value on every bump of either one, so anything derived from the counters alone
+        // ("is the row on") repeats itself and distinctUntilChanged() drops it. Home then kept the
+        // row it built at startup until the app was restarted, however much was watched after.
+        // Carrying the counters in the value makes each bump distinct, so the row is rebuilt.
         combine(
             YouTubeSettings.homeRowChanges,
             YouTubeProgress.changes,
             layoutPreferenceDataStore.continueWatchingEnabled
-        ) { _, _, continueWatchingEnabled ->
-            continueWatchingEnabled && YouTubeSettings.continueWatchingOnHome(appContext)
+        ) { settingsChanges, progressChanges, continueWatchingEnabled ->
+            val playing = (settingsChanges to progressChanges)
+            playing to (continueWatchingEnabled && YouTubeSettings.continueWatchingOnHome(appContext))
         }
-            .distinctUntilChanged()
-            .map { enabled ->
+            .distinctUntilChanged { old, new -> old == new }
+            .map { (_, enabled) ->
                 if (!enabled) return@map emptyList()
                 YouTubeProgress.backfillMissingDetails(appContext)
-                YouTubeProgress.continueWatching(appContext).map { entry ->
+                // fillFromHistory: finished videos are kept as filler, so the row has a useful
+                // number of cards instead of only the one or two still part-way through.
+                // withAccountHistory: videos watched before this device kept its own list come
+                // from the account, in the same order OneTube's History tab shows them.
+                YouTubeProgress.continueWatching(
+                    appContext,
+                    fillFromHistory = true,
+                    withAccountHistory = true,
+                ).map { entry ->
+                    // A finished video has already been watched to the end: resume from the start
+                    // instead of dropping the player at the last second, and stop the card claiming
+                    // a resume point it can't honour.
+                    val resumeAt = if (entry.isFinished) 0L else entry.positionMs
                     ContinueWatchingItem.InProgress(
                         progress = WatchProgress(
                             contentId = entry.contentId,
@@ -45,10 +63,10 @@ internal fun HomeViewModel.observeYouTubeContinueWatching() {
                             season = null,
                             episode = null,
                             episodeTitle = entry.channel,
-                            position = entry.positionMs,
+                            position = resumeAt,
                             duration = entry.durationMs,
                             lastWatched = entry.lastWatched,
-                            progressPercent = entry.percent.toFloat(),
+                            progressPercent = if (entry.isFinished) 0f else entry.percent.toFloat(),
                         )
                     )
                 }

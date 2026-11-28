@@ -67,7 +67,12 @@ internal class CalendarSources(context: Context) {
         /** The season's episode count, when known (for "Season finale"). */
         val seasonEpisodes: Int?,
         /** What the episode is about (plain text). */
-        val summary: String? = null
+        val summary: String? = null,
+        /**
+         * From Japan's schedule: anime that airs there first, which the country and streaming
+         * lists don't carry at all. Kept apart so the calendar can label it.
+         */
+        val japanOnly: Boolean = false
     )
 
     data class ShowData(val show: Show, val episodes: List<Episode>, val fetchedAt: Long)
@@ -214,22 +219,58 @@ internal class CalendarSources(context: Context) {
     }
 
     /** Airing Today: every show with a new episode on [date] (TV in [country], and streaming). */
-    suspend fun airingOn(date: LocalDate, country: String): List<Pair<Show, Episode>> {
+    suspend fun airingOn(date: LocalDate, country: String): List<Pair<Show, Episode>> =
+        airingOn(date, country, includeJapanAnime = false)
+
+    /**
+     * [includeJapanAnime]: also read Japan's schedule.
+     *
+     * Anime that airs first in Japan (The Apothecary Diaries, BEYBLADE X, Tokyo Revengers…) was
+     * missing from the calendar entirely: TVmaze's [country] list never contains it, and the
+     * `/schedule/web` list only carries shows that stream in the West, so neither feed had it.
+     * Japan's own schedule does, with exact air times, and it costs one more free request.
+     *
+     * Japan's TV also airs plenty of Animation that isn't anime, so this is opt-in and its entries
+     * are marked ([Episode.japanOnly]) instead of being mixed in silently.
+     */
+    suspend fun airingOn(
+        date: LocalDate,
+        country: String,
+        includeJapanAnime: Boolean,
+    ): List<Pair<Show, Episode>> {
         val f = File(dir, "airing_${country}_$date.json")
         val cached = runCatching { JSONObject(f.readText()) }.getOrNull()
-        val raws: List<String> = if (cached != null && System.currentTimeMillis() - cached.optLong("at") < 2 * HOUR) {
-            listOf(cached.optString("tv"), cached.optString("web"))
+        // A cached copy made without the Japan list can't answer a request that wants it.
+        val cachedJapan = cached?.optString("jp").orEmpty()
+        val cacheUsable = cached != null &&
+            System.currentTimeMillis() - cached.optLong("at") < 2 * HOUR &&
+            (!includeJapanAnime || cachedJapan.isNotBlank())
+        val raws: List<String> = if (cacheUsable) {
+            // The Japan list is appended when the cached copy was made with it.
+            listOf(cached.optString("tv"), cached.optString("web")) +
+                cached.optString("jp").takeIf { it.isNotBlank() }?.let { listOf(it) }.orEmpty()
         } else {
             val tv = tvm("/schedule?country=$country&date=$date") ?: "[]"
             val web = tvm("/schedule/web?date=$date") ?: "[]"
-            runCatching { f.writeText(JSONObject().put("at", System.currentTimeMillis()).put("tv", tv).put("web", web).toString()) }
+            // Requested only when wanted, so the usual case costs no extra call.
+            val jp = if (includeJapanAnime) tvm("/schedule?country=JP&date=$date") else null
+            runCatching {
+                f.writeText(
+                    JSONObject().put("at", System.currentTimeMillis())
+                        .put("tv", tv).put("web", web)
+                        .put("jp", (if (includeJapanAnime) jp else null) ?: "")
+                        .toString()
+                )
+            }
             // Older days' lists aren't needed.
             dir.listFiles()?.filter { it.name.startsWith("airing_") && it.name != f.name && System.currentTimeMillis() - it.lastModified() > 3 * DAY }
                 ?.forEach { it.delete() }
-            listOf(tv, web)
+            listOf(tv, web) + (jp?.let { listOf(it) } ?: emptyList())
         }
         val out = ArrayList<Pair<Show, Episode>>()
         raws.forEachIndexed { which, raw ->
+            // 0: the country's TV, 1: streaming everywhere, 2: Japan (anime).
+            val isJapan = which == 2
             runCatching {
                 val arr = JSONArray(raw)
                 for (i in 0 until arr.length()) {
@@ -240,9 +281,13 @@ internal class CalendarSources(context: Context) {
                         val c = showJson.optJSONObject("webChannel")?.optJSONObject("country")?.optString("code")
                         if (!c.isNullOrBlank() && !c.equals(country, ignoreCase = true)) continue
                     }
+                    if (isJapan) {
+                        // Japan's TV list is mostly Animation, but not only: keep the animation.
+                        if (!showJson.optString("type").equals("Animation", ignoreCase = true)) continue
+                    }
                     if (o.isNull("number")) continue
                     val show = parseShow(showJson) ?: continue
-                    val ep = parseEpisode(o, null) ?: continue
+                    val ep = parseEpisode(o, null, japanOnly = isJapan) ?: continue
                     out += show to ep
                 }
             }
@@ -274,7 +319,7 @@ internal class CalendarSources(context: Context) {
         )
     }
 
-    private fun parseEpisode(o: JSONObject, seasonEpisodes: Int?): Episode? {
+    private fun parseEpisode(o: JSONObject, seasonEpisodes: Int?, japanOnly: Boolean = false): Episode? {
         val season = o.optInt("season", -1).takeIf { it >= 0 } ?: return null
         val number = o.optInt("number", -1).takeIf { it > 0 } ?: return null
         val stamp = o.optString("airstamp").ifBlank { null }?.let { runCatching { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() }.getOrNull() }
@@ -292,7 +337,8 @@ internal class CalendarSources(context: Context) {
             image = o.optJSONObject("image")?.let { it.optString("original").ifBlank { it.optString("medium") } }?.ifBlank { null }
                 ?.replace("http://", "https://"),
             seasonEpisodes = seasonEpisodes,
-            summary = o.optString("summary").ifBlank { null }?.let { plain(it) }
+            summary = o.optString("summary").ifBlank { null }?.let { plain(it) },
+            japanOnly = japanOnly
         )
     }
 

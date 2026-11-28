@@ -148,6 +148,13 @@ class LayoutPreferenceDataStore @Inject constructor(
     private val followAddonsOrderKey = booleanPreferencesKey("follow_addons_order")
     private val composeHighlighterEnabledKey = booleanPreferencesKey("compose_highlighter_enabled")
 
+    /** Navigation sound: off by default, so nothing changes for people who never asked for it. */
+    private val uiSoundsEnabledKey = booleanPreferencesKey("ui_sounds_enabled")
+    /** Which sound: one of [com.nuvio.tv.core.sound.UiSound]. */
+    private val uiSoundChoiceKey = stringPreferencesKey("ui_sound_choice")
+    /** 0-100, applied to the chosen sound. */
+    private val uiSoundVolumeKey = intPreferencesKey("ui_sound_volume")
+
     private val customPosterUrlPatternKey = stringPreferencesKey("custom_poster_url_pattern")
     private val customPosterEnabledScreensKey = stringPreferencesKey("custom_poster_enabled_screens")
 
@@ -528,6 +535,24 @@ class LayoutPreferenceDataStore @Inject constructor(
     val composeHighlighterEnabled: Flow<Boolean> = profileFlow { prefs ->
         prefs[composeHighlighterEnabledKey] ?: false
     }
+
+    // ---------------------------------------------------------------- navigation sound
+
+    val uiSoundsEnabled: Flow<Boolean> = profileFlow { prefs -> prefs[uiSoundsEnabledKey] ?: false }
+
+    val uiSoundChoice: Flow<String> = profileFlow { prefs ->
+        prefs[uiSoundChoiceKey] ?: com.nuvio.tv.core.sound.UiSound.DEFAULT.id
+    }
+
+    val uiSoundVolume: Flow<Int> = profileFlow { prefs ->
+        (prefs[uiSoundVolumeKey] ?: 70).coerceIn(0, 100)
+    }
+
+    suspend fun setUiSoundsEnabled(enabled: Boolean) = store().edit { it[uiSoundsEnabledKey] = enabled }
+
+    suspend fun setUiSoundChoice(id: String) = store().edit { it[uiSoundChoiceKey] = id }
+
+    suspend fun setUiSoundVolume(percent: Int) = store().edit { it[uiSoundVolumeKey] = percent.coerceIn(0, 100) }
 
     /** Custom poster URL pattern with `{placeholder}` tokens. Empty string means disabled. */
     val customPosterUrlPattern: Flow<String> = profileFlow { prefs ->

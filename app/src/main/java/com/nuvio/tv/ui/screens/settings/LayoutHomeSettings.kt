@@ -138,6 +138,45 @@ internal fun LayoutHomeLayoutSection(
             }
         }
     }
+
+    // Navigation sound. Home Layout is the one section Essential mode still shows, so the sound
+    // options live here and stay reachable on both settings layouts.
+    SettingsToggleRow(
+        title = "Sounds when moving around",
+        subtitle = "A short sound as the highlight moves between rows, cards and buttons",
+        checked = uiState.uiSoundsEnabled,
+        onToggle = { onEvent(LayoutSettingsEvent.SetUiSoundsEnabled(!uiState.uiSoundsEnabled)) }
+    )
+    if (uiState.uiSoundsEnabled) {
+        // Each row plays its sound only when OK is pressed. Playing on focus made browsing the
+        // list noisy: reaching the volume row meant hearing every sound on the way down.
+        com.nuvio.tv.core.sound.UiSound.entries.forEach { sound ->
+            val selected = sound.id == uiState.uiSoundChoice
+            SettingsActionRow(
+                title = (if (selected) "✓  " else "     ") + sound.label,
+                subtitle = sound.description,
+                value = "Preview",
+                onClick = { onEvent(LayoutSettingsEvent.SetUiSoundChoice(sound.id)) }
+            )
+        }
+        SettingsActionRow(
+            title = "Volume",
+            subtitle = "How loud the navigation sound is (does not change your TV's volume). " +
+                "OK steps it up; it starts again from 10% after 100%.",
+            value = "${uiState.uiSoundVolume}%",
+            onClick = {
+                // Steps up in tens and wraps, so one button covers the range without a slider row
+                // the remote can't easily drag.
+                val next = if (uiState.uiSoundVolume >= 100) 10 else uiState.uiSoundVolume + 10
+                onEvent(LayoutSettingsEvent.SetUiSoundVolume(next))
+                onEvent(
+                    LayoutSettingsEvent.PreviewUiSound(
+                        com.nuvio.tv.core.sound.UiSound.fromId(uiState.uiSoundChoice)
+                    )
+                )
+            }
+        )
+    }
 }
 
 @Composable
